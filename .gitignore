@@ -6,3 +6,6 @@
 # Dependencies and build output
 node_modules/
 .next/
+
+# Buddy backend data
+backend/data/
