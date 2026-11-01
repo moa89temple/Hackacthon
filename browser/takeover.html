@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Buddy's Browser</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #fff; font-family: sans-serif; overflow: hidden; }
+  body { display: flex; flex-direction: column; }
+  #screen { flex: 1; min-height: 0; }
+  #bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #222; }
+  #status { flex: 1; }
+  #keyboard { min-height: 48px; padding: 0 16px; font-size: 1rem; color: #fff; background: #9D2235; border: 0; border-radius: 8px; }
+  /* Kept on the page and focusable, because a phone only opens its keyboard for a real field. */
+  #keys { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
+</style>
+</head>
+<body>
+<div id="screen" role="application" aria-label="Live view of Buddy's Browser. This is a picture of the browser, so a screen reader can't read what's on it."></div>
+<div id="bar">
+  <div id="status" role="status">Connecting…</div>
+  <button id="keyboard" type="button">Keyboard</button>
+</div>
+<form id="keys-form">
+  <!-- A password field, so that phone keyboards don't learn or suggest what's typed here. -->
+  <input id="keys" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Type into Buddy's Browser">
+</form>
+<script type="module">
+import RFB from './core/rfb.js';
+import KeyTable from './core/input/keysym.js';
+import keysyms from './core/input/keysymdef.js';
+
+const statusLine = document.getElementById('status');
+const keys = document.getElementById('keys');
+
+// The address is relative to this page, so everything goes back through the backend.
+const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const socketPath = location.pathname.replace(/[^/]*$/, 'websockify');
+let rfb;
+
+function connect() {
+  rfb = new RFB(document.getElementById('screen'), `${scheme}//${location.host}${socketPath}`);
+  rfb.scaleViewport = true;
+  rfb.focusOnClick = false;
+  rfb.addEventListener('connect', () => {
+    statusLine.textContent = 'Connected';
+  });
+  rfb.addEventListener('disconnect', () => {
+    statusLine.textContent = 'The live view has closed';
+  });
+}
+
+// One character stays in the field, so that deleting always has something to delete and
+// the phone's keyboard reports it.
+const RESTING_VALUE = ' ';
+keys.value = RESTING_VALUE;
+
+keys.addEventListener('input', () => {
+  const value = keys.value;
+  if (value.length < RESTING_VALUE.length) {
+    rfb.sendKey(KeyTable.XK_BackSpace, 'Backspace');
+  } else {
+    for (const character of value.slice(RESTING_VALUE.length)) {
+      rfb.sendKey(keysyms.lookup(character.codePointAt(0)));
+    }
+  }
+  keys.value = RESTING_VALUE;
+});
+
+document.getElementById('keys-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  rfb.sendKey(KeyTable.XK_Return, 'Enter');
+});
+
+document.getElementById('keyboard').addEventListener('click', () => keys.focus());
+
+connect();
+</script>
+</body>
+</html>

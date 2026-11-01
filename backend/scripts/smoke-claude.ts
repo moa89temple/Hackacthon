@@ -10,7 +10,9 @@ import { readEvents } from "../test/support/read-events.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "buddy-smoke-"));
 const backend = await startBackend({
-  adapters: productionAdapters(readSecrets()),
+  adapters: productionAdapters(readSecrets(), settings.browser),
+  sites: settings.sites,
+  allowedHosts: settings.allowedHosts,
   databasePath: join(directory, "buddy.sqlite"),
   chatModel: settings.chatModel,
   host: "127.0.0.1",

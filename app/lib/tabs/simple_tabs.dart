@@ -20,16 +20,6 @@ class RoadmapTab extends StatelessWidget {
       );
 }
 
-class YouTab extends StatelessWidget {
-  const YouTab({super.key});
-
-  @override
-  Widget build(BuildContext context) => const _EmptyTab(
-        icon: Icons.person,
-        message: 'Hackathon prototype, not an official Temple University service',
-      );
-}
-
 class _EmptyTab extends StatelessWidget {
   const _EmptyTab({required this.icon, required this.message});
 

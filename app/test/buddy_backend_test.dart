@@ -125,4 +125,92 @@ void main() {
 
     expect(backend.send('Hello').toList(), throwsA(isA<BackendException>()));
   });
+
+  group('Takeovers', () {
+    const takeoverJson = {
+      'site': 'canvas',
+      'siteName': 'Canvas',
+      'liveViewPath': '/takeover/live/token/takeover.html',
+    };
+
+    test('starts one and makes the live view an address on the backend', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        client: MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/takeover');
+          expect(jsonDecode(request.body), {'site': 'canvas'});
+          return http.Response(jsonEncode({'takeover': takeoverJson}), 200);
+        }),
+      );
+
+      final takeover = await backend.startTakeover('canvas');
+
+      expect(takeover.siteName, 'Canvas');
+      expect(takeover.liveViewUrl, Uri.parse('http://backend.test/takeover/live/token/takeover.html'));
+    });
+
+    test('fails to start when the browser cannot be reached', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        client: MockClient((request) async => http.Response('{}', 503)),
+      );
+
+      expect(backend.startTakeover('canvas'), throwsA(isA<BackendException>()));
+    });
+
+    test('reports the Takeover under way, or none', () async {
+      var body = {'takeover': takeoverJson};
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        client: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/takeover');
+          return http.Response(jsonEncode(body), 200);
+        }),
+      );
+
+      expect((await backend.currentTakeover())!.site, 'canvas');
+
+      body = {};
+      expect(await backend.currentTakeover(), isNull);
+    });
+
+    test('finishes one and reads what came of it', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        client: MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/takeover/done');
+          return http.Response(
+            jsonEncode({'site': 'canvas', 'siteName': 'Canvas', 'signedIn': true, 'title': 'Dashboard'}),
+            200,
+          );
+        }),
+      );
+
+      final finished = await backend.finishTakeover();
+
+      expect(finished!.signedIn, isTrue);
+      expect(finished.title, 'Dashboard');
+    });
+
+    test('treats finishing a Takeover that already ended as nothing to report', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        client: MockClient((request) async => http.Response('{}', 409)),
+      );
+
+      expect(await backend.finishTakeover(), isNull);
+    });
+
+    test('fails to finish on any other error, so the app can try again', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        client: MockClient((request) async => http.Response('{}', 500)),
+      );
+
+      expect(backend.finishTakeover(), throwsA(isA<BackendException>()));
+    });
+  });
 }

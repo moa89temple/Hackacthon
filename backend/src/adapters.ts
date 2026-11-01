@@ -1,3 +1,5 @@
+import type { BuddysBrowser } from "./buddys-browser.ts";
+import { containerBrowser, type ContainerBrowserSettings } from "./container-browser.ts";
 import { anthropicClaude, type Claude } from "./claude.ts";
 import { systemClock, type Clock } from "./clock.ts";
 
@@ -8,11 +10,16 @@ import { systemClock, type Clock } from "./clock.ts";
 export interface Adapters {
   claude: Claude;
   clock: Clock;
+  browser: BuddysBrowser;
 }
 
-export function productionAdapters(secrets: { anthropicApiKey: string }): Adapters {
+export function productionAdapters(
+  secrets: { anthropicApiKey: string },
+  browserSettings: ContainerBrowserSettings,
+): Adapters {
   return {
     claude: anthropicClaude(secrets.anthropicApiKey),
     clock: systemClock,
+    browser: containerBrowser(browserSettings),
   };
 }

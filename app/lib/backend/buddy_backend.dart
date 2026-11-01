@@ -45,20 +45,61 @@ class BackendException implements Exception {
   String toString() => 'BackendException: $message';
 }
 
+/// The Student in control of Buddy's Browser.
+class Takeover {
+  const Takeover({required this.site, required this.siteName, required this.liveViewUrl});
+
+  final String site;
+  final String siteName;
+
+  /// Always an address on the backend. The app never connects to the browser directly.
+  final Uri liveViewUrl;
+}
+
+/// What came of tapping Done.
+class FinishedTakeover {
+  const FinishedTakeover({required this.siteName, required this.signedIn, this.title});
+
+  factory FinishedTakeover.fromJson(Map<String, dynamic> json) => FinishedTakeover(
+        siteName: json['siteName'] as String,
+        signedIn: json['signedIn'] as bool,
+        title: json['title'] as String?,
+      );
+
+  final String siteName;
+  final bool signedIn;
+
+  /// The title of the page Buddy read to check the login.
+  final String? title;
+}
+
 /// What the app needs from the backend.
 abstract interface class BuddyBackend {
   Future<List<ChatMessage>> loadHistory();
 
   /// Sends the Student's message. The stream carries Buddy's turn.
   Stream<ReplyEvent> send(String text);
+
+  /// The Takeover under way, if there is one.
+  Future<Takeover?> currentTakeover();
+
+  /// Gives the Student control of Buddy's Browser, on this site.
+  Future<Takeover> startTakeover(String site);
+
+  /// Hands control back to Buddy. Returns null if the Takeover had already ended.
+  Future<FinishedTakeover?> finishTakeover();
 }
 
 class HttpBuddyBackend implements BuddyBackend {
   HttpBuddyBackend(Uri baseUrl, {http.Client? client})
-      : _messagesUrl = baseUrl.resolve('/conversation/messages'),
+      : _baseUrl = baseUrl,
+        _messagesUrl = baseUrl.resolve('/conversation/messages'),
+        _takeoverUrl = baseUrl.resolve('/takeover'),
         _client = client ?? http.Client();
 
+  final Uri _baseUrl;
   final Uri _messagesUrl;
+  final Uri _takeoverUrl;
   final http.Client _client;
 
   @override
@@ -91,6 +132,49 @@ class HttpBuddyBackend implements BuddyBackend {
       if (event != null) yield event;
     }
   }
+
+  @override
+  Future<Takeover?> currentTakeover() async {
+    final response = await _client.get(_takeoverUrl);
+    if (response.statusCode != 200) {
+      throw BackendException('Checking for a Takeover failed with ${response.statusCode}');
+    }
+    return _parseTakeover(_decode(response)['takeover'] as Map<String, dynamic>?);
+  }
+
+  @override
+  Future<Takeover> startTakeover(String site) async {
+    final response = await _client.post(
+      _takeoverUrl,
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({'site': site}),
+    );
+    if (response.statusCode != 200) {
+      throw BackendException('Starting a Takeover failed with ${response.statusCode}');
+    }
+    return _parseTakeover(_decode(response)['takeover'] as Map<String, dynamic>)!;
+  }
+
+  @override
+  Future<FinishedTakeover?> finishTakeover() async {
+    final response = await _client.post(_takeoverUrl.resolve('/takeover/done'));
+    if (response.statusCode == 409) return null;
+    if (response.statusCode != 200) {
+      throw BackendException('Finishing the Takeover failed with ${response.statusCode}');
+    }
+    return FinishedTakeover.fromJson(_decode(response));
+  }
+
+  Map<String, dynamic> _decode(http.Response response) =>
+      jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+
+  Takeover? _parseTakeover(Map<String, dynamic>? json) => json == null
+      ? null
+      : Takeover(
+          site: json['site'] as String,
+          siteName: json['siteName'] as String,
+          liveViewUrl: _baseUrl.resolve(json['liveViewPath'] as String),
+        );
 
   /// Returns null for event types added after this version of the app.
   ReplyEvent? _parseEvent(Map<String, dynamic> json) => switch (json['type']) {

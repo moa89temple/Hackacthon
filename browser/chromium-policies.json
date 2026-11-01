@@ -1,0 +1,14 @@
+{
+  "RestoreOnStartup": 1,
+  "PasswordManagerEnabled": false,
+  "SavingBrowserHistoryDisabled": true,
+  "SearchSuggestEnabled": false,
+  "AutofillAddressEnabled": false,
+  "AutofillCreditCardEnabled": false,
+  "BrowserSignin": 0,
+  "SyncDisabled": true,
+  "MetricsReportingEnabled": false,
+  "DefaultBrowserSettingEnabled": false,
+  "PromotionalTabsEnabled": false,
+  "TranslateEnabled": false
+}

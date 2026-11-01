@@ -1,0 +1,6 @@
+# Added on top of compose.yaml for the container checks, under its own project name, so they
+# use a separate profile and can never touch the Student's real logins.
+services:
+  browser:
+    volumes:
+      - ./test-pages:/test-pages:ro

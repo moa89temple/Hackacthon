@@ -1,0 +1,2 @@
+# These run inside the Linux container, so they keep Linux line endings on every checkout.
+* text=auto eol=lf

@@ -1,0 +1,32 @@
+name: buddys-browser
+
+services:
+  browser:
+    build: .
+    hostname: buddys-browser
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    # Reachable from this laptop only. The app never connects to these: it goes through the backend.
+    ports:
+      - "127.0.0.1:${BUDDY_BROWSER_CONTROL_PORT:-9222}:9222"
+      - "127.0.0.1:${BUDDY_BROWSER_LIVE_VIEW_PORT:-6080}:6080"
+    # A named volume holds the logins. No folder from this laptop is mounted.
+    volumes:
+      - profile:/profile
+    tmpfs:
+      - /tmp
+    read_only: true
+    environment:
+      HOME: /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      # Docker's default seccomp profile plus what Chromium's own sandbox needs, so --no-sandbox is never used.
+      - seccomp=chromium-seccomp.json
+    shm_size: 1g
+    mem_limit: 3g
+
+volumes:
+  profile:

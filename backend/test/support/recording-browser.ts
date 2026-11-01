@@ -1,0 +1,101 @@
+import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
+import type { BuddysBrowser, PageReading } from "../../src/buddys-browser.ts";
+
+export type RecordedAction =
+  | { type: "show"; url: string }
+  | { type: "read"; url: string }
+  | { type: "clear-screen" }
+  | { type: "forget-login"; hosts: string[] };
+
+export interface SavedPage {
+  title: string;
+  text: string;
+  accessibilitySnapshot: string;
+  /** Where the page ends up, for pages that redirect. Defaults to the page's own address. */
+  finalUrl?: string;
+}
+
+/**
+ * Serves saved pages and records every action. Its live view is a small server standing in
+ * for the container's.
+ */
+export class RecordingBrowser implements BuddysBrowser {
+  readonly actions: RecordedAction[] = [];
+  readonly savedPages = new Map<string, SavedPage>();
+  readonly liveView = { host: "127.0.0.1", port: 0 };
+  /** When set, the browser behaves as if the container were stopped. */
+  unreachable = false;
+  /** When set, reads wait on this before finishing. */
+  holdReads: Promise<void> | undefined;
+  /** When set, putting a page on the screen waits on this, and fails if it rejects. */
+  holdShows: Promise<void> | undefined;
+
+  #liveViewServer: Server | undefined;
+  readonly #liveViewSockets = new Set<Socket>();
+
+  async startLiveView(): Promise<void> {
+    this.#liveViewServer = createServer((socket) => {
+      this.#liveViewSockets.add(socket);
+      socket.on("close", () => this.#liveViewSockets.delete(socket));
+      socket.on("error", () => {});
+      socket.once("data", (first) => {
+        const request = first.toString();
+        if (request.includes("Upgrade: websocket")) {
+          // The live view itself: echoes everything, starting with the upgrade request.
+          socket.write(first);
+          socket.pipe(socket);
+        } else {
+          // The live view's own files: says which path and host it was asked for.
+          const path = request.split(" ")[1];
+          const body = `served ${path} for ${/^host: (.*)$/im.exec(request)?.[1]?.trim()}`;
+          socket.end(`HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: ${body.length}\r\nconnection: close\r\n\r\n${body}`);
+        }
+      });
+    });
+    await new Promise<void>((resolve) => this.#liveViewServer!.listen(0, "127.0.0.1", resolve));
+    this.liveView.port = (this.#liveViewServer.address() as AddressInfo).port;
+  }
+
+  async stopLiveView(): Promise<void> {
+    for (const socket of this.#liveViewSockets) socket.destroy();
+    await new Promise((resolve) => this.#liveViewServer?.close(resolve));
+  }
+
+  get liveViewConnections(): number {
+    return this.#liveViewSockets.size;
+  }
+
+  async show(url: string): Promise<void> {
+    this.#failIfUnreachable();
+    this.actions.push({ type: "show", url });
+    await this.holdShows;
+  }
+
+  async read(url: string): Promise<PageReading> {
+    this.#failIfUnreachable();
+    this.actions.push({ type: "read", url });
+    await this.holdReads;
+    const page = this.savedPages.get(url);
+    if (!page) throw new Error(`RecordingBrowser: no saved page for ${url}`);
+    return {
+      url: page.finalUrl ?? url,
+      title: page.title,
+      text: page.text,
+      accessibilitySnapshot: page.accessibilitySnapshot,
+    };
+  }
+
+  async clearScreen(): Promise<void> {
+    this.#failIfUnreachable();
+    this.actions.push({ type: "clear-screen" });
+  }
+
+  async forgetLogin(hosts: string[]): Promise<void> {
+    this.#failIfUnreachable();
+    this.actions.push({ type: "forget-login", hosts });
+  }
+
+  #failIfUnreachable(): void {
+    if (this.unreachable) throw new Error("RecordingBrowser: the container is stopped");
+  }
+}

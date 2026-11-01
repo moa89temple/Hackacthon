@@ -1,10 +1,7 @@
 import type { Claude, ClaudeMessage, ClaudeRequest } from "./claude.ts";
 import type { Clock } from "./clock.ts";
 import { BUDDY_SYSTEM_PROMPT } from "./system-prompt.ts";
-import type { Store, StoredMessage } from "./store.ts";
-
-/** This version has one Student, but all data is keyed by Student so more can come later. */
-const THE_STUDENT = "the-student";
+import { THE_STUDENT, type Store, type StoredMessage } from "./store.ts";
 
 const REFUSAL_NOTE =
   "I can't help with that one. Try asking another way, or tell me what you're trying to get done and I'll point you to someone at Temple who can help.";

@@ -12,6 +12,18 @@ class FakeBackend implements BuddyBackend {
   final List<String> sent = [];
   final StreamController<ReplyEvent> reply = StreamController<ReplyEvent>();
 
+  Takeover? takeoverUnderWay;
+  Takeover? takeoverToStart;
+  Object? startTakeoverError;
+  final List<String> startedSites = [];
+  FinishedTakeover? finished;
+  Object? finishError;
+  int finishCount = 0;
+  bool holdFinish = false;
+  final Completer<void> _finishGate = Completer<void>();
+
+  void releaseFinish() => _finishGate.complete();
+
   @override
   Future<List<ChatMessage>> loadHistory() async {
     if (historyError case final error?) throw error;
@@ -22,5 +34,24 @@ class FakeBackend implements BuddyBackend {
   Stream<ReplyEvent> send(String text) {
     sent.add(text);
     return reply.stream;
+  }
+
+  @override
+  Future<Takeover?> currentTakeover() async => takeoverUnderWay;
+
+  @override
+  Future<Takeover> startTakeover(String site) async {
+    startedSites.add(site);
+    if (startTakeoverError case final error?) throw error;
+    return takeoverToStart!;
+  }
+
+  @override
+  Future<FinishedTakeover?> finishTakeover() async {
+    finishCount++;
+    if (holdFinish) await _finishGate.future;
+    if (finishError case final error?) throw error;
+    takeoverUnderWay = null;
+    return finished;
   }
 }

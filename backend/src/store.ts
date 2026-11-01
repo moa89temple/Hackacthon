@@ -2,6 +2,9 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+/** This version has one Student, but all data is keyed by Student so more can come later. */
+export const THE_STUDENT = "the-student";
+
 export interface NewMessage {
   role: "user" | "assistant" | "system";
   /** Exactly what Claude was sent or returned, kept as JSON. */
@@ -18,10 +21,20 @@ export interface StoredMessage {
   createdAt: Date;
 }
 
+/** A Takeover under way. Saved so that Buddy stays locked out even if the backend restarts. */
+export interface StoredTakeover {
+  site: string;
+  liveViewToken: string;
+  startedAt: Date;
+}
+
 export interface Store {
   /** Appends the messages together: either all of them are saved or none are. Messages never change once saved. */
   appendMessages(studentId: string, messages: NewMessage[]): StoredMessage[];
   listMessages(studentId: string): StoredMessage[];
+  currentTakeover(studentId: string): StoredTakeover | null;
+  beginTakeover(studentId: string, takeover: StoredTakeover): void;
+  endTakeover(studentId: string): void;
   close(): void;
 }
 
@@ -36,6 +49,12 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX messages_by_student ON messages (student_id, id);`,
+  `CREATE TABLE takeovers (
+     student_id TEXT PRIMARY KEY,
+     site TEXT NOT NULL,
+     live_view_token TEXT NOT NULL,
+     started_at TEXT NOT NULL
+   );`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -51,6 +70,13 @@ export function openStore(databasePath: string): Store {
   const select = db.prepare(
     `SELECT id, role, content, stop_reason, created_at FROM messages WHERE student_id = ? ORDER BY id`,
   );
+  const selectTakeover = db.prepare(
+    `SELECT site, live_view_token, started_at FROM takeovers WHERE student_id = ?`,
+  );
+  const insertTakeover = db.prepare(
+    `INSERT INTO takeovers (student_id, site, live_view_token, started_at) VALUES (?, ?, ?, ?)`,
+  );
+  const deleteTakeover = db.prepare(`DELETE FROM takeovers WHERE student_id = ?`);
 
   return {
     appendMessages(studentId, messages) {
@@ -77,6 +103,20 @@ export function openStore(databasePath: string): Store {
         stopReason: row.stop_reason,
         createdAt: new Date(row.created_at),
       }));
+    },
+
+    currentTakeover(studentId) {
+      const row = selectTakeover.get(studentId) as any;
+      if (!row) return null;
+      return { site: row.site, liveViewToken: row.live_view_token, startedAt: new Date(row.started_at) };
+    },
+
+    beginTakeover(studentId, takeover) {
+      insertTakeover.run(studentId, takeover.site, takeover.liveViewToken, takeover.startedAt.toISOString());
+    },
+
+    endTakeover(studentId) {
+      deleteTakeover.run(studentId);
     },
 
     close() {

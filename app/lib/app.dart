@@ -4,14 +4,17 @@ import 'backend/buddy_backend.dart';
 import 'chat/buddy_tab.dart';
 import 'chat/chat_controller.dart';
 import 'tabs/simple_tabs.dart';
+import 'tabs/you_tab.dart';
+import 'takeover/live_view.dart';
 import 'widgets/buddy_avatar.dart';
 
 const templeCherry = Color(0xFF9D2235);
 
 class BuddyApp extends StatefulWidget {
-  const BuddyApp({super.key, required this.backend});
+  const BuddyApp({super.key, required this.backend, this.liveViewBuilder = webLiveView});
 
   final BuddyBackend backend;
+  final LiveViewBuilder liveViewBuilder;
 
   @override
   State<BuddyApp> createState() => _BuddyAppState();
@@ -36,15 +39,17 @@ class _BuddyAppState extends State<BuddyApp> {
           onPrimary: Colors.white,
         ),
       ),
-      home: _Tabs(chat: _chat),
+      home: _Tabs(chat: _chat, backend: widget.backend, liveViewBuilder: widget.liveViewBuilder),
     );
   }
 }
 
 class _Tabs extends StatefulWidget {
-  const _Tabs({required this.chat});
+  const _Tabs({required this.chat, required this.backend, required this.liveViewBuilder});
 
   final ChatController chat;
+  final BuddyBackend backend;
+  final LiveViewBuilder liveViewBuilder;
 
   @override
   State<_Tabs> createState() => _TabsState();
@@ -69,7 +74,7 @@ class _TabsState extends State<_Tabs> {
           BuddyTab(chat: widget.chat),
           const TodayTab(),
           const RoadmapTab(),
-          const YouTab(),
+          YouTab(backend: widget.backend, liveViewBuilder: widget.liveViewBuilder),
         ],
       ),
       bottomNavigationBar: NavigationBar(
