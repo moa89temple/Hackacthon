@@ -1,0 +1,125 @@
+import 'dart:async';
+
+import 'package:buddy/app.dart';
+import 'package:buddy/backend/buddy_backend.dart';
+import 'package:buddy/device/app_lock.dart';
+import 'package:buddy/device/device_store.dart';
+import 'package:buddy/device/pairing_details.dart';
+import 'package:buddy/device/qr_scanner.dart';
+import 'package:buddy/takeover/live_view.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'fake_backend.dart';
+
+final canvasTakeover = Takeover(
+  site: 'canvas',
+  siteName: 'Canvas',
+  liveViewUrl: Uri.parse('http://backend.test/takeover/live/token/takeover.html'),
+);
+
+final testDevice = PairedDevice(address: Uri.parse('https://laptop.test'), key: 'test-device-key');
+
+class FakeDeviceStore implements DeviceStore {
+  FakeDeviceStore([this.device]);
+
+  PairedDevice? device;
+
+  @override
+  Future<PairedDevice?> read() async => device;
+
+  @override
+  Future<void> save(PairedDevice device) async => this.device = device;
+
+  @override
+  Future<void> forget() async => device = null;
+}
+
+/// Says yes unless a test queues other answers, or holds the prompt open with [hold].
+class FakeAppLock implements AppLock {
+  FakeAppLock([List<UnlockResult>? answers]) : answers = answers ?? [];
+
+  final List<UnlockResult> answers;
+  int prompts = 0;
+  Completer<UnlockResult>? hold;
+
+  @override
+  Future<UnlockResult> unlock() async {
+    prompts++;
+    if (hold case final hold?) return hold.future;
+    return answers.isEmpty ? UnlockResult.unlocked : answers.removeAt(0);
+  }
+}
+
+class FakeBackendAccess implements BackendAccess {
+  FakeBackendAccess(this.backend);
+
+  final BuddyBackend backend;
+  final List<PairingDetails> pairings = [];
+  Object? pairError;
+  void Function()? keyRefused;
+
+  @override
+  Future<PairedDevice> pair(PairingDetails details) async {
+    pairings.add(details);
+    if (pairError case final error?) throw error;
+    return PairedDevice(address: details.address, key: 'new-device-key');
+  }
+
+  @override
+  BuddyBackend open(PairedDevice device, {required void Function() onKeyRefused}) {
+    keyRefused = onKeyRefused;
+    return backend;
+  }
+}
+
+/// A real WebView can't run in a widget test, so this shows which address it would open.
+Widget stubLiveView(Uri url, Map<String, String> headers) => Text('live view of $url');
+
+Widget noScanner(BuildContext context, ValueChanged<String> onScanned) => const Text('camera');
+
+BuddyApp testApp({
+  required DeviceStore store,
+  required AppLock lock,
+  required BackendAccess access,
+  LiveViewBuilder liveViewBuilder = stubLiveView,
+  QrScannerBuilder scannerBuilder = noScanner,
+}) =>
+    BuddyApp(
+      deviceStore: store,
+      appLock: lock,
+      access: access,
+      liveViewBuilder: liveViewBuilder,
+      qrScannerBuilder: scannerBuilder,
+    );
+
+/// Enough frames for the app to read the device, ask for the unlock and load its first screen.
+Future<void> settleApp(WidgetTester tester) async {
+  for (var frame = 0; frame < 5; frame++) {
+    await tester.pump();
+  }
+}
+
+/// The app on a phone that's already paired, opened with the fingerprint.
+Future<void> openUnlockedApp(WidgetTester tester, FakeBackend backend) async {
+  await tester.pumpWidget(
+    testApp(store: FakeDeviceStore(testDevice), lock: FakeAppLock(), access: FakeBackendAccess(backend)),
+  );
+  await settleApp(tester);
+}
+
+/// Flutter draws no frames once the app is hidden, so a frame only comes after inactive.
+Future<void> goToBackground(WidgetTester tester) async {
+  tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+  await tester.pump();
+  tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+  tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+  await settleApp(tester);
+}
+
+Future<void> comeBack(WidgetTester tester) async {
+  for (final state in [AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  await settleApp(tester);
+}

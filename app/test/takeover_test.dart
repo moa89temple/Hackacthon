@@ -1,22 +1,12 @@
-import 'package:buddy/app.dart';
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_backend.dart';
-
-final canvasTakeover = Takeover(
-  site: 'canvas',
-  siteName: 'Canvas',
-  liveViewUrl: Uri.parse('http://backend.test/takeover/live/token/takeover.html'),
-);
-
-/// A real WebView can't run in a widget test, so this shows which address it would open.
-Widget stubLiveView(Uri url) => Text('live view of $url');
+import 'support/test_app.dart';
 
 Future<void> openYouTab(WidgetTester tester, FakeBackend backend) async {
-  await tester.pumpWidget(BuddyApp(backend: backend, liveViewBuilder: stubLiveView));
-  await tester.pump();
+  await openUnlockedApp(tester, backend);
   await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
   await tester.pump();
 }
@@ -28,6 +18,35 @@ Future<void> openLiveView(WidgetTester tester) async {
 
 void main() {
   group('starting a Takeover', () {
+    testWidgets('opens the live view with the headers the backend client gave', (tester) async {
+      final seen = <Map<String, String>>[];
+      final backend = FakeBackend()
+        ..takeoverToStart = Takeover(
+          site: 'canvas',
+          siteName: 'Canvas',
+          liveViewUrl: canvasTakeover.liveViewUrl,
+          liveViewHeaders: const {'authorization': 'Bearer the-key'},
+        );
+      await tester.pumpWidget(
+        testApp(
+          store: FakeDeviceStore(testDevice),
+          lock: FakeAppLock(),
+          access: FakeBackendAccess(backend),
+          liveViewBuilder: (url, headers) {
+            seen.add(headers);
+            return Text('live view of $url');
+          },
+        ),
+      );
+      await settleApp(tester);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
+      await tester.pump();
+
+      await openLiveView(tester);
+
+      expect(seen.last, {'authorization': 'Bearer the-key'});
+    });
+
     testWidgets('opens a full-screen live view through the address the backend gave', (tester) async {
       final backend = FakeBackend()..takeoverToStart = canvasTakeover;
       await openYouTab(tester, backend);

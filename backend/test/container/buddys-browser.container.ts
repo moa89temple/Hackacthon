@@ -76,6 +76,7 @@ const browser = containerBrowser({
 
 let directory: string;
 let backend: RunningBackend;
+let deviceHeaders: Record<string, string>;
 
 async function bootBackend(): Promise<void> {
   backend = await startBackend({
@@ -97,10 +98,10 @@ async function bootBackend(): Promise<void> {
 const startTakeover = (site: string) =>
   fetch(`${backend.url}/takeover`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...deviceHeaders, "content-type": "application/json" },
     body: JSON.stringify({ site }),
   });
-const finishTakeover = () => fetch(`${backend.url}/takeover/done`, { method: "POST" });
+const finishTakeover = () => fetch(`${backend.url}/takeover/done`, { method: "POST", headers: deviceHeaders });
 
 /** Logs the browser in to a site through a Takeover. The test page's /login stands in for the Student. */
 async function logIn(site: typeof SITE): Promise<void> {
@@ -116,6 +117,13 @@ beforeAll(async () => {
   await untilTestPagesAnswer();
   directory = mkdtempSync(join(tmpdir(), "buddy-container-"));
   await bootBackend();
+  const paired = await fetch(`${backend.url}/devices/pair`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: backend.devices.newPairingCode().code }),
+  });
+  const { deviceKey } = (await paired.json()) as { deviceKey: string };
+  deviceHeaders = { authorization: `Bearer ${deviceKey}` };
 });
 
 afterAll(async () => {
@@ -210,10 +218,11 @@ describe("during a Takeover", () => {
     const { takeover } = (await (await startTakeover("site")).json()) as { takeover: { liveViewPath: string } };
     const base = takeover.liveViewPath.replace(/takeover\.html$/, "");
 
-    const page = await fetch(`${backend.url}${takeover.liveViewPath}`);
+    const page = await fetch(`${backend.url}${takeover.liveViewPath}`, { headers: deviceHeaders });
     expect(page.status).toBe(200);
     expect(await page.text()).toContain("core/rfb.js");
-    expect((await fetch(`${backend.url}${base}core/rfb.js`)).status).toBe(200);
+    const cookie = page.headers.get("set-cookie")!.split(";")[0]!;
+    expect((await fetch(`${backend.url}${base}core/rfb.js`, { headers: { cookie } })).status).toBe(200);
 
     const { hostname, port } = new URL(backend.url);
     const socket = connect(Number(port), hostname);
@@ -223,6 +232,7 @@ describe("during a Takeover", () => {
     const closed = new Promise((resolve) => socket.on("close", resolve));
     socket.write(
       `GET ${base}websockify HTTP/1.1\r\nHost: ${hostname}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+        `Cookie: ${cookie}\r\n` +
         "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: binary\r\n\r\n",
     );
     for (let attempt = 0; attempt < 100 && !received.includes("RFB 00"); attempt++) {
@@ -269,7 +279,7 @@ describe("logins", () => {
     await logIn(SITE);
     await logIn(OTHER_SITE);
 
-    const response = await fetch(`${backend.url}/sites/site/login`, { method: "DELETE" });
+    const response = await fetch(`${backend.url}/sites/site/login`, { method: "DELETE", headers: deviceHeaders });
 
     expect(response.status).toBe(204);
     expect((await browser.read(SITE.homeUrl)).title).toBe("Please log in");

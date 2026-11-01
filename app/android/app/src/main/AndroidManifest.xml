@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <!-- Backups stay off so that the device key never leaves the phone. -->
     <application
+        android:allowBackup="false"
         android:label="Buddy"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

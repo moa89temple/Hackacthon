@@ -1,20 +1,15 @@
-import 'package:buddy/app.dart';
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_backend.dart';
+import 'support/test_app.dart';
 
 ChatMessage student(String text) => ChatMessage(isFromBuddy: false, text: text);
 ChatMessage buddy(String text) => ChatMessage(isFromBuddy: true, text: text);
 
 VoidCallback? sendButtonAction(WidgetTester tester) =>
     tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send)).onPressed;
-
-Future<void> openApp(WidgetTester tester, FakeBackend backend) async {
-  await tester.pumpWidget(BuddyApp(backend: backend));
-  await tester.pump();
-}
 
 Future<void> sendMessage(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField), text);
@@ -26,7 +21,7 @@ Future<void> sendMessage(WidgetTester tester, String text) async {
 void main() {
   group('the four tabs', () {
     testWidgets('are Buddy, Today, Roadmap and You', (tester) async {
-      await openApp(tester, FakeBackend());
+      await openUnlockedApp(tester, FakeBackend());
 
       final bar = find.byType(NavigationBar);
       for (final label in ['Buddy', 'Today', 'Roadmap', 'You']) {
@@ -36,14 +31,14 @@ void main() {
     });
 
     testWidgets('use Temple cherry red as the accent color', (tester) async {
-      await openApp(tester, FakeBackend());
+      await openUnlockedApp(tester, FakeBackend());
 
       final context = tester.element(find.byType(NavigationBar));
       expect(Theme.of(context).colorScheme.primary, const Color(0xFF9D2235));
     });
 
     testWidgets('the You tab carries the prototype note', (tester) async {
-      await openApp(tester, FakeBackend());
+      await openUnlockedApp(tester, FakeBackend());
 
       await tester.tap(find.text('You'));
       await tester.pump();
@@ -56,7 +51,7 @@ void main() {
 
     testWidgets('keep a reply streaming while the Student looks at another tab', (tester) async {
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'Hello');
       backend.reply.add(const ReplyText('Hi '));
       await tester.pump();
@@ -74,7 +69,7 @@ void main() {
 
   group('the conversation', () {
     testWidgets('is there when the app opens', (tester) async {
-      await openApp(
+      await openUnlockedApp(
         tester,
         FakeBackend(history: [student('Hello'), buddy('Hi, I am Buddy.')]),
       );
@@ -85,7 +80,7 @@ void main() {
 
     testWidgets('offers a retry when the history cannot be loaded', (tester) async {
       final backend = FakeBackend()..historyError = const BackendException('offline');
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
 
       expect(find.textContaining("can't reach Buddy"), findsOneWidget);
 
@@ -102,7 +97,7 @@ void main() {
 
     testWidgets('sends the message once and clears the box', (tester) async {
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
 
       await sendMessage(tester, 'What is a hold?');
 
@@ -114,7 +109,7 @@ void main() {
 
     testWidgets('does not send an empty message', (tester) async {
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
 
       await tester.enterText(find.byType(TextField), '   ');
       await tester.pump();
@@ -125,7 +120,7 @@ void main() {
 
     testWidgets('shows the reply as it streams in, then the final message', (tester) async {
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'What is a hold?');
 
       backend.reply.add(const ReplyText('A hold '));
@@ -144,7 +139,7 @@ void main() {
 
     testWidgets('holds further messages until the reply has finished', (tester) async {
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'First');
 
       await tester.enterText(find.byType(TextField), 'Second');
@@ -159,7 +154,7 @@ void main() {
 
     testWidgets('replaces a partial reply with the final one when Buddy declines', (tester) async {
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'Hello');
 
       backend.reply.add(const ReplyText('Partial wor'));
@@ -174,7 +169,7 @@ void main() {
 
     testWidgets('shows the error and drops the partial reply when the turn fails', (tester) async {
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'Hello');
 
       backend.reply.add(const ReplyText('Half a rep'));
@@ -190,7 +185,7 @@ void main() {
 
     testWidgets('shows an error when the connection drops before the reply ends', (tester) async {
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'Hello');
 
       backend.reply.add(const ReplyText('Half a rep'));
@@ -211,7 +206,7 @@ void main() {
   group('accessibility', () {
     testWidgets('screen readers hear who said what', (tester) async {
       final handle = tester.ensureSemantics();
-      await openApp(
+      await openUnlockedApp(
         tester,
         FakeBackend(history: [student('Hello'), buddy('Hi, I am Buddy.')]),
       );
@@ -224,7 +219,7 @@ void main() {
     testWidgets('a screen reader hears the finished reply, not every chunk', (tester) async {
       final handle = tester.ensureSemantics();
       final backend = FakeBackend();
-      await openApp(tester, backend);
+      await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'Hello');
 
       backend.reply.add(const ReplyText('Partly writ'));
@@ -243,7 +238,7 @@ void main() {
 
     testWidgets('earlier messages are not announced when the app opens', (tester) async {
       final handle = tester.ensureSemantics();
-      await openApp(tester, FakeBackend(history: [buddy('From before.')]));
+      await openUnlockedApp(tester, FakeBackend(history: [buddy('From before.')]));
 
       final message = find.bySemanticsLabel('Buddy said: From before.');
       expect(tester.getSemantics(message).flagsCollection.isLiveRegion, isFalse);
@@ -252,7 +247,7 @@ void main() {
 
     testWidgets('every tab meets the tap target, label and contrast guidelines', (tester) async {
       final handle = tester.ensureSemantics();
-      await openApp(tester, FakeBackend(history: [student('Hello'), buddy('Hi there.')]));
+      await openUnlockedApp(tester, FakeBackend(history: [student('Hello'), buddy('Hi there.')]));
 
       for (final label in ['Buddy', 'Today', 'Roadmap', 'You']) {
         await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)));
@@ -272,7 +267,7 @@ void main() {
       addTearDown(tester.view.reset);
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-      await openApp(
+      await openUnlockedApp(
         tester,
         FakeBackend(history: [student('Hello'), buddy('A reply long enough to wrap onto several lines of text.')]),
       );

@@ -34,7 +34,7 @@ function openSocket(path: string): { socket: Socket; received: () => string; clo
   socket.on("data", (bytes) => (received += bytes.toString()));
   socket.on("error", () => {});
   socket.write(
-    `GET ${path} HTTP/1.1\r\nHost: ${hostname}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Test: from-app\r\n\r\n`,
+    `GET ${path} HTTP/1.1\r\nHost: ${hostname}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nAuthorization: Bearer ${backend.deviceKey}\r\nSec-WebSocket-Protocol: from-app\r\n\r\n`,
   );
   return {
     socket,
@@ -58,7 +58,7 @@ describe("the live view socket", () => {
     const view = openSocket(path);
 
     // The stand-in echoes everything, so the upgrade request comes straight back.
-    await eventually(() => view.received().includes("X-Test: from-app"));
+    await eventually(() => view.received().includes("Sec-WebSocket-Protocol: from-app"));
     expect(view.received()).toContain("GET /websockify HTTP/1.1");
     view.socket.write("typed by the Student");
     await eventually(() => view.received().includes("typed by the Student"));
@@ -121,12 +121,12 @@ describe("the live view socket", () => {
   it("keeps one view at a time: a reconnect replaces the old connection", async () => {
     const path = await startTakeover();
     const first = openSocket(path);
-    await eventually(() => first.received().includes("X-Test"));
+    await eventually(() => first.received().includes("from-app"));
 
     const second = openSocket(path);
 
     await first.closed;
-    await eventually(() => second.received().includes("X-Test"));
+    await eventually(() => second.received().includes("from-app"));
     await eventually(() => backend.browser.liveViewConnections === 1);
   });
 
@@ -136,7 +136,7 @@ describe("the live view socket", () => {
     await backend.restart();
 
     const view = openSocket(path);
-    await eventually(() => view.received().includes("X-Test"));
+    await eventually(() => view.received().includes("from-app"));
   });
 });
 
@@ -148,14 +148,14 @@ describe("before the screen is the Student's", () => {
     while (!(await backend.currentTakeover())) await new Promise((resolve) => setTimeout(resolve, 5));
     const { liveViewPath } = await backend.currentTakeover();
 
-    expect((await fetch(`${backend.url}${liveViewPath}`)).status).toBe(404);
+    expect((await fetch(`${backend.url}${liveViewPath}`, { headers: backend.deviceHeaders })).status).toBe(404);
     const early = openSocket(liveViewPath.replace(/takeover\.html$/, "websockify"));
     await early.closed;
     expect(early.received()).toContain("404");
 
     finishShow();
     await starting;
-    expect((await fetch(`${backend.url}${liveViewPath}`)).status).toBe(200);
+    expect((await fetch(`${backend.url}${liveViewPath}`, { headers: backend.deviceHeaders })).status).toBe(200);
   });
 });
 
@@ -164,7 +164,7 @@ describe("requests from anywhere but the app", () => {
   function statusWithHost(host: string, path: string): Promise<number> {
     const { hostname, port } = new URL(backend.url);
     return new Promise((resolve, reject) => {
-      const outgoing = request({ hostname, port, path, headers: { host } }, (response) => {
+      const outgoing = request({ hostname, port, path, headers: { ...backend.deviceHeaders, host } }, (response) => {
         response.resume();
         resolve(response.statusCode!);
       });
@@ -204,7 +204,7 @@ describe("the live view page", () => {
   it("comes from the container, through the backend, during a Takeover", async () => {
     const base = (await startTakeover()).replace(/websockify$/, "");
 
-    const response = await fetch(`${backend.url}${base}core/rfb.js`);
+    const response = await fetch(`${backend.url}${base}core/rfb.js`, { headers: backend.deviceHeaders });
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -214,7 +214,7 @@ describe("the live view page", () => {
   it("can't be pointed at another host", async () => {
     const base = (await startTakeover()).replace(/websockify$/, "");
 
-    const response = await fetch(`${backend.url}${base}//localhost:1/secret`);
+    const response = await fetch(`${backend.url}${base}//localhost:1/secret`, { headers: backend.deviceHeaders });
 
     // Whatever the path says, the request goes to the container and nowhere else.
     expect(response.status).toBe(200);
@@ -227,7 +227,7 @@ describe("the live view page", () => {
     const token = page.split("/")[3];
     await backend.finishTakeover();
 
-    const response = await fetch(`${backend.url}/takeover/live/${token}/takeover.html`);
+    const response = await fetch(`${backend.url}/takeover/live/${token}/takeover.html`, { headers: backend.deviceHeaders });
 
     expect(response.status).toBe(404);
   });

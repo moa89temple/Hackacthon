@@ -95,7 +95,7 @@ class _TakeoverScreenState extends State<TakeoverScreen> {
                 container: true,
                 label: "Live view of Buddy's Browser, showing ${widget.takeover.siteName}. "
                     "It's a picture of the browser, so a screen reader can't read what's on it.",
-                child: widget.liveViewBuilder(widget.takeover.liveViewUrl),
+                child: widget.liveViewBuilder(widget.takeover.liveViewUrl, widget.takeover.liveViewHeaders),
               ),
             ),
           ],

@@ -8,13 +8,16 @@ export const settings = {
   /** The model for conversations. Change it here and nowhere else. */
   chatModel: "claude-sonnet-5-5",
   databasePath: fileURLToPath(new URL("../data/buddy.sqlite", import.meta.url)),
-  /** Only this laptop can connect. The Android emulator reaches it as 10.0.2.2. */
+  /**
+   * Only this laptop can connect. The Android emulator reaches it as 10.0.2.2, and a real phone
+   * reaches it through Tailscale Serve, which runs on this laptop.
+   */
   host: "127.0.0.1",
   port: 8787,
   /**
    * The names the backend answers to. Buddy's Browser can reach this laptop through Docker, so
-   * this is what stops a page it opens from getting answers from the backend. Add the Tailscale
-   * name here when the phone moves to Tailscale.
+   * this is what stops a page it opens from getting answers from the backend.
+   * allowedHostsWithTailscale() adds this laptop's Tailscale name to these.
    */
   allowedHosts: ["127.0.0.1", "localhost", "10.0.2.2"],
   /** Where this laptop reaches Buddy's Browser. See browser/compose.yaml. */
@@ -35,9 +38,26 @@ export const settings = {
 };
 
 /** Reads the local secrets file that git ignores. */
+function readLocalFile(): NodeJS.Dict<string> {
+  return existsSync(secretsPath) ? parseEnv(readFileSync(secretsPath, "utf8")) : {};
+}
+
+/** Where a real phone reaches this backend, from TAILSCALE_ADDRESS in the local file. See the README. */
+export function readTailscaleAddress(address = readLocalFile().TAILSCALE_ADDRESS): string | undefined {
+  const trimmed = address?.trim();
+  if (!trimmed) return undefined;
+  if (URL.parse(trimmed)?.protocol !== "https:") {
+    throw new Error(`TAILSCALE_ADDRESS in ${secretsPath} must start with https://`);
+  }
+  return new URL(trimmed).origin;
+}
+
+export function allowedHostsWithTailscale(address = readTailscaleAddress()): string[] {
+  return address ? [...settings.allowedHosts, new URL(address).hostname] : settings.allowedHosts;
+}
+
 export function readSecrets(): { anthropicApiKey: string } {
-  const secrets = existsSync(secretsPath) ? parseEnv(readFileSync(secretsPath, "utf8")) : {};
-  const anthropicApiKey = secrets.ANTHROPIC_API_KEY?.trim();
+  const anthropicApiKey = readLocalFile().ANTHROPIC_API_KEY?.trim();
   if (!anthropicApiKey) {
     throw new Error(`Paste your Anthropic API key after ANTHROPIC_API_KEY= in ${secretsPath}`);
   }

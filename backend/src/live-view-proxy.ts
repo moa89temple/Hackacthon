@@ -1,8 +1,23 @@
 import type { FastifyInstance } from "fastify";
 import { connect, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
+import type { Devices } from "./devices.ts";
 
 const SOCKET_PATH = /^\/takeover\/live\/([^/]+)\/websockify$/;
+/**
+ * What a WebSocket handshake needs. Nothing else goes to the container, so that it never sees the
+ * phone's credentials, or what Tailscale says about who's connecting.
+ */
+const HANDSHAKE_HEADERS = new Set([
+  "host",
+  "origin",
+  "upgrade",
+  "connection",
+  "sec-websocket-key",
+  "sec-websocket-version",
+  "sec-websocket-protocol",
+  "sec-websocket-extensions",
+]);
 
 export interface LiveViewProxyDeps {
   /** Where the container's live view listens. */
@@ -11,6 +26,7 @@ export interface LiveViewProxyDeps {
   isOpen: (token: string) => boolean;
   /** Upgraded connections skip the backend's request hooks, so this checks them here. */
   isAllowedHost: (host: string | undefined) => boolean;
+  devices: Pick<Devices, "allows" | "liveViewCookie">;
 }
 
 export interface LiveViewProxy {
@@ -24,7 +40,7 @@ export interface LiveViewProxy {
  * Its bytes hold everything the Student types, so they're passed along and never looked at,
  * logged or kept.
  */
-export function createLiveViewProxy({ target, isOpen, isAllowedHost }: LiveViewProxyDeps): LiveViewProxy {
+export function createLiveViewProxy({ target, isOpen, isAllowedHost, devices }: LiveViewProxyDeps): LiveViewProxy {
   const connections = new Set<Duplex>();
 
   function closeAll(): void {
@@ -53,6 +69,8 @@ export function createLiveViewProxy({ target, isOpen, isAllowedHost }: LiveViewP
           address.pathname = request.params["*"];
           const upstream = await fetch(address).catch(() => null);
           if (!upstream?.ok) return reply.code(502).send();
+          const cookie = devices.liveViewCookie(request.headers, request.params.token);
+          if (cookie) reply.header("set-cookie", cookie);
           return reply
             .code(200)
             .header("content-type", upstream.headers.get("content-type") ?? "application/octet-stream")
@@ -67,7 +85,13 @@ export function createLiveViewProxy({ target, isOpen, isAllowedHost }: LiveViewP
           socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
           return;
         }
-        const token = SOCKET_PATH.exec(new URL(request.url ?? "", "http://backend").pathname)?.[1];
+        // This runs outside Fastify, so anything thrown here would stop the whole backend.
+        const path = URL.parse(request.url ?? "", "http://backend")?.pathname;
+        if (path === undefined || !devices.allows(request.headers, path)) {
+          socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+          return;
+        }
+        const token = SOCKET_PATH.exec(path)?.[1];
         if (!token || !isOpen(token)) {
           socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
           return;
@@ -96,7 +120,8 @@ export function createLiveViewProxy({ target, isOpen, isAllowedHost }: LiveViewP
 function passOnHeaders(rawHeaders: string[]): string {
   let headers = "";
   for (let index = 0; index < rawHeaders.length; index += 2) {
-    headers += `${rawHeaders[index]}: ${rawHeaders[index + 1]}\r\n`;
+    const name = rawHeaders[index]!;
+    if (HANDSHAKE_HEADERS.has(name.toLowerCase())) headers += `${name}: ${rawHeaders[index + 1]}\r\n`;
   }
   return headers;
 }

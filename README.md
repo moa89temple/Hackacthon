@@ -22,14 +22,59 @@ You need Node 24, Flutter, Docker Desktop and an Android emulator.
    npm start
    ```
 
-4. Start an emulator, then run the app. It reaches the backend at `10.0.2.2:8787`.
+4. Start an emulator, then run the app.
 
    ```
    cd app
    flutter run
    ```
 
+5. Pair the app, as described next.
+
 The conversation is saved in `backend/data/buddy.sqlite`.
+
+## Pair your phone
+
+Only a paired phone can talk to the backend. To get a pairing code, run this on the laptop. The backend can be running or not:
+
+```
+cd backend
+npm run pair
+```
+
+It shows a QR code, the backend's address and a code. The code works once and expires after five minutes. Five wrong tries or a newer code cancel it, so run the command again if that happens.
+
+Pairing gives the phone its own device key, which it keeps in the phone's secure storage. The backend keeps only a hash of it, and refuses every request without a valid key, the live view included.
+
+Buddy locks whenever it goes into the background, and opens with your fingerprint, face or the phone's screen lock. It stays locked on a phone with none of these.
+
+### On the emulator
+
+1. Set a screen lock on the emulator, in **Settings > Security & privacy > Device unlock**.
+2. Run `npm run pair`.
+3. In the app, type the code and tap **Pair**. Leave the address as it is.
+
+### On your real Android phone
+
+The phone reaches the backend over Tailscale. Tailscale Serve gives the laptop an HTTPS address that only your own devices can open, and passes requests to the backend, which still listens on this laptop only.
+
+1. Install [Tailscale](https://tailscale.com/download) on the laptop and the phone, and sign in to the same account on both.
+2. On the laptop, run this. The first time, it gives you a link to turn on HTTPS for your account. It then prints your address, such as `https://laptop.tail1234.ts.net`.
+
+   ```
+   tailscale serve --bg 8787
+   ```
+
+3. Add the address to `.env.local`, then restart the backend:
+
+   ```
+   TAILSCALE_ADDRESS=https://laptop.tail1234.ts.net
+   ```
+
+4. Connect the phone with USB debugging on, then install the app with `flutter run --release` in `app`. A release build won't use anything but HTTPS.
+5. Run `npm run pair`, then tap **Scan the QR code** in the app. If the camera doesn't work, type the address and the code instead.
+
+If you lose the phone, remove it from your [Tailscale machines](https://login.tailscale.com/admin/machines) so that it can't reach the backend.
 
 ## Log in to a site
 
@@ -37,10 +82,11 @@ On the You tab, tap **Log in to Canvas**. The live view opens on the site's sign
 
 Until you tap Done, Buddy can't read the browser and nothing is recorded. If you leave the live view without tapping Done, Buddy stays locked out until you go back and tap it.
 
-Logins are kept in the `profile` Docker volume, so they survive restarts of the backend and the container. `docker compose down` keeps them. `docker compose down --volumes` deletes them all. To forget one site's login, with the backend running:
+Logins are kept in the `profile` Docker volume, so they survive restarts of the backend and the container. `docker compose down` keeps them. `docker compose down --volumes` deletes them all. To forget one site's login:
 
 ```
-curl -X DELETE http://127.0.0.1:8787/sites/canvas/login
+cd backend
+npm run forget-login canvas
 ```
 
 Forgetting Canvas also forgets Temple's single sign-on and Duo, because otherwise the login would quietly come back. Other Temple sites may need you to log in again sooner.
@@ -58,14 +104,16 @@ npm run check-login
 - Chromium's own sandbox stays on. `browser/chromium-seccomp.json` is Docker's default profile plus the few calls that sandbox needs.
 - The password manager, autofill and browsing history are off, so the browser never saves a password or a list of the pages it visited.
 - The app only ever talks to the backend. The backend passes the live view along and never looks at it or logs it.
-- The backend only answers to `127.0.0.1`, `localhost` and `10.0.2.2`, so a page in Buddy's Browser can't get answers from it through Docker's address for this laptop.
+- The backend only answers to `127.0.0.1`, `localhost`, `10.0.2.2` and your Tailscale address, so a page in Buddy's Browser can't get answers from it through Docker's address for this laptop.
+- The live view needs a device key too, and the phone's key is never passed on to the container.
 
 ### Known limits
 
 - Buddy's Browser can still open connections to other programs listening on this laptop through Docker's address for it, `host.docker.internal`. Only the backend checks for this, and blocking it fully needs a firewall in the container.
 - The container's control and live view ports are open to every program on this laptop, though not to the network. Android emulators on this laptop can reach them too, but the app never uses them.
 - A screen reader can't read the live view, because it's a picture of the browser. The app's own controls work with one.
-- The live view isn't encrypted between the emulator and the backend, which are on the same laptop. This needs fixing before a real phone connects.
+- The app and the backend talk in plain HTTP on the emulator, which stays on this laptop. Debug builds accept that one address, so use a release build on a real phone.
+- A phone can't be unpaired yet except by removing it from Tailscale, and that doesn't cancel its key. To cancel every key, stop the backend and delete `backend/data/buddy.sqlite`, which deletes the conversation too.
 - Chromium saves cookies every 30 seconds, and whenever the container stops normally. If the laptop loses power within 30 seconds of a login, that login may be lost.
 
 ## Test it

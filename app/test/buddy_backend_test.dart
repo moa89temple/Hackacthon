@@ -11,6 +11,8 @@ void main() {
   test('loads the conversation history', () async {
     final backend = HttpBuddyBackend(
       baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
       client: MockClient((request) async {
         expect(request.method, 'GET');
         expect(request.url.path, '/conversation/messages');
@@ -45,6 +47,8 @@ void main() {
   test('fails loudly when the history cannot be loaded', () async {
     final backend = HttpBuddyBackend(
       baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
       client: MockClient((request) async => http.Response('nope', 500)),
     );
 
@@ -63,6 +67,8 @@ void main() {
     final accent = frames.indexOf(0xC3) + 1;
     final backend = HttpBuddyBackend(
       baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
       client: MockClient.streaming((request, body) async {
         postedBody = await body.bytesToString();
         return http.StreamedResponse(
@@ -84,6 +90,8 @@ void main() {
   test('passes on the error event from the backend', () async {
     final backend = HttpBuddyBackend(
       baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
       client: MockClient.streaming((request, body) async {
         return http.StreamedResponse(
           Stream.value(utf8.encode('data: {"type":"error","message":"Try again."}\n\n')),
@@ -100,6 +108,8 @@ void main() {
   test('ignores event types this version of the app does not know', () async {
     final backend = HttpBuddyBackend(
       baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
       client: MockClient.streaming((request, body) async {
         return http.StreamedResponse(
           Stream.value(utf8.encode(
@@ -118,6 +128,8 @@ void main() {
   test('fails when the backend rejects the message', () async {
     final backend = HttpBuddyBackend(
       baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
       client: MockClient.streaming((request, body) async {
         return http.StreamedResponse(const Stream.empty(), 400);
       }),
@@ -136,6 +148,8 @@ void main() {
     test('starts one and makes the live view an address on the backend', () async {
       final backend = HttpBuddyBackend(
         baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
         client: MockClient((request) async {
           expect(request.method, 'POST');
           expect(request.url.path, '/takeover');
@@ -153,6 +167,8 @@ void main() {
     test('fails to start when the browser cannot be reached', () async {
       final backend = HttpBuddyBackend(
         baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
         client: MockClient((request) async => http.Response('{}', 503)),
       );
 
@@ -163,6 +179,8 @@ void main() {
       var body = {'takeover': takeoverJson};
       final backend = HttpBuddyBackend(
         baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
         client: MockClient((request) async {
           expect(request.method, 'GET');
           expect(request.url.path, '/takeover');
@@ -179,6 +197,8 @@ void main() {
     test('finishes one and reads what came of it', () async {
       final backend = HttpBuddyBackend(
         baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
         client: MockClient((request) async {
           expect(request.method, 'POST');
           expect(request.url.path, '/takeover/done');
@@ -198,6 +218,8 @@ void main() {
     test('treats finishing a Takeover that already ended as nothing to report', () async {
       final backend = HttpBuddyBackend(
         baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
         client: MockClient((request) async => http.Response('{}', 409)),
       );
 
@@ -207,10 +229,113 @@ void main() {
     test('fails to finish on any other error, so the app can try again', () async {
       final backend = HttpBuddyBackend(
         baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
         client: MockClient((request) async => http.Response('{}', 500)),
       );
 
       expect(backend.finishTakeover(), throwsA(isA<BackendException>()));
+    });
+  });
+
+  group('the device key', () {
+    const authorization = 'Bearer the-key';
+
+    test('goes with every operation', () async {
+      final seen = <String, String?>{};
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient((request) async {
+          seen['${request.method} ${request.url.path}'] = request.headers['authorization'];
+          return switch (request.url.path) {
+            '/conversation/messages' when request.method == 'GET' => http.Response('{"messages":[]}', 200),
+            '/conversation/messages' => http.Response('', 200),
+            '/takeover/done' => http.Response('{"siteName":"Canvas","signedIn":true}', 200),
+            _ => http.Response(
+                '{"takeover":{"site":"canvas","siteName":"Canvas","liveViewPath":"/takeover/live/t/takeover.html"}}',
+                200,
+              ),
+          };
+        }),
+      );
+
+      await backend.loadHistory();
+      await backend.send('Hello').drain<void>();
+      await backend.currentTakeover();
+      await backend.startTakeover('canvas');
+      await backend.finishTakeover();
+
+      expect(seen, {
+        'GET /conversation/messages': authorization,
+        'POST /conversation/messages': authorization,
+        'GET /takeover': authorization,
+        'POST /takeover': authorization,
+        'POST /takeover/done': authorization,
+      });
+    });
+
+    test('is what the live view opens with', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient(
+          (request) async => http.Response(
+            '{"takeover":{"site":"canvas","siteName":"Canvas","liveViewPath":"/takeover/live/t/takeover.html"}}',
+            200,
+          ),
+        ),
+      );
+
+      final takeover = await backend.startTakeover('canvas');
+
+      expect(takeover.liveViewHeaders, {'authorization': authorization});
+    });
+
+    group('when the backend refuses it', () {
+      late int refusals;
+      late HttpBuddyBackend backend;
+
+      setUp(() {
+        refusals = 0;
+        backend = HttpBuddyBackend(
+          baseUrl,
+          deviceKey: 'the-key',
+          onKeyRefused: () => refusals++,
+          client: MockClient((request) async => http.Response('{"error":"no"}', 401)),
+        );
+      });
+
+      final operations = <String, Future<void> Function()>{
+        'loading the history': () => backend.loadHistory(),
+        'sending a message': () => backend.send('Hello').drain<void>(),
+        'checking for a Takeover': () => backend.currentTakeover(),
+        'starting a Takeover': () => backend.startTakeover('canvas'),
+        'finishing a Takeover': () => backend.finishTakeover(),
+      };
+
+      operations.forEach((name, operation) {
+        test('$name fails and reports it', () async {
+          await expectLater(operation(), throwsA(isA<BackendException>()));
+          expect(refusals, 1);
+        });
+      });
+    });
+
+    test('other failures do not count as a refused key', () async {
+      var refusals = 0;
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () => refusals++,
+        client: MockClient((request) async => http.Response('nope', 503)),
+      );
+
+      await expectLater(backend.loadHistory(), throwsA(isA<BackendException>()));
+
+      expect(refusals, 0);
     });
   });
 }

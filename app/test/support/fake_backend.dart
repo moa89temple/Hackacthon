@@ -9,6 +9,7 @@ class FakeBackend implements BuddyBackend {
 
   List<ChatMessage> history;
   Object? historyError;
+  int historyLoads = 0;
   final List<String> sent = [];
   final StreamController<ReplyEvent> reply = StreamController<ReplyEvent>();
 
@@ -26,6 +27,7 @@ class FakeBackend implements BuddyBackend {
 
   @override
   Future<List<ChatMessage>> loadHistory() async {
+    historyLoads++;
     if (historyError case final error?) throw error;
     return history;
   }

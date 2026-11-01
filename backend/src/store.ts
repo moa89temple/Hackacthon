@@ -28,6 +28,13 @@ export interface StoredTakeover {
   startedAt: Date;
 }
 
+/** The code that can pair a phone now. Only its hash is kept. */
+export interface StoredPairingCode {
+  codeHash: string;
+  expiresAt: Date;
+  wrongTries: number;
+}
+
 export interface Store {
   /** Appends the messages together: either all of them are saved or none are. Messages never change once saved. */
   appendMessages(studentId: string, messages: NewMessage[]): StoredMessage[];
@@ -35,6 +42,14 @@ export interface Store {
   currentTakeover(studentId: string): StoredTakeover | null;
   beginTakeover(studentId: string, takeover: StoredTakeover): void;
   endTakeover(studentId: string): void;
+  /** Replaces any code already saved. */
+  savePairingCode(studentId: string, code: { codeHash: string; expiresAt: Date }): void;
+  pairingCode(studentId: string): StoredPairingCode | null;
+  countWrongPairingTry(studentId: string): void;
+  deletePairingCode(studentId: string): void;
+  addDevice(studentId: string, device: { keyHash: string; pairedAt: Date }): void;
+  isDeviceKey(keyHash: string): boolean;
+  deviceKeyHashes(): string[];
   close(): void;
 }
 
@@ -54,6 +69,17 @@ const MIGRATIONS = [
      site TEXT NOT NULL,
      live_view_token TEXT NOT NULL,
      started_at TEXT NOT NULL
+   );`,
+  `CREATE TABLE devices (
+     key_hash TEXT PRIMARY KEY,
+     student_id TEXT NOT NULL,
+     paired_at TEXT NOT NULL
+   );
+   CREATE TABLE pairing_codes (
+     student_id TEXT PRIMARY KEY,
+     code_hash TEXT NOT NULL,
+     expires_at TEXT NOT NULL,
+     wrong_tries INTEGER NOT NULL
    );`,
 ];
 
@@ -77,6 +103,17 @@ export function openStore(databasePath: string): Store {
     `INSERT INTO takeovers (student_id, site, live_view_token, started_at) VALUES (?, ?, ?, ?)`,
   );
   const deleteTakeover = db.prepare(`DELETE FROM takeovers WHERE student_id = ?`);
+  const upsertPairingCode = db.prepare(
+    `INSERT OR REPLACE INTO pairing_codes (student_id, code_hash, expires_at, wrong_tries) VALUES (?, ?, ?, 0)`,
+  );
+  const selectPairingCode = db.prepare(
+    `SELECT code_hash, expires_at, wrong_tries FROM pairing_codes WHERE student_id = ?`,
+  );
+  const countWrongTry = db.prepare(`UPDATE pairing_codes SET wrong_tries = wrong_tries + 1 WHERE student_id = ?`);
+  const deletePairingCode = db.prepare(`DELETE FROM pairing_codes WHERE student_id = ?`);
+  const insertDevice = db.prepare(`INSERT INTO devices (key_hash, student_id, paired_at) VALUES (?, ?, ?)`);
+  const selectDevice = db.prepare(`SELECT 1 FROM devices WHERE key_hash = ?`);
+  const selectDeviceKeys = db.prepare(`SELECT key_hash FROM devices`);
 
   return {
     appendMessages(studentId, messages) {
@@ -117,6 +154,36 @@ export function openStore(databasePath: string): Store {
 
     endTakeover(studentId) {
       deleteTakeover.run(studentId);
+    },
+
+    savePairingCode(studentId, code) {
+      upsertPairingCode.run(studentId, code.codeHash, code.expiresAt.toISOString());
+    },
+
+    pairingCode(studentId) {
+      const row = selectPairingCode.get(studentId) as any;
+      if (!row) return null;
+      return { codeHash: row.code_hash, expiresAt: new Date(row.expires_at), wrongTries: row.wrong_tries };
+    },
+
+    countWrongPairingTry(studentId) {
+      countWrongTry.run(studentId);
+    },
+
+    deletePairingCode(studentId) {
+      deletePairingCode.run(studentId);
+    },
+
+    addDevice(studentId, device) {
+      insertDevice.run(device.keyHash, studentId, device.pairedAt.toISOString());
+    },
+
+    isDeviceKey(keyHash) {
+      return selectDevice.get(keyHash) !== undefined;
+    },
+
+    deviceKeyHashes() {
+      return selectDeviceKeys.all().map((row: any) => row.key_hash);
     },
 
     close() {

@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createDevices } from "../../src/devices.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
+import { openStore } from "../../src/store.ts";
 import { MovableClock } from "./movable-clock.ts";
 import { readEvents } from "./read-events.ts";
 import { RecordingBrowser } from "./recording-browser.ts";
@@ -26,12 +28,24 @@ export class BackendHarness {
   readonly browser = new RecordingBrowser();
   readonly #directory = mkdtempSync(join(tmpdir(), "buddy-test-"));
   #backend!: RunningBackend;
+  /** The key of the phone every helper here acts as, paired the way the real app pairs. */
+  deviceKey!: string;
 
   static async start(): Promise<BackendHarness> {
     const harness = new BackendHarness();
     await harness.browser.startLiveView();
     await harness.#boot();
+    await harness.#pairPhone();
     return harness;
+  }
+
+  async #pairPhone(): Promise<void> {
+    const response = await fetch(`${this.url}/devices/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: this.devices.newPairingCode().code }),
+    });
+    this.deviceKey = ((await response.json()) as { deviceKey: string }).deviceKey;
   }
 
   async #boot(): Promise<void> {
@@ -54,6 +68,21 @@ export class BackendHarness {
   /** The way the rest of the backend reads pages. */
   get browserAccess(): RunningBackend["browserAccess"] {
     return this.#backend.browserAccess;
+  }
+
+  get devices(): RunningBackend["devices"] {
+    return this.#backend.devices;
+  }
+
+  get deviceHeaders(): Record<string, string> {
+    return { authorization: `Bearer ${this.deviceKey}` };
+  }
+
+  /** What npm run pair does: makes a code from outside the running backend. */
+  newPairingCodeFromAnotherProcess(): { code: string; close(): void } {
+    const store = openStore(join(this.#directory, "buddy.sqlite"));
+    const { code } = createDevices({ store, clock: this.clock }).newPairingCode();
+    return { code, close: () => store.close() };
   }
 
   async restart(): Promise<void> {
@@ -81,36 +110,36 @@ export class BackendHarness {
   post(text: unknown, signal?: AbortSignal): Promise<Response> {
     return fetch(`${this.url}/conversation/messages`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...this.deviceHeaders, "content-type": "application/json" },
       body: JSON.stringify({ text }),
       signal: signal ?? null,
     });
   }
 
   async history(): Promise<any[]> {
-    const response = await fetch(`${this.url}/conversation/messages`);
+    const response = await fetch(`${this.url}/conversation/messages`, { headers: this.deviceHeaders });
     return ((await response.json()) as { messages: any[] }).messages;
   }
 
   startTakeover(site: unknown): Promise<Response> {
     return fetch(`${this.url}/takeover`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...this.deviceHeaders, "content-type": "application/json" },
       body: JSON.stringify({ site }),
     });
   }
 
   async currentTakeover(): Promise<any> {
-    const response = await fetch(`${this.url}/takeover`);
+    const response = await fetch(`${this.url}/takeover`, { headers: this.deviceHeaders });
     return ((await response.json()) as { takeover: any }).takeover;
   }
 
   /** The Student tapping Done. */
   finishTakeover(): Promise<Response> {
-    return fetch(`${this.url}/takeover/done`, { method: "POST" });
+    return fetch(`${this.url}/takeover/done`, { method: "POST", headers: this.deviceHeaders });
   }
 
   forgetLogin(site: string): Promise<Response> {
-    return fetch(`${this.url}/sites/${site}/login`, { method: "DELETE" });
+    return fetch(`${this.url}/sites/${site}/login`, { method: "DELETE", headers: this.deviceHeaders });
   }
 }

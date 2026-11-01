@@ -9,7 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_secure_storage: ^11.2.0
   http: ^1.6.0
+  local_auth: ^3.0.2
+  mobile_scanner: ^7.5.0
   webview_flutter: ^4.14.1
 
 dev_dependencies:

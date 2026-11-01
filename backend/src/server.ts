@@ -10,8 +10,11 @@ import {
   type Site,
 } from "./browser-access.ts";
 import { createConversation } from "./conversation.ts";
+import { createDevices, type Devices } from "./devices.ts";
 import { createLiveViewProxy } from "./live-view-proxy.ts";
 import { openStore } from "./store.ts";
+
+const PAIR_ROUTE = "/devices/pair";
 
 export interface BackendOptions {
   adapters: Adapters;
@@ -28,11 +31,13 @@ export interface BackendOptions {
 export interface RunningBackend {
   url: string;
   browserAccess: BrowserAccess;
+  devices: Devices;
   close(): Promise<void>;
 }
 
 export async function startBackend(options: BackendOptions): Promise<RunningBackend> {
   const store = openStore(options.databasePath);
+  const devices = createDevices({ store, clock: options.adapters.clock });
   const conversation = createConversation({
     claude: options.adapters.claude,
     clock: options.adapters.clock,
@@ -54,6 +59,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     target: options.adapters.browser.liveView,
     isOpen: browserAccess.isLiveViewOpen,
     isAllowedHost: (host) => isAllowedHost(host, options.allowedHosts),
+    devices,
   });
   liveView.attachTo(app);
 
@@ -63,6 +69,12 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     if (!isAllowedHost(request.headers.host, options.allowedHosts)) {
       return reply.code(403).send({ error: "This backend doesn't answer to that address" });
     }
+    // Pairing is how a phone gets its key, so it's the one operation that can't ask for one.
+    // Everything else is refused here, including any route added later.
+    if (request.routeOptions.url === PAIR_ROUTE) return;
+    if (!devices.allows(request.headers, request.url)) {
+      return reply.code(401).send({ error: "This needs a paired phone" });
+    }
   });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
@@ -70,6 +82,14 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     if (status) return reply.code(status).send({ error: error.message });
     request.log.error(error);
     return reply.code(error.statusCode ?? 500).send({ error: "Something went wrong" });
+  });
+
+  app.post<{ Body: { code?: unknown } }>(PAIR_ROUTE, async (request, reply) => {
+    const code = request.body?.code;
+    if (typeof code !== "string") return reply.code(400).send({ error: "code must be a string" });
+    const deviceKey = devices.pair(code);
+    if (!deviceKey) return reply.code(401).send({ error: "That pairing code isn't valid" });
+    return { deviceKey };
   });
 
   app.get("/conversation/messages", async () => ({ messages: conversation.history() }));
@@ -92,7 +112,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addBrowserRoutes(app, browserAccess);
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, close: () => app.close() };
+  return { url, browserAccess, devices, close: () => app.close() };
 }
 
 function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess): void {
