@@ -23,6 +23,13 @@ const TURN_INSTRUCTIONS: Record<CrisisOutcome, string> = {
   crisis: ` Buddy's safety check found the Student's safety may be at risk, and the app has already shown them the Crisis card, so don't call ${CRISIS_CARD_TOOL.name}. Reply briefly and with care, and encourage them to reach out to someone on the card.`,
 };
 
+/**
+ * Goes in every turn as well as the system prompt, because in the system prompt alone Claude still
+ * went back to a question it had asked when the Student moved on to something else.
+ */
+const QUESTIONS_REMINDER =
+  "Any getting-to-know question you've already asked in this conversation is finished, whether or not the Student answered it. Don't ask it again unless they bring it up.";
+
 /** A reply takes one request, or a few if Claude uses its tools first. This stops it looping. */
 const MAX_REQUESTS_PER_TURN = 6;
 /** Goes between what Claude wrote before a tool call and what it writes after. */
@@ -158,7 +165,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
 
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(profile.list())}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(profile.list())}\n\n${QUESTIONS_REMINDER}`,
         };
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];

@@ -109,7 +109,7 @@ It leans toward hiding, so it will sometimes hide a number that wasn't a secret.
 Every message goes through a check before Claude sees it (`backend/src/crisis-check.ts`):
 
 - **Clear risk signals** show the Crisis card at once, before Claude is called. Claude then writes its reply below the card. If Claude fails or refuses, Buddy adds a note of its own, and the card stays.
-- **Unclear messages** go to a Haiku 5.5 classifier, which has 3 seconds to answer nothing, a check-in or a Crisis. If it fails, refuses or runs out of time, Buddy checks in.
+- **Unclear messages** go to a Haiku 5.5 classifier, which has 5 seconds to answer nothing, a check-in or a Crisis. If it fails, refuses or runs out of time, Buddy checks in.
 - **Everyday exaggeration** such as "this exam is killing me", and every other message, goes straight to Claude.
 
 Claude can also raise the card itself at any point in a conversation, through its `show_crisis_card` tool. The tool takes no input, and the card's words and numbers are in the app (`app/lib/chat/crisis_card.dart`), so none of it can come from the model. Tapping a button opens the phone's dialer or messaging app with the number filled in, and the Student taps once more to call or send.

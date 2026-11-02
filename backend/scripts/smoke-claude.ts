@@ -67,6 +67,13 @@ async function send(text: string, keyHeader: Record<string, string>): Promise<an
   return events;
 }
 
+/** Whether any question in a reply is about the things Buddy asks when getting to know a Student. */
+function asksAboutThem(reply: string): boolean {
+  const questions = reply.match(/[^.?!\n]*\?/g) ?? [];
+  const topics = /\b(what year|your year|first-year|graduat\w*|major|first in your family|on campus|commut\w*|work hours|financial aid|scholarship\w*|hardest)\b/i;
+  return questions.some((question) => topics.test(question));
+}
+
 const failures: string[] = [];
 function check(name: string, passed: boolean): void {
   console.log(`${passed ? "ok    " : "FAILED"} ${name}`);
@@ -88,7 +95,12 @@ try {
   // Before anything about Crisis, which would colour every reply after it.
   const goal = await send("I want to get into PA school.", keyHeader);
   check("the Student's answer to the opening gets a reply", goal.at(-1)?.type === "done");
-  check("Buddy says they can skip what it asks", /skip/i.test(goal.at(-1)?.reply?.text ?? ""));
+  const goalReply = goal.at(-1)?.reply?.text ?? "";
+  check("if Buddy asks about them, it says they can skip it", !asksAboutThem(goalReply) || /skip/i.test(goalReply));
+
+  const movedOn = await send("What's the bursar?", keyHeader);
+  const movedOnReply = movedOn.at(-1)?.reply?.text ?? "";
+  check("Buddy doesn't ask again in the reply right after asking", !asksAboutThem(goalReply) || !asksAboutThem(movedOnReply));
 
   const skipped = await send("Skip those for now. What's a credit hour?", keyHeader);
   check("a skip still gets a reply", skipped.at(-1)?.type === "done");
