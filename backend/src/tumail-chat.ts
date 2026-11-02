@@ -1,6 +1,7 @@
 import { noteFactsGiven, type TurnRecord } from "./activity.ts";
 import type { ClaudeMessage } from "./claude.ts";
 import type { ProfileFact } from "./profile.ts";
+import { PROPOSE_ROADMAP_TOOL, SAVE_GOAL_TOOL, SUGGEST_CHANGE_TOOL } from "./roadmap-tools.ts";
 import type { NewMessage } from "./store.ts";
 import { MAKE_HANDOFF_TOOL, REMEMBER_TOOL, REQUEST_ACTION_TOOL, SUGGEST_CONNECTION_TOOL } from "./system-prompt.ts";
 
@@ -19,6 +20,9 @@ const STOPPED_AFTER_READING_EMAIL = new Map([
   [MAKE_HANDOFF_TOOL.name, "writing a Draft"],
   [REQUEST_ACTION_TOOL.name, "asking for an Action Permission"],
   [SUGGEST_CONNECTION_TOOL.name, "showing a Read Permission card"],
+  [SAVE_GOAL_TOOL.name, "saving a Goal"],
+  [PROPOSE_ROADMAP_TOOL.name, "showing a Roadmap card"],
+  [SUGGEST_CHANGE_TOOL.name, "showing a card that changes your Roadmap"],
 ]);
 
 const REFUSED =

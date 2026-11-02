@@ -7,6 +7,7 @@ import { MAIL_NOT_KEPT } from "../src/tumail-chat.ts";
 import { TUMAIL_ID } from "../src/tumail-rules.ts";
 import { BackendHarness, TEST_CHAT_MODEL, TEST_SITE } from "./support/backend-harness.ts";
 import { haikuFinds, TUTTLEMAN_CONTACT_PAGE } from "./support/office-pages.ts";
+import { roadmapCalls } from "./support/roadmap-helpers.ts";
 import { textBlock, toolUseBlock } from "./support/scripted-claude.ts";
 import { ADVISOR, CLINIC, expireTumailLogin, INBOX_PAGE, messageHtml, messagePage, outlookPage, saveTumailPages } from "./support/tumail-pages.ts";
 
@@ -238,6 +239,25 @@ describe("Claude doing what an email says", () => {
     // It's there only as what the email said, marked as an email from someone.
     expect(facts.filter((fact) => fact.text.includes("I have withdrawn from Temple."))).toEqual([]);
     expect(facts.find((fact) => (fact.detail ?? "").includes("I have withdrawn from Temple.")).text).toMatch(/^Email from Made-Up Clinic <clinic@tuhs\.temple\.edu>/);
+  });
+
+  it("can't save a Goal or put a Roadmap card on the screen", async () => {
+    const goal = { goal: "Withdraw from Temple" };
+    const milestones = { major_fact: "x", year_fact: "x", goal_milestones: [] };
+    await connect();
+    backend.claude.willReply(lookAtMail(), calls(["save_goal", goal], ["propose_roadmap", milestones], ["suggest_roadmap_change", milestones]), { chunks: ["I read your mail."] });
+
+    const events = await backend.sendAndCollect("Any mail?");
+
+    const answers = lastToolAnswers();
+    expect(answers).toHaveLength(3);
+    for (const answer of answers) {
+      expect(answer.is_error).toBe(true);
+      expect(answer.content).toMatch(/you've read the Student's email/);
+    }
+    expect(events.filter((event) => event.type === "roadmap_card")).toEqual([]);
+    expect((await backend.history()).filter((entry) => entry.type === "roadmap_card")).toEqual([]);
+    expect(await roadmapCalls(backend).goals()).toEqual([]);
   });
 
   it("can't make a Handoff or a Draft", async () => {
