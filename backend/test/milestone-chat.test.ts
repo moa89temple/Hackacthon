@@ -92,6 +92,36 @@ describe("a search that names the term, as Claude's usually do", () => {
     expect((await namesFound("finals fall 2026"))[0]).toBe(FINALS_FIRST_DAYS.name);
   });
 
+  it("puts the soonest first when only the words Haiku added to each page differ", async () => {
+    await backend.stop();
+    backend = await BackendHarness.start({
+      offices: [],
+      milestoneOffices: [
+        {
+          name: "Registrar",
+          pages: [CALENDAR_PAGE, "https://registrar.temple.edu/academic-calendar/2027-2028-academic-calendar"],
+        },
+      ],
+    });
+    backend.claude.willReply(
+      haikuFindsDates({ ...WITHDRAW_16_WEEK, search_terms: ["withdraw"] }),
+      haikuFindsDates({
+        name: WITHDRAW_16_WEEK.name,
+        date: "2027-12-06",
+        date_quote: "Monday, December 6",
+        what_quote: WITHDRAW_16_WEEK.what_quote,
+        search_terms: ["withdraw", "w grade", "course", "deadline"],
+      }),
+    );
+    await backend.discovery.run();
+
+    backend.claude.willReply(toolCall(FIND, { query: "withdraw from course with W grade deadline" }), { chunks: ["Here."] });
+    await backend.sendAndCollect("When?");
+    const whens = (lastToolAnswer().content as string).split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line).when);
+
+    expect(whens[0]).toContain("2026");
+  });
+
   it("gives what's in the term when the term is all it's asked", async () => {
     expect(await namesFound("fall 2026")).toEqual(expect.arrayContaining([WITHDRAW_7B.name, WITHDRAW_16_WEEK.name]));
   });

@@ -91,19 +91,18 @@ function asMilestones(stored: StoredMilestone[], today: string): StandardMilesto
 
 const byDate = (a: StandardMilestone, b: StandardMilestone) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name);
 
+/**
+ * Mostly the words of the name, which are the page's own. Haiku's search words differ from page to page
+ * and reading to reading, so they only say whether a date is about this at all. If they counted for
+ * more, next year's date could come ahead of this year's for having been given one more of them.
+ */
 function relevance(rows: StoredMilestone[], queryStems: Set<string>): number {
   const stemsOf = (texts: string[]) => new Set(texts.flatMap(wordsIn).map(stem));
   const all = rows.map((row) => row.fields as MilestoneFields);
-  const weighted: [Set<string>, number][] = [
-    [stemsOf(all.map((fields) => fields.name)), 3],
-    [stemsOf(all.flatMap((fields) => fields.searchTerms)), 2],
-    [stemsOf(all.flatMap((fields) => [fields.term ?? "", fields.office])), 1],
-  ];
-  let score = 0;
-  for (const word of queryStems) {
-    for (const [stems, weight] of weighted) if (stems.has(word)) score += weight;
-  }
-  return score;
+  const name = stemsOf(all.map((fields) => fields.name));
+  const other = stemsOf(all.flatMap((fields) => [...fields.searchTerms, fields.term ?? "", fields.office]));
+  const words = [...queryStems];
+  return 10 * words.filter((word) => name.has(word)).length + (words.some((word) => other.has(word)) ? 1 : 0);
 }
 
 function saysMonthAndDay(reply: string, iso: string): boolean {
