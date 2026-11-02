@@ -289,6 +289,63 @@ OUTLOOK_MESSAGE = """
 </script>
 """
 
+# A made-up Navigate360, modelled on the public scripts at /app/, /app/v1/ and /app/v2/: a page that picks
+# the version, then one that fetches late and draws inside its own element. Nothing here came from an account.
+NAVIGATE360_PAGES = {
+    "/app/": """
+<title>Navigate360</title>
+<script>
+  (async () => {
+    const answer = await fetch('/api/v1/core/appconfig/');
+    const target = new URL(location.href);
+    target.pathname = answer.ok ? '/app/v2/' : '/app/v1/';
+    if (answer.ok) target.hash = '';
+    location.replace(target.href);
+  })();
+</script>""",
+    "/app/v1/": """
+<title>Navigate360</title><h1>Search Temple University</h1>
+<script>if (!location.hash) location.replace('#/authentication/');</script>""",
+    "/app/v2/": """
+<title>Navigate360 Student</title><main id="app" class="suh-content"></main>
+<script>
+  customElements.define('made-up-view', class extends HTMLElement {
+    connectedCallback() {
+      const root = this.attachShadow({ mode: 'open' });
+      setTimeout(async () => {
+        const team = location.hash.includes('/people/');
+        const answer = await fetch(team ? '/api/students/7/support_team' : "/api/v2/scheduling/current_user?slim=%27true%27");
+        const { data } = await answer.json();
+        root.innerHTML = '<h1>MARKERDRAWN</h1><button>' + (data.team ? data.team[0].first_name : 'Schedule') + '</button>';
+        fetch('/api/v2/scheduling/appointments/', { method: 'POST', body: 'x=1' }).catch(() => {});
+      }, 300);
+    }
+  });
+  document.getElementById('app').append(document.createElement('made-up-view'));
+</script>""",
+}
+NAVIGATE360_ANSWERS = {
+    "/api/v1/core/appconfig/": {"member_features": {"core-student_web_experience_v2": True}},
+    "/api/students/7/support_team": {
+        "data": {
+            "team": [
+                {
+                    "id": 501,
+                    "first_name": "MARKERADVISOR",
+                    "last_name": "MARKERSURNAME",
+                    "email": "markeremail@temple.edu",
+                    "work_phone": "215-555-0142",
+                    "relationship": "Primary Advisor",
+                },
+                {"id": 502, "first_name": "MARKERINSTRUCTOR", "last_name": "X", "email": "markerother@temple.edu", "relationship": "Instructor"},
+            ]
+        }
+    },
+    "/api/v2/scheduling/current_user": {
+        "data": {"user": {"upcoming_appointments": [{"id": 9, "start": "2099-01-01T15:00:00Z", "name": "MARKERVISIT", "location": {"name": "MARKERPLACE"}}]}}
+    },
+}
+
 REDIRECTS = {
     "/redirect-to-quiz": "/quizzes/1",
     # What Canvas does when a teacher has hidden a course's Grades page.
@@ -396,6 +453,18 @@ class Pages(BaseHTTPRequestHandler):
         elif self.path == "/api/v1/courses/101/assignment_groups":
             self.send_response(200)
             self.page_with_type("application/json", CANVAS_ASSIGNMENT_LIST.encode())
+        elif self.path == "/made-up-navigate360-login":
+            self.send_response(200)
+            self.send_header("set-cookie", "navigate360_session=signed-in; Path=/; HttpOnly")
+            self.page("Signed in", "<h1>Signed in</h1>")
+        elif self.path in NAVIGATE360_PAGES:
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{NAVIGATE360_PAGES[self.path]}".encode())
+        elif self.path.split("?")[0] in NAVIGATE360_ANSWERS:
+            signed_in = "navigate360_session" in cookies
+            self.send_response(200 if signed_in else 401)
+            body = NAVIGATE360_ANSWERS[self.path.split("?")[0]] if signed_in else {"error": "MARKERERROR"}
+            self.page_with_type("application/json", json.dumps(body).encode())
         elif self.path in FORM_PAGES:
             self.send_response(200)
             self.page("A form", FORM_PAGES[self.path])

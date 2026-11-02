@@ -79,7 +79,7 @@ function cleanSegment(segment: string): string {
   return `${/\d/.test(segment) ? ":id" : ":text"}${extension}`;
 }
 
-function normalized(text: string): string {
+export function normalized(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
@@ -264,7 +264,7 @@ function watchingBrowser(
 }
 
 /** A class's name is from the code, where its message could say anything. */
-function kindOfError(error: unknown): string {
+export function kindOfError(error: unknown): string {
   const name = error instanceof Error ? error.constructor.name : "";
   return /^[A-Za-z]{1,40}$/.test(name) ? name : "Error";
 }

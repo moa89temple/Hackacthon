@@ -10,9 +10,10 @@ import {
   type FormToSubmit,
   type PageReading,
   type PageWait,
+  type ReadOptions,
 } from "./buddys-browser.ts";
 import type { Clock } from "./clock.ts";
-import { isOnSite, type GuardPolicy, type RequestGuard } from "./network-guard.ts";
+import type { GuardPolicy, RequestGuard } from "./network-guard.ts";
 import { keepToReadablePages } from "./readable-pages.ts";
 import { THE_STUDENT, type Store, type StoredTakeover } from "./store.ts";
 
@@ -26,6 +27,12 @@ export interface PagePattern {
    * Only blockedPages looks at this. It's tested decoded and in lower case, like the path.
    */
   query?: RegExp;
+  /**
+   * The part after the #, for an app that keeps its pages there. A browser never sends this part, so
+   * it's only ever tested against the address Buddy asks for, before anything opens. In `blockedPages`
+   * it's tested decoded and in lower case, and in `readablePages` an address with none passes it.
+   */
+  fragment?: RegExp;
 }
 
 /** A request that looks like it changes something but only reads, such as a search sent by POST. */
@@ -77,8 +84,8 @@ export interface Site {
   /** The only pages where Buddy may ask to submit a form. With none, it can't ask to on this site. */
   formPages?: PagePattern[];
   /**
-   * Whether this address is somewhere to log in, for a site where that isn't only its /login pages, or
-   * where a login can end up on another of its hosts. Left out, a login check goes by those.
+   * Whether this address is somewhere to log in, for a site where that isn't only its /login pages, such
+   * as an app that only changes the part after the #, or one that sends a login to another host.
    */
   isLoginPage?: (address: string) => boolean;
 }
@@ -150,7 +157,7 @@ export interface BrowserAccess {
    * Reads a page. Throws TakeoverInProgress while the Student is in control, and PageBlocked unless
    * it's a public page or a Connection with its Read Permission.
    */
-  read(url: string, wait?: PageWait): Promise<PageReading>;
+  read(url: string, options?: ReadOptions): Promise<PageReading>;
   /**
    * Reads a site's home page to see whether the login works, and for nothing else. Throws PageBlocked
    * for a site that's a Connection with no Read Permission. For any other site it's the one read that
@@ -226,17 +233,17 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
     return stored && describeTakeover(stored);
   }
 
-  async function readUnderGuard(url: string, guard: RequestGuard, wait?: PageWait): Promise<PageReading> {
+  async function readUnderGuard(url: string, guard: RequestGuard, options?: ReadOptions): Promise<PageReading> {
     failIfStudentInControl();
     return oneAtATime(() => {
       // A Takeover may have started while this read was waiting its turn.
       failIfStudentInControl();
       failIfGuardRefuses(guard, url);
-      return browser.read(url, guard, wait);
+      return browser.read(url, guard, options);
     });
   }
 
-  const read = (url: string, wait?: PageWait) => readUnderGuard(url, keepToReadablePages(guards.forReading(), sites), wait);
+  const read = (url: string, options?: ReadOptions) => readUnderGuard(url, keepToReadablePages(guards.forReading(), sites), options);
 
   function lacksReadPermission(id: string, site: Site): boolean {
     return site.isConnection === true && store.readPermission(THE_STUDENT, id) === null;
@@ -408,8 +415,8 @@ function failIfGuardRefuses(guard: RequestGuard, url: string): void {
 }
 
 function isOnSiteAndPastLogin(finalUrl: string, site: Site): boolean {
-  if (site.isLoginPage) return !site.isLoginPage(finalUrl);
   const final = new URL(finalUrl);
+  if (site.isLoginPage?.(finalUrl)) return false;
   return [new URL(site.homeUrl).hostname, ...(site.appHosts ?? [])].includes(final.hostname) && !final.pathname.startsWith("/login");
 }
 

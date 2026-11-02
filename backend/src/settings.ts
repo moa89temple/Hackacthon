@@ -5,6 +5,9 @@ import { canvas } from "./canvas.ts";
 import { CANVAS_BLOCKED_PAGES, CANVAS_HOME, CANVAS_ID, CANVAS_READABLE_PAGES } from "./canvas-rules.ts";
 import { googleCalendar } from "./google-calendar.ts";
 import { MILESTONE_OFFICES } from "./milestone-pages.ts";
+import { navigate360 } from "./navigate360.ts";
+import { isNavigate360LoginPage } from "./navigate360-pages.ts";
+import { NAVIGATE360_BLOCKED_PAGES, NAVIGATE360_HOME, NAVIGATE360_ID, NAVIGATE360_LOGIN_HOSTS, NAVIGATE360_READABLE_PAGES } from "./navigate360-rules.ts";
 import { OFFICES } from "./office-pages.ts";
 import { tuportal } from "./tuportal.ts";
 import { TUPORTAL_ID, TUPORTAL_SITE } from "./tuportal-rules.ts";
@@ -39,7 +42,7 @@ export const settings = {
     liveView: { host: "127.0.0.1", port: 6080 },
   },
   /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
-  connectionTypes: [googleCalendar, canvas, tuportal, tumail],
+  connectionTypes: [googleCalendar, canvas, tuportal, tumail, navigate360],
   /**
    * Public pages Buddy's Browser may open, each as this exact host. A whole domain would be wrong:
    * Temple's single sign-on could log it in to a Connection that has no Read Permission.
@@ -83,6 +86,16 @@ export const settings = {
       isConnection: true,
       readablePages: TUMAIL_READABLE_PAGES,
       readOnlyRequests: TUMAIL_READ_ONLY_REQUESTS,
+    },
+    [NAVIGATE360_ID]: {
+      name: "Navigate360",
+      homeUrl: NAVIGATE360_HOME,
+      // Temple's single sign-on and Duo too, as for Canvas. They're shared, so see forgetLogin.
+      loginHosts: NAVIGATE360_LOGIN_HOSTS,
+      isConnection: true,
+      readablePages: NAVIGATE360_READABLE_PAGES,
+      blockedPages: NAVIGATE360_BLOCKED_PAGES,
+      isLoginPage: isNavigate360LoginPage,
     },
   },
 };

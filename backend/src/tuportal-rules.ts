@@ -142,5 +142,6 @@ export const TUPORTAL_SITE: Site = {
   signOnDomains: ["temple.edu"],
   readablePages: tuportalReadablePages(),
   blockedPages: tuportalBlockedPages(),
+  appHosts: TUPORTAL_HOSTS,
   isLoginPage: (address) => isTuportalLoginPage(address),
 };

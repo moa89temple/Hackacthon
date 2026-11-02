@@ -15,6 +15,7 @@ import {
   THE_STUDENT,
   type ConnectionEventToStore,
   type ConnectionFactToStore,
+  type ContactFromConnection,
   type Store,
   type StoredConnectionEvent,
   type StoredReadPermission,
@@ -72,6 +73,11 @@ export interface ConnectionType {
   logsIn?: boolean;
   /** Throws ReadProblem to tell the Student what went wrong. */
   read(context: ReadContext): Promise<ConnectionFactToStore[]>;
+  /**
+   * The Contacts this read's facts make, all of them each time: any from before that aren't here go.
+   * They're saved with the facts and go with the Read Permission. Contacts from anywhere else aren't touched.
+   */
+  contactsFrom?(facts: ConnectionFactToStore[]): ContactFromConnection[];
   /** What changed between one read's facts and the next's. Never called for the first read. */
   eventsBetween?(before: FactFromConnection[], after: ConnectionFactToStore[]): ConnectionEventToStore[];
   /** How many of what, for Activity. It mustn't repeat what they are. */
@@ -258,6 +264,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       profile.saveReading(permission.id, facts, now, connectionRead(type.name, reason, clock.now(), whatsNew, missed), {
         events,
         problem: missed,
+        ...(type.contactsFrom ? { contacts: type.contactsFrom(facts) } : {}),
       });
     } catch (error) {
       // Only words from Buddy's own code reach the log, so that the address can't get there in an error.

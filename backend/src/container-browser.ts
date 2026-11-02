@@ -3,6 +3,7 @@ import { PageBlocked, type BuddysBrowser, type PageReading } from "./buddys-brow
 import { submitFormOnPage } from "./form-in-page.ts";
 import { attachGuard, type GuardConnection } from "./guard-connection.ts";
 import type { RequestGuard } from "./network-guard.ts";
+import { watchForAnswers } from "./page-answers.ts";
 
 const PAGE_TIMEOUT_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -91,21 +92,24 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
       });
     },
 
-    read(url, guard, wait) {
+    read(url, guard, options = {}) {
       return whileGuarded(guard, async (context, guarded): Promise<PageReading> => {
         const page = await guardedPage(context, guarded);
+        const answers = watchForAnswers(page, options.answersFrom);
         try {
-          if (wait) {
+          if (options.until) {
             // An app may never finish loading in the sense "load" means, and it says itself when it's ready.
             await page.goto(url, { timeout: PAGE_TIMEOUT_MS, waitUntil: "domcontentloaded" });
-            await page.waitForSelector(wait.until, { state: "attached", timeout: APP_TIMEOUT_MS }).catch(() => {});
+            await page.waitForSelector(options.until, { state: "attached", timeout: APP_TIMEOUT_MS }).catch(() => {});
             await page.waitForLoadState("networkidle", { timeout: APP_SETTLE_TIMEOUT_MS }).catch(() => {});
           } else {
             await page.goto(url, { timeout: PAGE_TIMEOUT_MS, waitUntil: "load" });
             // Some pages only fetch their content once they've loaded. A page that never goes quiet is read as it stands.
             await page.waitForLoadState("networkidle", { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
           }
+          await answers.arrived(SETTLE_TIMEOUT_MS);
           return {
+            ...(options.answersFrom ? { answers: answers.kept() } : {}),
             url: page.url(),
             title: await page.title(),
             text: await page.locator("body").innerText({ timeout: PAGE_TIMEOUT_MS }),

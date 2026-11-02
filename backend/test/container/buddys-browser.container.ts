@@ -6,16 +6,21 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Page } from "playwright-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { TakeoverInProgress, type Site } from "../../src/browser-access.ts";
+import { createBrowserAccess, TakeoverInProgress, type Site } from "../../src/browser-access.ts";
 import { PageBlocked, type FormToSubmit } from "../../src/buddys-browser.ts";
 import { canvasAt } from "../../src/canvas.ts";
-import { runCanvasCheck } from "../../src/canvas-check.ts";
+import { EXIT_LOGIN_NEEDED, runCanvasCheck } from "../../src/canvas-check.ts";
 import { CANVAS_BLOCKED_PAGES, canvasReadablePages } from "../../src/canvas-rules.ts";
 import type { ConnectionType } from "../../src/connections.ts";
 import { containerBrowser } from "../../src/container-browser.ts";
 import { createGuardPolicy } from "../../src/network-guard.ts";
+import { navigate360At } from "../../src/navigate360.ts";
+import { runNavigate360Check } from "../../src/navigate360-check.ts";
+import { isNavigate360LoginPage } from "../../src/navigate360-pages.ts";
+import { NAVIGATE360_BLOCKED_PAGES, navigate360Home, navigate360ReadablePages } from "../../src/navigate360-rules.ts";
 import { keepToReadablePages } from "../../src/readable-pages.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
+import { openStore } from "../../src/store.ts";
 import { systemClock } from "../../src/clock.ts";
 import { tuportalAt } from "../../src/tuportal.ts";
 import { runTuportalCheck } from "../../src/tuportal-check.ts";
@@ -1245,5 +1250,119 @@ describe("the TUmail reader, against a made-up app in the real browser", () => {
     expect(output).toContain("Log in to TUmail");
     expect(output).not.toMatch(/marker/i);
     expect(visited()).toEqual(["GET /mail/inbox"]);
+  });
+});
+
+describe("the Navigate360 reader, against made-up pages in the real browser", () => {
+  const HOST = "127.0.0.5";
+  const ORIGIN = `http://${HOST}:8000`;
+  const NAVIGATE360_SITE: Site = {
+    name: "Navigate360",
+    homeUrl: navigate360Home(ORIGIN),
+    loginHosts: [HOST],
+    isConnection: true,
+    readablePages: navigate360ReadablePages(HOST),
+    blockedPages: NAVIGATE360_BLOCKED_PAGES,
+    isLoginPage: (address) => isNavigate360LoginPage(address, HOST),
+  };
+  const sites = { navigate360: NAVIGATE360_SITE };
+  const guards = createGuardPolicy({ sites, publicHosts: [], hasReadPermission: () => true });
+  const readingGuard = () => keepToReadablePages(guards.forReading(), sites);
+  const logIn = async () => {
+    await browser.show(`${ORIGIN}/made-up-navigate360-login`);
+    await settle(300);
+  };
+  const visited = () => ledger().filter((entry) => entry.host.startsWith(HOST)).map((entry) => `${entry.method} ${entry.path}`);
+
+  async function runCheck() {
+    const lines: string[] = [];
+    const exitCode = await runNavigate360Check({
+      browser,
+      connection: navigate360At(ORIGIN),
+      sites,
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: false, oldLoginRemains: false }),
+      print: (line) => lines.push(line),
+    });
+    return { exitCode, output: lines.join("\n") };
+  }
+
+  beforeEach(async () => {
+    await browser.forgetLogin([HOST]);
+    clearLedger();
+  });
+
+  it("follows the page that picks the version, waits for an app that fetches late, and gets what it fetched", async () => {
+    await logIn();
+
+    const { exitCode, output } = await runCheck();
+
+    expect(output).toMatch(/Login: works/);
+    expect(exitCode).toBe(0);
+    expect(output).toMatch(/App version: v2/);
+    expect(output).toMatch(/advisors: 1\b/);
+    expect(output).toMatch(/advisors with an address: 1\b/);
+    expect(output).toMatch(/Contacts added: 1\b/);
+    expect(output).toMatch(/others on the team, not kept: 1\b/);
+    expect(output).toMatch(/upcoming appointments: 1\b/);
+  });
+
+  it("prints nothing a person wrote or is called, in the real browser's words either", async () => {
+    await logIn();
+
+    const { output } = await runCheck();
+
+    expect(output).not.toMatch(/MARKER/i);
+  });
+
+  it("shows why the reader can't go by the page: what's drawn isn't in its HTML, though its tree shows it", async () => {
+    await logIn();
+
+    const page = await browser.read(`${ORIGIN}/app/v2/#/native/my/home/`, readingGuard());
+
+    expect(page.html).not.toContain("MARKERDRAWN");
+    expect(page.accessibilitySnapshot).toMatch(/heading "MARKERDRAWN"/);
+  });
+
+  it("says the login is needed when the app sends a browser with none to its login route, on the same site", async () => {
+    const { exitCode, output } = await runCheck();
+
+    expect(exitCode).toBe(EXIT_LOGIN_NEEDED);
+    expect(output).toMatch(/Log in to Navigate360/);
+  });
+
+  it("keeps the part of the address after the # through the redirects, so a login route can be seen", async () => {
+    const page = await browser.read(navigate360Home(ORIGIN), readingGuard());
+
+    expect(isNavigate360LoginPage(page.url, HOST)).toBe(true);
+    expect(new URL(page.url).hash).toBe("#/authentication/");
+  });
+
+  it("lets nothing that changes anything out, whatever the page tries", async () => {
+    await logIn();
+    clearLedger();
+
+    await runCheck();
+    await settle();
+
+    expect(visited().filter((entry) => !entry.startsWith("GET "))).toEqual([]);
+    expect(visited()).toContain("GET /api/students/7/support_team");
+  });
+
+  it("is refused a booking page before anything opens, by the part of the address a browser never sends", async () => {
+    await logIn();
+    clearLedger();
+
+    const access = createBrowserAccess({
+      browser,
+      clock: systemClock,
+      store: openStore(":memory:"),
+      sites: { navigate360: { ...NAVIGATE360_SITE, isConnection: false } },
+      guards,
+      onControlEnded: () => {},
+      logError: () => {},
+    });
+    await expect(access.read(`${ORIGIN}/app/v2/#/native/my/apps/as3/appointment-new`)).rejects.toThrow(PageBlocked);
+
+    expect(visited()).toEqual([]);
   });
 });

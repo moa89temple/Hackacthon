@@ -10,6 +10,31 @@ export interface PageReading {
   accessibilitySnapshot: string;
   /** The page as it stood once it had loaded, after its own scripts ran. */
   html: string;
+  /** What the server told the page's own scripts, if the read asked for any. See ReadOptions. */
+  answers?: PageAnswer[];
+}
+
+/** What a page's own script got back from a server. Nothing extra is asked for to get this. */
+export interface PageAnswer {
+  url: string;
+  status: number;
+  body: string;
+}
+
+export interface AnswersToKeep {
+  /** Each means that host and its subdomains. A page can load anything from anywhere, so this is what says it's the app's. */
+  hosts: string[];
+  paths: RegExp[];
+}
+
+export interface ReadOptions {
+  /** For an app that builds its page long after loading. See PageWait. */
+  until?: string;
+  /**
+   * For an app that builds its pages by script: the requests the page's scripts make for themselves whose
+   * answers to keep. The read waits for one of each path, for a little while, before it finishes.
+   */
+  answersFrom?: AnswersToKeep;
 }
 
 /**
@@ -86,9 +111,9 @@ export interface BuddysBrowser {
   show(url: string): Promise<void>;
   /**
    * Opens the page out of sight and reads it. Throws PageBlocked if the guard refuses the page. A page
-   * its script builds after it has loaded can say what to wait for. See PageWait.
+   * its script builds after it has loaded can say what to wait for. See ReadOptions.
    */
-  read(url: string, guard: RequestGuard, wait?: PageWait): Promise<PageReading>;
+  read(url: string, guard: RequestGuard, options?: ReadOptions): Promise<PageReading>;
   /** Takes whatever the Student left on the screen off it. */
   clearScreen(guard: RequestGuard): Promise<void>;
   /**

@@ -1,0 +1,27 @@
+{
+  "data": {
+    "user": {
+      "upcoming_appointments": [
+        {
+          "id": 9001,
+          "start": "2026-11-10T15:30:00Z",
+          "end": "2026-11-10T16:00:00Z",
+          "name": "Made-up Advising Visit",
+          "location": { "name": "Made-up Hall 100" },
+          "attendees": [{ "name": "Riley Madeup" }],
+          "staff_comment": "Words a staff member wrote, which Buddy doesn't keep",
+          "meeting_url_or_phone": "https://meeting.example.test/made-up"
+        },
+        {
+          "id": 9000,
+          "start": "2026-10-01T15:30:00Z",
+          "end": "2026-10-01T16:00:00Z",
+          "name": "A visit that has already happened",
+          "location": { "name": "Made-up Hall 100" },
+          "attendees": [{ "name": "Riley Madeup" }]
+        }
+      ],
+      "student_data": { "appointment_invitations": [] }
+    }
+  }
+}

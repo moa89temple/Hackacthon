@@ -22,7 +22,12 @@ export function keepToReadablePages(guard: RequestGuard, sites: Record<string, S
       if (owners.length === 0) return decision;
       // The address as it is, undecoded: a list that allows something mustn't match more than it says.
       const listed = owners.some((site) =>
-        site.readablePages!.some((page) => page.host === url.hostname && page.path.test(url.pathname)),
+        site.readablePages!.some(
+          (page) =>
+            page.host === url.hostname &&
+            page.path.test(url.pathname) &&
+            (page.fragment === undefined || url.hash === "" || page.fragment.test(url.hash)),
+        ),
       );
       return listed ? decision : { allowed: false, why: `This isn't one of the pages Buddy reads on ${owners[0]!.name}: ${url.host}` };
     },
