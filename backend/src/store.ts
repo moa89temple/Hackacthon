@@ -44,6 +44,16 @@ export interface StoredPairingCode {
   wrongTries: number;
 }
 
+/** Something Buddy knows about the Student, and where it came from. */
+export interface StoredProfileFact {
+  id: number;
+  text: string;
+  originType: "conversation";
+  originMessageId: number;
+  savedAt: Date;
+  editedAt: Date | null;
+}
+
 export interface Store {
   /** Appends the messages together: either all of them are saved or none are. Messages never change once saved. */
   appendMessages(studentId: string, messages: NewMessage[]): StoredMessage[];
@@ -61,6 +71,12 @@ export interface Store {
   addDevice(studentId: string, device: { keyHash: string; pairedAt: Date }): void;
   isDeviceKey(keyHash: string): boolean;
   deviceKeyHashes(): string[];
+  addProfileFact(studentId: string, fact: Omit<StoredProfileFact, "id" | "editedAt">): StoredProfileFact;
+  listProfileFacts(studentId: string): StoredProfileFact[];
+  /** Returns the edited fact, or null if this Student has no such fact. */
+  editProfileFact(studentId: string, id: number, text: string, editedAt: Date): StoredProfileFact | null;
+  /** Returns whether this Student had such a fact. */
+  deleteProfileFact(studentId: string, id: number): boolean;
   close(): void;
 }
 
@@ -100,6 +116,16 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX crisis_cards_by_student ON crisis_cards (student_id, id);`,
+  `CREATE TABLE profile_facts (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     text TEXT NOT NULL,
+     origin_type TEXT NOT NULL,
+     origin_message_id INTEGER,
+     saved_at TEXT NOT NULL,
+     edited_at TEXT
+   );
+   CREATE INDEX profile_facts_by_student ON profile_facts (student_id, id);`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -139,6 +165,23 @@ export function openStore(databasePath: string): Store {
   const insertDevice = db.prepare(`INSERT INTO devices (key_hash, student_id, paired_at) VALUES (?, ?, ?)`);
   const selectDevice = db.prepare(`SELECT 1 FROM devices WHERE key_hash = ?`);
   const selectDeviceKeys = db.prepare(`SELECT key_hash FROM devices`);
+  const insertFact = db.prepare(
+    `INSERT INTO profile_facts (student_id, text, origin_type, origin_message_id, saved_at) VALUES (?, ?, ?, ?, ?)`,
+  );
+  const selectFacts = db.prepare(
+    `SELECT id, text, origin_type, origin_message_id, saved_at, edited_at FROM profile_facts WHERE student_id = ? ORDER BY id`,
+  );
+  const updateFact = db.prepare(`UPDATE profile_facts SET text = ?, edited_at = ? WHERE student_id = ? AND id = ?`);
+  const deleteFact = db.prepare(`DELETE FROM profile_facts WHERE student_id = ? AND id = ?`);
+  const listFacts = (studentId: string): StoredProfileFact[] =>
+    selectFacts.all(studentId).map((row: any) => ({
+      id: row.id,
+      text: row.text,
+      originType: row.origin_type,
+      originMessageId: row.origin_message_id,
+      savedAt: new Date(row.saved_at),
+      editedAt: row.edited_at ? new Date(row.edited_at) : null,
+    }));
 
   return {
     appendMessages(studentId, messages) {
@@ -223,6 +266,28 @@ export function openStore(databasePath: string): Store {
 
     deviceKeyHashes() {
       return selectDeviceKeys.all().map((row: any) => row.key_hash);
+    },
+
+    addProfileFact(studentId, fact) {
+      const { lastInsertRowid } = insertFact.run(
+        studentId,
+        fact.text,
+        fact.originType,
+        fact.originMessageId,
+        fact.savedAt.toISOString(),
+      );
+      return { ...fact, id: Number(lastInsertRowid), editedAt: null };
+    },
+
+    listProfileFacts: listFacts,
+
+    editProfileFact(studentId, id, text, editedAt) {
+      const { changes } = updateFact.run(text, editedAt.toISOString(), studentId, id);
+      return changes === 0 ? null : (listFacts(studentId).find((fact) => fact.id === id) ?? null);
+    },
+
+    deleteProfileFact(studentId, id) {
+      return deleteFact.run(studentId, id).changes !== 0;
     },
 
     close() {

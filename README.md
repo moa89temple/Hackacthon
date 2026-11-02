@@ -76,6 +76,34 @@ The phone reaches the backend over Tailscale. Tailscale Serve gives the laptop a
 
 If you lose the phone, remove it from your [Tailscale machines](https://login.tailscale.com/admin/machines) so that it can't reach the backend.
 
+## What Buddy knows about you
+
+The conversation opens with Buddy's own words (`backend/src/system-prompt.ts`), which no model writes: two sentences on what it won't do and that it never acts without your tap, then a question about your Goals. Over the first few conversations it asks a couple of getting-to-know-you questions at a time, says why, and lets you skip them. It never asks about immigration status or health.
+
+Whatever you mention, Claude saves right away with its `remember` tool, as a Profile fact. The backend records where the fact came from, so Claude can't say otherwise. The You tab lists every fact with its origin, and you can edit or delete each one. Goals are saved as ordinary facts until #11 gives them their own place.
+
+### Hiding secrets
+
+Every message goes through `backend/src/masking.ts` first, before it's saved, before the Crisis check and before Claude sees it. So do facts, whether Claude saved them or you edited them. It replaces these with a mark such as `[password hidden]`, and the app replaces what you typed and shows a note saying Buddy hid it:
+
+- **Social Security numbers:** three, two and four digits with a space, dash or dot between them, or any nine digits if the message also mentions a Social Security number. Other nine-digit numbers, such as a TUid, are left alone.
+- **Card numbers:** 13 to 19 digits that pass the card checksum, even with an expiry date or security code right after them. If other digits pass the checksum along with part of a card, those are hidden too.
+- **Passwords and PINs:** the word after "my password is" or "changed my password to", all of a quoted password, the rest of the line after "password:", or anything with both letters and digits (or four digits in a row) within six words after the word "password". It also reads a few other languages. Ordinary talk such as "my password is expired" is left alone.
+
+It leans toward hiding, so it will sometimes hide a number that wasn't a secret.
+
+### Known limits
+
+- Deleting a fact takes it out of the Profile, and Buddy is told to go by the latest Profile and not bring the fact up again. The message it came from stays in the conversation, and so do the copies of the Profile in earlier turns, because the history Claude sees only ever grows. Claude can still read those, and they stay on disk until the conversation is deleted.
+- These can't be recognized:
+  - a password with no label, such as a message that just says "hunter2";
+  - a label in a language the list doesn't cover;
+  - an unquoted password that starts with an ordinary word, such as "my password is correct horse battery", which looks like talk about a password. If the first word isn't an ordinary one, only that word is hidden;
+  - nine digits on their own, with no mention of a Social Security number, because they look just like a TUid.
+- Only the digits 0 to 9 are read, so a number written in another numeral system isn't hidden. A number split up in an unusual way, such as "0 7 8 0 5", isn't either.
+- The opening and the note are in English, because the Student hasn't written anything yet. Buddy's own replies follow the Student's language.
+- Masking covers what you type in the app. What you type in the live view during a Takeover goes straight to the website, and Buddy never sees it.
+
 ## When a Student may be at risk
 
 Every message goes through a check before Claude sees it (`backend/src/crisis-check.ts`):
@@ -140,7 +168,7 @@ cd backend
 npm test
 npm run typecheck
 npm run test:browser   # checks against the real container, on local test pages. Needs Docker Desktop.
-npm run smoke          # makes a few real Claude calls, including a Crisis test, which cost real money
+npm run smoke          # makes real Claude calls, including Profile, masking and Crisis tests, which cost real money
 
 cd app
 flutter test

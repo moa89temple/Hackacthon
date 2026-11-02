@@ -1,7 +1,9 @@
 import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./claude.ts";
 import type { Clock } from "./clock.ts";
 import type { CrisisCheck, CrisisOutcome } from "./crisis-check.ts";
-import { BUDDY_SYSTEM_PROMPT, CRISIS_CARD_TOOL } from "./system-prompt.ts";
+import { hiddenNote, maskSecrets } from "./masking.ts";
+import { describeProfile, type Profile } from "./profile.ts";
+import { BUDDY_SYSTEM_PROMPT, CRISIS_CARD_TOOL, REMEMBER_TOOL } from "./system-prompt.ts";
 import { THE_STUDENT, type NewMessage, type Store, type StoredMessage } from "./store.ts";
 
 const REFUSAL_NOTE =
@@ -21,17 +23,22 @@ const TURN_INSTRUCTIONS: Record<CrisisOutcome, string> = {
   crisis: ` Buddy's safety check found the Student's safety may be at risk, and the app has already shown them the Crisis card, so don't call ${CRISIS_CARD_TOOL.name}. Reply briefly and with care, and encourage them to reach out to someone on the card.`,
 };
 
-/** A reply takes one request, or a few if Claude uses its tool first. This stops it looping. */
-const MAX_REQUESTS_PER_TURN = 3;
+/** A reply takes one request, or a few if Claude uses its tools first. This stops it looping. */
+const MAX_REQUESTS_PER_TURN = 6;
+/** Goes between what Claude wrote before a tool call and what it writes after. */
+const ROUND_BREAK = "\n\n";
 
 type ClaudeMessageParam = ClaudeRequest["messages"][number];
 type ContentBlock = ClaudeMessage["content"][number];
+type ToolCall = Extract<ContentBlock, { type: "tool_use" }>;
 
 export interface ChatMessage {
   id: number;
   role: "student" | "buddy";
   text: string;
   sentAt: string;
+  /** On a Student's message that had something hidden, what to tell them about it. */
+  hiddenNote?: string;
 }
 
 /** The app draws the card from its own code. This only says where it goes. */
@@ -41,6 +48,8 @@ export interface CrisisCardEntry {
 }
 
 export type ConversationEvent =
+  /** The Student's message had something hidden. This is the message as Buddy kept it. */
+  | { type: "hidden"; text: string; note: string }
   | { type: "text"; text: string }
   | { type: "crisis_card" }
   | { type: "done"; reply: ChatMessage }
@@ -48,7 +57,8 @@ export type ConversationEvent =
 
 export interface Conversation {
   /**
-   * Takes the Student's message and returns the stream of events for Buddy's turn.
+   * Takes the Student's message as they typed it, and returns the stream of events for Buddy's
+   * turn. Everything after the first step of the turn sees only the masked text.
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
@@ -61,11 +71,12 @@ export interface ConversationDeps {
   store: Store;
   chatModel: string;
   crisisCheck: CrisisCheck;
+  profile: Profile;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** Ends a turn Claude didn't finish. Saving can be what failed, so that can't stop the note. */
@@ -87,15 +98,36 @@ export function createConversation(deps: ConversationDeps): Conversation {
     }
   }
 
+  function answerCall(call: ToolCall, originMessageId: number) {
+    if (call.name === CRISIS_CARD_TOOL.name) {
+      return toolAnswer(call, "The Crisis card is on the Student's screen. Now reply to them.");
+    }
+    if (call.name !== REMEMBER_TOOL.name) return toolFailure(call, `There's no tool called ${call.name}.`);
+
+    const fact = (call.input as { fact?: unknown } | null)?.fact;
+    if (typeof fact !== "string" || fact.trim() === "") return toolFailure(call, "fact must be a non-empty string.");
+    try {
+      profile.remember(fact, { messageId: originMessageId });
+      return toolAnswer(call, "Saved to the Profile. Carry on with your reply.");
+    } catch (error) {
+      logError(error);
+      return toolFailure(call, "This couldn't be saved. Carry on with your reply, and don't say it was saved.");
+    }
+  }
+
   return {
-    async *send(text) {
+    async *send(typed) {
       const endTurn = await waitForTurn();
+      const text = maskSecrets(typed);
       const now = clock.now();
       let cardShown = false;
       let checkingIn = false;
       const noteIfClaudeCant = () => (cardShown ? CRISIS_NOTE : checkingIn ? CHECK_IN_NOTE : null);
 
       try {
+        const note = hiddenNote(text);
+        if (note) yield { type: "hidden", text, note };
+
         // A failed save holds until the check has run, because the card doesn't depend on saving.
         let studentMessageId: number | undefined;
         let saveFailure: unknown;
@@ -126,15 +158,21 @@ export function createConversation(deps: ConversationDeps): Conversation {
 
         const turnContext = {
           role: "system" as const,
-          content: describeCurrentTime(now) + TURN_INSTRUCTIONS[outcome],
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(profile.list())}`,
         };
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
+        // What Claude wrote before its tool calls this turn. The Student watched it arrive, so it
+        // stays part of the reply, and it may be the whole reply if Claude has nothing to add.
+        let wordsSoFar = "";
 
         for (let requests = 0; requests < MAX_REQUESTS_PER_TURN; requests++) {
           const request = chatRequest(chatModel, [...history, ...toClaudeMessages(toolRounds)]);
+          let wroteThisRound = false;
           for await (const event of claude.stream(request)) {
             if (event.type === "text") {
+              if (wordsSoFar && !wroteThisRound) yield { type: "text", text: ROUND_BREAK };
+              wroteThisRound = true;
               yield event;
               continue;
             }
@@ -155,10 +193,17 @@ export function createConversation(deps: ConversationDeps): Conversation {
             if (message.stop_reason === "tool_use") {
               const calls = toolCallsIn(message.content);
               if (!cardShown && calls.some((call) => call.name === CRISIS_CARD_TOOL.name)) yield showCard();
-              toolRounds.push(reply, { role: "user", content: calls.map(toolResult), createdAt: now });
+              const answers = calls.map((call) => answerCall(call, studentMessageId!));
+              toolRounds.push(reply, { role: "user", content: answers, createdAt: now });
+              wordsSoFar = joinWords(wordsSoFar, textOf(message.content));
               continue;
             }
-            if (textOf(message.content).trim() === "") {
+            // Cut off mid-call, say by max_tokens. Saved, the call would go unanswered in every later request.
+            if (toolCallsIn(message.content).length > 0) {
+              throw new Error(`Claude's reply ended in a tool call (stop reason: ${message.stop_reason})`);
+            }
+            const words = joinWords(wordsSoFar, textOf(message.content));
+            if (words.trim() === "") {
               throw new Error(`Claude's reply had no text (stop reason: ${message.stop_reason})`);
             }
             // Saved together so a system message is always followed by an assistant
@@ -166,7 +211,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
             const saved = store.appendMessages(THE_STUDENT, [
               { role: "system", content: turnContext.content, createdAt: now },
               ...toolRounds,
-              reply,
+              wordsSoFar ? { ...reply, shownText: words } : reply,
             ]);
             yield { type: "done", reply: toChatMessage(saved.at(-1)!) };
             return;
@@ -212,7 +257,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[]): ClaudeReque
     betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
     fallbacks: "default",
     system: BUDDY_SYSTEM_PROMPT,
-    tools: [CRISIS_CARD_TOOL],
+    tools: [CRISIS_CARD_TOOL, REMEMBER_TOOL],
     messages,
   };
 }
@@ -222,14 +267,16 @@ function toolCallsIn(blocks: ContentBlock[]) {
   return blocksToResend(blocks).filter((block) => block.type === "tool_use");
 }
 
-function toolResult(call: { id: string; name: string }) {
-  return call.name === CRISIS_CARD_TOOL.name
-    ? {
-        type: "tool_result",
-        tool_use_id: call.id,
-        content: "The Crisis card is on the Student's screen. Now reply to them.",
-      }
-    : { type: "tool_result", tool_use_id: call.id, is_error: true, content: `There's no tool called ${call.name}.` };
+function toolAnswer(call: ToolCall, content: string) {
+  return { type: "tool_result", tool_use_id: call.id, content };
+}
+
+function toolFailure(call: ToolCall, content: string) {
+  return { type: "tool_result", tool_use_id: call.id, is_error: true, content };
+}
+
+function joinWords(earlier: string, later: string): string {
+  return [earlier, later].filter((words) => words.trim() !== "").join(ROUND_BREAK);
 }
 
 /** Tool rounds are for Claude. The Student sees the reply they led to, and the card. */
@@ -253,8 +300,13 @@ function toClaudeMessages(stored: NewMessage[]): ClaudeMessageParam[] {
       currentTurn = [];
     } else if (message.role === "assistant") {
       const content = blocksToResend(message.content as ContentBlock[]);
-      messages.push(...currentTurn, { role: "assistant", content } as ClaudeMessageParam);
+      messages.push(...currentTurn);
       currentTurn = [];
+      // Claude can end a turn with nothing to add after a tool, and the API won't take that back.
+      // What came before it stays, so that a refusal next turn can't drop the tool's answer.
+      if (content.some((block) => block.type !== "thinking" && block.type !== "redacted_thinking")) {
+        messages.push({ role: "assistant", content } as ClaudeMessageParam);
+      }
     } else {
       currentTurn.push({ role: message.role, content: message.content } as ClaudeMessageParam);
     }
@@ -284,13 +336,16 @@ function describeCurrentTime(now: Date): string {
 }
 
 function toChatMessage(message: StoredMessage): ChatMessage {
+  const text =
+    message.shownText ??
+    (message.stopReason === "refusal" ? REFUSAL_NOTE : textOf(message.content as ContentBlock[]));
+  const note = message.role === "user" ? hiddenNote(text) : null;
   return {
     id: message.id,
     role: message.role === "user" ? "student" : "buddy",
-    text:
-      message.shownText ??
-      (message.stopReason === "refusal" ? REFUSAL_NOTE : textOf(message.content as ContentBlock[])),
+    text,
     sentAt: message.createdAt.toISOString(),
+    ...(note ? { hiddenNote: note } : {}),
   };
 }
 

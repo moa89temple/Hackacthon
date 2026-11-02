@@ -12,6 +12,8 @@ Future<void> openYouTab(WidgetTester tester, FakeBackend backend) async {
 }
 
 Future<void> openLiveView(WidgetTester tester) async {
+  // Logins come after the Profile on the You tab, so with large text they may need scrolling to.
+  await tester.scrollUntilVisible(find.text('Log in to Canvas'), 100);
   await tester.tap(find.text('Log in to Canvas'));
   await tester.pumpAndSettle();
 }

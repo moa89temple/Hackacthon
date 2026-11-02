@@ -27,11 +27,13 @@ class ChatController extends ChangeNotifier {
   /// Replies loaded from history are never announced.
   ChatMessage? newestReply;
 
+  /// The Student's latest message, if it just came back with something hidden, which screen
+  /// readers should read out. Notes loaded from history are never announced.
+  ChatMessage? newestHidden;
+
   /// The Crisis card from the latest turn, which should be read out and brought into view.
   /// Cards loaded from history are never announced.
   CrisisCardItem? newestCard;
-
-  bool get isEmptyConversation => items.isEmpty && replyInProgress == null && turnError == null;
 
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
@@ -49,10 +51,12 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> send(String text) async {
+    final studentMessageAt = items.length;
     items = [...items, ChatMessage(isFromBuddy: false, text: text)];
     replyInProgress = '';
     turnError = null;
     newestReply = null;
+    newestHidden = null;
     newestCard = null;
     _changed();
 
@@ -61,6 +65,11 @@ class ChatController extends ChangeNotifier {
     try {
       await for (final event in _backend.send(text)) {
         switch (event) {
+          case ReplyHidden():
+            final kept = ChatMessage(isFromBuddy: false, text: event.text, hiddenNote: event.note);
+            items = [...items]..[studentMessageAt] = kept;
+            newestHidden = kept;
+            _changed();
           case ReplyText():
             replyInProgress = replyInProgress! + event.text;
             _changed();

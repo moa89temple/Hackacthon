@@ -16,6 +16,17 @@ class FakeBackend implements BuddyBackend {
   /// Gets ready for the Student's next message, once the last reply has been closed.
   void nextReply() => reply = StreamController<ReplyEvent>();
 
+  List<ProfileFact> facts = [];
+  Object? factsError;
+
+  /// Makes every edit and deletion fail.
+  Object? changeError;
+  final List<(int, String)> edits = [];
+  final List<int> deletions = [];
+
+  /// What the next edit comes back as, when it isn't just the new words.
+  EditedFact? nextEditResult;
+
   Takeover? takeoverUnderWay;
   Takeover? takeoverToStart;
   Object? startTakeoverError;
@@ -39,6 +50,36 @@ class FakeBackend implements BuddyBackend {
   Stream<ReplyEvent> send(String text) {
     sent.add(text);
     return reply.stream;
+  }
+
+  @override
+  Future<List<ProfileFact>> loadFacts() async {
+    if (factsError case final error?) throw error;
+    return facts;
+  }
+
+  @override
+  Future<EditedFact?> editFact(int id, String text) async {
+    if (changeError case final error?) throw error;
+    edits.add((id, text));
+    final old = facts.where((fact) => fact.id == id).firstOrNull;
+    if (old == null) return null;
+    return nextEditResult ??
+        EditedFact(
+          fact: ProfileFact(
+            id: id,
+            text: text,
+            isFromConversation: old.isFromConversation,
+            savedAt: old.savedAt,
+            wasEdited: true,
+          ),
+        );
+  }
+
+  @override
+  Future<void> deleteFact(int id) async {
+    if (changeError case final error?) throw error;
+    deletions.add(id);
   }
 
   @override

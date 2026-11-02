@@ -29,7 +29,6 @@ class BuddyTab extends StatelessWidget {
       return const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading your conversation'));
     }
     if (chat.couldNotLoad) return _CouldNotLoad(onRetry: chat.loadHistory);
-    if (chat.isEmptyConversation) return const _Welcome();
     return _MessageList(chat: chat, openPhone: openPhone);
   }
 }
@@ -73,7 +72,10 @@ class _MessageListState extends State<_MessageList> {
       if (chat.replyInProgress case final text?) _ReplyInProgress(text: text),
       for (final item in chat.items.reversed)
         switch (item) {
-          ChatMessage() => _SavedMessage(message: item, announce: identical(item, chat.newestReply)),
+          ChatMessage() => _SavedMessage(
+              message: item,
+              announce: identical(item, chat.newestReply) || identical(item, chat.newestHidden),
+            ),
           CrisisCardItem() => CrisisCard(
               announce: identical(item, chat.newestCard),
               openPhone: widget.openPhone,
@@ -100,12 +102,23 @@ class _SavedMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final speaker = message.isFromBuddy ? 'Buddy said' : 'You said';
+    final note = message.hiddenNote;
     return Semantics(
       container: true,
       liveRegion: announce,
-      label: '$speaker: ${message.text}',
+      label: note == null ? '$speaker: ${message.text}' : '$speaker: ${message.text}. $note',
       excludeSemantics: true,
-      child: message.isFromBuddy ? _BuddyBubble(text: message.text) : _StudentBubble(text: message.text),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (message.isFromBuddy) _BuddyBubble(text: message.text) else _StudentBubble(text: message.text),
+          if (note != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 48, bottom: 4),
+              child: Text(note, textAlign: TextAlign.end, style: Theme.of(context).textTheme.bodySmall),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -237,31 +250,6 @@ class _CouldNotLoad extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             TextButton(onPressed: onRetry, child: const Text('Try again')),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Welcome extends StatelessWidget {
-  const _Welcome();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const BuddyAvatar(radius: 36),
-            const SizedBox(height: 16),
-            Text(
-              "Hi, I'm Buddy, an AI assistant. Ask me anything about life at Temple.",
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
           ],
         ),
       ),

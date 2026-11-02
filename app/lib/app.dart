@@ -10,6 +10,7 @@ import 'device/lock_screen.dart';
 import 'device/pairing_details.dart';
 import 'device/pairing_screen.dart';
 import 'device/qr_scanner.dart';
+import 'profile/profile_controller.dart';
 import 'tabs/simple_tabs.dart';
 import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
@@ -208,12 +209,28 @@ class _Tabs extends StatefulWidget {
 
 class _TabsState extends State<_Tabs> {
   static const _titles = ['Buddy', 'Today', 'Roadmap', 'You'];
+  static const _youTab = 3;
 
   late final ChatController _chat = ChatController(widget.backend)
     ..loadHistory()
-    ..addListener(_showNewCrisisCard);
+    ..addListener(_showNewCrisisCard)
+    ..addListener(_refreshProfileAfterTurn);
+  late final ProfileController _profile = ProfileController(widget.backend)..load();
   CrisisCardItem? _cardShown;
+  bool _wasReplying = false;
   int _selected = 0;
+
+  /// Buddy saves facts during a turn, and the You tab may be open when it finishes.
+  void _refreshProfileAfterTurn() {
+    final replying = _chat.replyInProgress != null;
+    if (_wasReplying && !replying && _selected == _youTab) _profile.load();
+    _wasReplying = replying;
+  }
+
+  void _selectTab(int index) {
+    setState(() => _selected = index);
+    if (index == _youTab) _profile.load();
+  }
 
   /// A Crisis card can arrive while the Student is on another tab, and they mustn't miss it.
   void _showNewCrisisCard() {
@@ -226,6 +243,7 @@ class _TabsState extends State<_Tabs> {
   @override
   void dispose() {
     _chat.dispose();
+    _profile.dispose();
     super.dispose();
   }
 
@@ -243,12 +261,12 @@ class _TabsState extends State<_Tabs> {
           BuddyTab(chat: _chat, openPhone: widget.openPhone),
           const TodayTab(),
           const RoadmapTab(),
-          YouTab(backend: widget.backend, liveViewBuilder: widget.liveViewBuilder),
+          YouTab(backend: widget.backend, profile: _profile, liveViewBuilder: widget.liveViewBuilder),
         ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selected,
-        onDestinationSelected: (index) => setState(() => _selected = index),
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.chat_bubble_outline), selectedIcon: Icon(Icons.chat_bubble), label: 'Buddy'),
           NavigationDestination(icon: Icon(Icons.today_outlined), selectedIcon: Icon(Icons.today), label: 'Today'),

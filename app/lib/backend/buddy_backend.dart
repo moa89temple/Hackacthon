@@ -21,19 +21,65 @@ class CrisisCardItem extends ConversationItem {
 }
 
 class ChatMessage extends ConversationItem {
-  const ChatMessage({required this.isFromBuddy, required this.text});
+  const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote});
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
         isFromBuddy: json['role'] == 'buddy',
         text: json['text'] as String,
+        hiddenNote: json['hiddenNote'] as String?,
       );
 
   final bool isFromBuddy;
   final String text;
+
+  /// On a Student's message that had something hidden, what to tell them about it.
+  final String? hiddenNote;
+}
+
+/// Something Buddy knows about the Student, and where it came from.
+class ProfileFact {
+  const ProfileFact({
+    required this.id,
+    required this.text,
+    required this.isFromConversation,
+    required this.savedAt,
+    required this.wasEdited,
+  });
+
+  factory ProfileFact.fromJson(Map<String, dynamic> json) => ProfileFact(
+        id: json['id'] as int,
+        text: json['text'] as String,
+        isFromConversation: (json['origin'] as Map<String, dynamic>)['type'] == 'conversation',
+        savedAt: DateTime.parse(json['savedAt'] as String),
+        wasEdited: json['editedAt'] != null,
+      );
+
+  final int id;
+  final String text;
+  final bool isFromConversation;
+  final DateTime savedAt;
+  final bool wasEdited;
+}
+
+/// A fact after the Student's edit, which may differ from what they typed.
+class EditedFact {
+  const EditedFact({required this.fact, this.hiddenNote});
+
+  final ProfileFact fact;
+
+  /// What to tell the Student if something in their edit was hidden.
+  final String? hiddenNote;
 }
 
 sealed class ReplyEvent {
   const ReplyEvent();
+}
+
+/// The Student's message had something hidden. [text] is the message as Buddy kept it.
+class ReplyHidden extends ReplyEvent {
+  const ReplyHidden({required this.text, required this.note});
+  final String text;
+  final String note;
 }
 
 /// More of Buddy's reply, as Claude writes it.
@@ -115,6 +161,14 @@ abstract interface class BuddyBackend {
   /// Sends the Student's message. The stream carries Buddy's turn.
   Stream<ReplyEvent> send(String text);
 
+  Future<List<ProfileFact>> loadFacts();
+
+  /// Returns the fact as saved, or null if it was already gone.
+  Future<EditedFact?> editFact(int id, String text);
+
+  /// Also succeeds if the fact was already gone.
+  Future<void> deleteFact(int id);
+
   /// The Takeover under way, if there is one.
   Future<Takeover?> currentTakeover();
 
@@ -175,12 +229,14 @@ class HttpBuddyBackend implements BuddyBackend {
   })  : _baseUrl = baseUrl,
         _messagesUrl = baseUrl.resolve('/conversation/messages'),
         _takeoverUrl = baseUrl.resolve('/takeover'),
+        _factsUrl = baseUrl.resolve('/profile/facts'),
         _keyHeader = {'authorization': 'Bearer $deviceKey'},
         _client = client ?? http.Client();
 
   final Uri _baseUrl;
   final Uri _messagesUrl;
   final Uri _takeoverUrl;
+  final Uri _factsUrl;
   final Map<String, String> _keyHeader;
   final void Function() _onKeyRefused;
   final http.Client _client;
@@ -199,8 +255,41 @@ class HttpBuddyBackend implements BuddyBackend {
     _check(response.statusCode, 'Loading history');
     final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     return [
+      if (body['opening'] case final String opening) ChatMessage(isFromBuddy: true, text: opening),
       for (final item in body['messages'] as List<dynamic>) _parseItem(item as Map<String, dynamic>),
     ];
+  }
+
+  @override
+  Future<List<ProfileFact>> loadFacts() async {
+    final response = await _client.get(_factsUrl, headers: _keyHeader);
+    _check(response.statusCode, 'Loading the Profile');
+    return [
+      for (final fact in _decode(response)['facts'] as List<dynamic>) ProfileFact.fromJson(fact as Map<String, dynamic>),
+    ];
+  }
+
+  @override
+  Future<EditedFact?> editFact(int id, String text) async {
+    final response = await _client.patch(
+      _factsUrl.resolve('/profile/facts/$id'),
+      headers: {..._keyHeader, 'content-type': 'application/json'},
+      body: jsonEncode({'text': text}),
+    );
+    if (response.statusCode == 404) return null;
+    _check(response.statusCode, 'Editing a fact');
+    final body = _decode(response);
+    return EditedFact(
+      fact: ProfileFact.fromJson(body['fact'] as Map<String, dynamic>),
+      hiddenNote: body['hiddenNote'] as String?,
+    );
+  }
+
+  @override
+  Future<void> deleteFact(int id) async {
+    final response = await _client.delete(_factsUrl.resolve('/profile/facts/$id'), headers: _keyHeader);
+    if (response.statusCode == 204 || response.statusCode == 404) return;
+    _check(response.statusCode, 'Deleting a fact');
   }
 
   @override
@@ -263,6 +352,7 @@ class HttpBuddyBackend implements BuddyBackend {
 
   /// Returns null for event types added after this version of the app.
   ReplyEvent? _parseEvent(Map<String, dynamic> json) => switch (json['type']) {
+        'hidden' => ReplyHidden(text: json['text'] as String, note: json['note'] as String),
         'text' => ReplyText(json['text'] as String),
         'crisis_card' => const ReplyCrisisCard(),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),

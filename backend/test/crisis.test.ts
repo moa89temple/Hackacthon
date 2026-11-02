@@ -316,13 +316,13 @@ describe("Claude raising the card mid-conversation", () => {
   });
 
   it("doesn't let Claude loop on the tool forever, and keeps the card if it tries", async () => {
-    backend.claude.willReply(raisesCard(), raisesCard(), raisesCard(), raisesCard(), raisesCard());
+    backend.claude.willReply(...Array.from({ length: 10 }, raisesCard));
 
     const events = await backend.sendAndCollect("Everything feels pointless lately");
 
     expect(types(events)).toEqual(["crisis_card", "done"]);
     expect(events.at(-1).reply.text).toMatch(/card/i);
-    expect(backend.claude.requests.length).toBeLessThan(5);
+    expect(backend.claude.requests.length).toBeLessThan(10);
   });
 
   it("uses Buddy's own note if Claude fails after raising the card", async () => {

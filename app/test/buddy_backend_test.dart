@@ -45,6 +45,164 @@ void main() {
     expect(messages.map((message) => message.isFromBuddy), [false, true]);
   });
 
+  test('puts the opening first, in Buddy\'s voice, even with nothing else to load', () async {
+    final backend = HttpBuddyBackend(
+      baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
+      client: MockClient((request) async {
+        return http.Response(jsonEncode({'opening': 'I am Buddy.', 'messages': []}), 200);
+      }),
+    );
+
+    final history = await backend.loadHistory();
+
+    expect((history.single as ChatMessage).text, 'I am Buddy.');
+    expect((history.single as ChatMessage).isFromBuddy, isTrue);
+  });
+
+  test('reads the hidden note on a message in the history', () async {
+    final backend = HttpBuddyBackend(
+      baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'messages': [
+              {'id': 1, 'role': 'student', 'text': '[password hidden]', 'hiddenNote': 'Buddy hid it.'},
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+
+    final history = await backend.loadHistory();
+
+    expect((history.single as ChatMessage).hiddenNote, 'Buddy hid it.');
+  });
+
+  test('reads the hidden event', () async {
+    final backend = HttpBuddyBackend(
+      baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
+      client: MockClient.streaming((request, body) async {
+        return http.StreamedResponse(
+          Stream.value(utf8.encode('data: {"type":"hidden","text":"[password hidden]","note":"Buddy hid it."}\n\n')),
+          200,
+        );
+      }),
+    );
+
+    final event = (await backend.send('Hello').toList()).single as ReplyHidden;
+
+    expect(event.text, '[password hidden]');
+    expect(event.note, 'Buddy hid it.');
+  });
+
+  group('Profile facts', () {
+    const factJson = {
+      'id': 7,
+      'text': 'Is a junior.',
+      'origin': {'type': 'conversation', 'messageId': 1},
+      'savedAt': '2026-11-02T14:00:00.000Z',
+      'editedAt': null,
+    };
+
+    test('loads them with where each came from', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/profile/facts');
+          return http.Response(
+            jsonEncode({
+              'facts': [
+                factJson,
+                {...factJson, 'id': 8, 'editedAt': '2026-11-03T14:00:00.000Z'},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final facts = await backend.loadFacts();
+
+      expect(facts.map((fact) => fact.id), [7, 8]);
+      expect(facts[0].text, 'Is a junior.');
+      expect(facts[0].isFromConversation, isTrue);
+      expect(facts[0].savedAt, DateTime.utc(2026, 11, 2, 14));
+      expect(facts.map((fact) => fact.wasEdited), [false, true]);
+    });
+
+    test('sends an edit and reads the fact and any note that come back', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient((request) async {
+          expect(request.method, 'PATCH');
+          expect(request.url.path, '/profile/facts/7');
+          expect(jsonDecode(request.body), {'text': 'Is a senior.'});
+          return http.Response(jsonEncode({'fact': factJson, 'hiddenNote': 'Buddy hid it.'}), 200);
+        }),
+      );
+
+      final edited = await backend.editFact(7, 'Is a senior.');
+
+      expect(edited!.fact.id, 7);
+      expect(edited.hiddenNote, 'Buddy hid it.');
+    });
+
+    test('reports an edit of a fact that is gone as nothing to show', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient((request) async => http.Response('{}', 404)),
+      );
+
+      expect(await backend.editFact(7, 'Is a senior.'), isNull);
+    });
+
+    test('deletes one, and a fact already gone counts as deleted', () async {
+      final statuses = [204, 404];
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient((request) async {
+          expect(request.method, 'DELETE');
+          expect(request.url.path, '/profile/facts/7');
+          return http.Response('', statuses.removeAt(0));
+        }),
+      );
+
+      await backend.deleteFact(7);
+      await backend.deleteFact(7);
+
+      expect(statuses, isEmpty);
+    });
+
+    test('fails on any other error', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient((request) async => http.Response('{}', 500)),
+      );
+
+      await expectLater(backend.loadFacts(), throwsA(isA<BackendException>()));
+      await expectLater(backend.editFact(7, 'Anything'), throwsA(isA<BackendException>()));
+      await expectLater(backend.deleteFact(7), throwsA(isA<BackendException>()));
+    });
+  });
+
   test('fails loudly when the history cannot be loaded', () async {
     final backend = HttpBuddyBackend(
       baseUrl,
@@ -299,6 +457,8 @@ void main() {
             '/conversation/messages' when request.method == 'GET' => http.Response('{"messages":[]}', 200),
             '/conversation/messages' => http.Response('', 200),
             '/takeover/done' => http.Response('{"siteName":"Canvas","signedIn":true}', 200),
+            '/profile/facts' => http.Response('{"facts":[]}', 200),
+            '/profile/facts/1' => http.Response('', 404),
             _ => http.Response(
                 '{"takeover":{"site":"canvas","siteName":"Canvas","liveViewPath":"/takeover/live/t/takeover.html"}}',
                 200,
@@ -312,8 +472,14 @@ void main() {
       await backend.currentTakeover();
       await backend.startTakeover('canvas');
       await backend.finishTakeover();
+      await backend.loadFacts();
+      await backend.editFact(1, 'Anything');
+      await backend.deleteFact(1);
 
       expect(seen, {
+        'GET /profile/facts': authorization,
+        'PATCH /profile/facts/1': authorization,
+        'DELETE /profile/facts/1': authorization,
         'GET /conversation/messages': authorization,
         'POST /conversation/messages': authorization,
         'GET /takeover': authorization,
@@ -360,6 +526,9 @@ void main() {
         'checking for a Takeover': () => backend.currentTakeover(),
         'starting a Takeover': () => backend.startTakeover('canvas'),
         'finishing a Takeover': () => backend.finishTakeover(),
+        'loading the Profile': () => backend.loadFacts(),
+        'editing a fact': () => backend.editFact(1, 'Anything'),
+        'deleting a fact': () => backend.deleteFact(1),
       };
 
       operations.forEach((name, operation) {

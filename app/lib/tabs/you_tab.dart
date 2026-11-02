@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
+import '../profile/profile_controller.dart';
+import '../profile/profile_section.dart';
 import '../takeover/live_view.dart';
 import '../takeover/takeover_screen.dart';
 
 const _canvas = 'canvas';
 
 class YouTab extends StatefulWidget {
-  const YouTab({super.key, required this.backend, required this.liveViewBuilder});
+  const YouTab({super.key, required this.backend, required this.profile, required this.liveViewBuilder});
 
   final BuddyBackend backend;
+  final ProfileController profile;
   final LiveViewBuilder liveViewBuilder;
 
   @override
@@ -89,6 +92,8 @@ class _YouTabState extends State<YouTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        ProfileSection(profile: widget.profile),
+        const SizedBox(height: 32),
         Semantics(
           header: true,
           child: Text('Logins', style: theme.textTheme.titleMedium),

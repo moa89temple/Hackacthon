@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDevices } from "../../src/devices.ts";
@@ -87,6 +87,13 @@ export class BackendHarness {
     return { code, close: () => store.close() };
   }
 
+  /** Whether these exact characters are anywhere in the database's files on disk. */
+  storageContains(text: string): boolean {
+    return readdirSync(this.#directory)
+      .filter((name) => name.startsWith("buddy.sqlite"))
+      .some((name) => readFileSync(join(this.#directory, name)).includes(text));
+  }
+
   async restart(): Promise<void> {
     await this.#backend.close();
     await this.#boot();
@@ -121,6 +128,29 @@ export class BackendHarness {
   async history(): Promise<any[]> {
     const response = await fetch(`${this.url}/conversation/messages`, { headers: this.deviceHeaders });
     return ((await response.json()) as { messages: any[] }).messages;
+  }
+
+  /** What Buddy says first, before the Student has written anything. */
+  async opening(): Promise<string> {
+    const response = await fetch(`${this.url}/conversation/messages`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { opening: string }).opening;
+  }
+
+  async profileFacts(): Promise<any[]> {
+    const response = await fetch(`${this.url}/profile/facts`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { facts: any[] }).facts;
+  }
+
+  editFact(id: unknown, text: unknown): Promise<Response> {
+    return fetch(`${this.url}/profile/facts/${id}`, {
+      method: "PATCH",
+      headers: { ...this.deviceHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  }
+
+  deleteFact(id: unknown): Promise<Response> {
+    return fetch(`${this.url}/profile/facts/${id}`, { method: "DELETE", headers: this.deviceHeaders });
   }
 
   startTakeover(site: unknown): Promise<Response> {

@@ -13,7 +13,10 @@ import { createConversation } from "./conversation.ts";
 import { createCrisisCheck } from "./crisis-check.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { createLiveViewProxy } from "./live-view-proxy.ts";
+import { hiddenNote } from "./masking.ts";
+import { createProfile, type Profile } from "./profile.ts";
 import { openStore } from "./store.ts";
+import { BUDDY_OPENING } from "./system-prompt.ts";
 
 const PAIR_ROUTE = "/devices/pair";
 
@@ -40,6 +43,7 @@ export interface RunningBackend {
 export async function startBackend(options: BackendOptions): Promise<RunningBackend> {
   const store = openStore(options.databasePath);
   const devices = createDevices({ store, clock: options.adapters.clock });
+  const profile = createProfile({ store, clock: options.adapters.clock });
   const conversation = createConversation({
     claude: options.adapters.claude,
     clock: options.adapters.clock,
@@ -50,6 +54,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
       ...options.crisisCheck,
       logError: (error) => app.log.error(error),
     }),
+    profile,
     logError: (error) => app.log.error(error),
   });
   const browserAccess = createBrowserAccess({
@@ -99,7 +104,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     return { deviceKey };
   });
 
-  app.get("/conversation/messages", async () => ({ messages: conversation.history() }));
+  app.get("/conversation/messages", async () => ({ opening: BUDDY_OPENING, messages: conversation.history() }));
 
   app.post<{ Body: { text?: unknown } }>("/conversation/messages", async (request, reply) => {
     const text = request.body?.text;
@@ -116,10 +121,36 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     reply.raw.end();
   });
 
+  addProfileRoutes(app, profile);
   addBrowserRoutes(app, browserAccess);
 
   const url = await app.listen({ host: options.host, port: options.port });
   return { url, browserAccess, devices, close: () => app.close() };
+}
+
+function addProfileRoutes(app: FastifyInstance, profile: Profile): void {
+  app.get("/profile/facts", async () => ({ facts: profile.list() }));
+
+  app.patch<{ Params: { id: string }; Body: { text?: unknown } }>("/profile/facts/:id", async (request, reply) => {
+    const text = request.body?.text;
+    if (typeof text !== "string" || text.trim() === "") {
+      return reply.code(400).send({ error: "text must be a non-empty string" });
+    }
+    const fact = isFactId(request.params.id) ? profile.edit(Number(request.params.id), text) : null;
+    if (!fact) return reply.code(404).send({ error: "There's no such fact" });
+    const note = hiddenNote(fact.text);
+    return { fact, ...(note ? { hiddenNote: note } : {}) };
+  });
+
+  app.delete<{ Params: { id: string } }>("/profile/facts/:id", async (request, reply) => {
+    const removed = isFactId(request.params.id) && profile.remove(Number(request.params.id));
+    return removed ? reply.code(204).send() : reply.code(404).send({ error: "There's no such fact" });
+  });
+}
+
+/** Longer than this, Number would round it and could land on a different fact. */
+function isFactId(id: string): boolean {
+  return /^\d{1,15}$/.test(id);
 }
 
 function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess): void {
