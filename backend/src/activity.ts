@@ -86,6 +86,19 @@ export function guidebookItemReported(name: string, at: Date): NewActivityEntry 
   return { kind: "guidebook_report", title: `You reported ${name}`, detail: "Buddy no longer shows it to any Student.", at };
 }
 
+/** Keeps all the words as they were at the time, because the Student can change the Draft afterwards. */
+function draftDetail(words: { subject: string; body: string }): string {
+  return `Subject: ${words.subject}\n\n${words.body}`;
+}
+
+export function draftWritten(contactName: string, words: { subject: string; body: string }, at: Date): NewActivityEntry {
+  return { kind: "draft_written", title: `Buddy wrote a Draft to ${contactName}`, detail: draftDetail(words), at };
+}
+
+export function draftEdited(contactName: string, words: { subject: string; body: string }, at: Date): NewActivityEntry {
+  return { kind: "draft_edited", title: `You edited the Draft to ${contactName}`, detail: draftDetail(words), at };
+}
+
 export function discoveryRead(pagesRead: number, pagesInAll: number, couldNotRead: string[], at: Date): NewActivityEntry {
   const problems = couldNotRead.length > 0 ? ` Couldn't read: ${couldNotRead.join(", ")}` : "";
   return {

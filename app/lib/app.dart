@@ -4,6 +4,7 @@ import 'backend/buddy_backend.dart';
 import 'chat/buddy_tab.dart';
 import 'chat/chat_controller.dart';
 import 'chat/crisis_card.dart';
+import 'chat/outlook.dart';
 import 'connections/connections_controller.dart';
 import 'device/app_lock.dart';
 import 'device/device_store.dart';
@@ -28,6 +29,7 @@ class BuddyApp extends StatefulWidget {
     this.liveViewBuilder = webLiveView,
     this.qrScannerBuilder = cameraQrScanner,
     this.openPhone = openWithPhone,
+    this.openDraft = openDraftInOutlook,
   });
 
   final DeviceStore deviceStore;
@@ -36,6 +38,7 @@ class BuddyApp extends StatefulWidget {
   final LiveViewBuilder liveViewBuilder;
   final QrScannerBuilder qrScannerBuilder;
   final PhoneOpener openPhone;
+  final DraftOpener openDraft;
 
   @override
   State<BuddyApp> createState() => _BuddyAppState();
@@ -161,7 +164,12 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
     }
     // Until the first unlock nothing exists behind the lock, not even the conversation.
     if (!_unlockedOnce) return const Scaffold();
-    return _Tabs(backend: backend, liveViewBuilder: widget.liveViewBuilder, openPhone: widget.openPhone);
+    return _Tabs(
+      backend: backend,
+      liveViewBuilder: widget.liveViewBuilder,
+      openPhone: widget.openPhone,
+      openDraft: widget.openDraft,
+    );
   }
 
   @override
@@ -198,11 +206,12 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
 }
 
 class _Tabs extends StatefulWidget {
-  const _Tabs({required this.backend, required this.liveViewBuilder, required this.openPhone});
+  const _Tabs({required this.backend, required this.liveViewBuilder, required this.openPhone, required this.openDraft});
 
   final BuddyBackend backend;
   final LiveViewBuilder liveViewBuilder;
   final PhoneOpener openPhone;
+  final DraftOpener openDraft;
 
   @override
   State<_Tabs> createState() => _TabsState();
@@ -267,7 +276,7 @@ class _TabsState extends State<_Tabs> {
       body: IndexedStack(
         index: _selected,
         children: [
-          BuddyTab(chat: _chat, connections: _connections, openPhone: widget.openPhone),
+          BuddyTab(chat: _chat, connections: _connections, openPhone: widget.openPhone, openDraft: widget.openDraft),
           const TodayTab(),
           const RoadmapTab(),
           YouTab(

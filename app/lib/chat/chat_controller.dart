@@ -43,6 +43,10 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   List<GuidebookCardItem> newestGuidebookCards = const [];
 
+  /// The Draft card from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  DraftCardItem? newestDraftCard;
+
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
   Future<void> loadHistory() async {
@@ -68,6 +72,7 @@ class ChatController extends ChangeNotifier {
     newestCard = null;
     newestReadPermissionCard = null;
     newestGuidebookCards = const [];
+    newestDraftCard = null;
     _changed();
 
     ChatMessage? reply;
@@ -98,6 +103,11 @@ class ChatController extends ChangeNotifier {
             items = [...items, card];
             newestGuidebookCards = [...newestGuidebookCards, card];
             _changed();
+          case ReplyDraftCard():
+            final card = DraftCardItem(event.draft);
+            items = [...items, card];
+            newestDraftCard = card;
+            _changed();
           case ReplyDone():
             reply = event.reply;
           case ReplyFailed():
@@ -126,10 +136,24 @@ class ChatController extends ChangeNotifier {
       for (final existing in items)
         if (existing is GuidebookCardItem && existing.item?.id == item.id)
           GuidebookCardItem(null, reportedJustNow: true)
+        else if (existing is DraftCardItem && existing.draft.contact?.id == item.id)
+          DraftCardItem(existing.draft.withoutContact())
         else
           existing,
     ];
     _changed();
+  }
+
+  /// Throws if the backend can't be reached, and then nothing changes. Returns what to tell the
+  /// Student if something they typed was hidden.
+  Future<String?> editDraft(int id, {required String subject, required String body}) async {
+    final edited = await _backend.editDraft(id, subject: subject, body: body);
+    items = [
+      for (final existing in items)
+        if (existing is DraftCardItem && existing.draft.id == id) DraftCardItem(edited.draft) else existing,
+    ];
+    _changed();
+    return edited.hiddenNote;
   }
 
   void _changed() {

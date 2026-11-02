@@ -3,6 +3,7 @@ import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./c
 import { describeInPhiladelphia, type Clock } from "./clock.ts";
 import { NoReadPermission, type Connections } from "./connections.ts";
 import type { CrisisCheck, CrisisOutcome } from "./crisis-check.ts";
+import { createDrafts, type Draft } from "./drafts.ts";
 import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from "./guidebook.ts";
 import { hiddenNote, maskSecrets } from "./masking.ts";
@@ -12,6 +13,7 @@ import {
   CHECK_CALENDAR_TOOL,
   CRISIS_CARD_TOOL,
   FIND_CONTACTS_TOOL,
+  MAKE_HANDOFF_TOOL,
   REMEMBER_TOOL,
   SEARCH_GUIDEBOOK_TOOL,
   SHOW_GUIDEBOOK_CARDS_TOOL,
@@ -45,7 +47,7 @@ const QUESTIONS_REMINDER =
 
 /** In every turn for the same reason as the reminder above. */
 const SOURCE_REMINDER =
-  "Anything specific to Temple has to come from the Guidebook, with its card shown, even if you said it earlier or feel sure of it. If it isn't there, say you couldn't find a Source.";
+  "Anything specific to Temple has to come from the Guidebook, with its card shown, even if you said it earlier or feel sure of it. If it isn't there, say you couldn't find a Source and offer a Handoff.";
 
 /** By number, because Claude has seen the numbers and a system message shouldn't carry a page's words. */
 function reportedItemsNote(ids: number[]): string {
@@ -55,7 +57,13 @@ function reportedItemsNote(ids: number[]): string {
 }
 
 const NOTHING_IN_THE_GUIDEBOOK =
-  "The Guidebook has nothing on that, so there's no Source for it. Tell the Student you couldn't find a Source, and don't answer from memory.";
+  `The Guidebook has nothing on that, so there's no Source for it. Tell the Student you couldn't find a Source, and don't answer from memory. Then use ${FIND_CONTACTS_TOOL.name} and offer a Handoff to whoever is most likely to know.`;
+
+const NO_CONTACT_IN_THE_GUIDEBOOK =
+  "The Guidebook has no Contact for those words. Try wider words, such as the office most likely to know. A Handoff needs a Contact from the Guidebook, so if none fits, tell the Student you couldn't find one, and don't name one from memory.";
+
+const HANDOFF_MADE =
+  "The Contact's card and the Draft card are on the Student's screen. The Draft hasn't been sent, and only the Student can send it. The card says why you picked this Contact and that you can explain the issue yourself instead. Now reply in a sentence or two, without repeating the Draft.";
 
 const COULD_NOT_SAVE_FACT = "Tried to save something to your Profile, but couldn't.";
 
@@ -97,6 +105,13 @@ export interface GuidebookCardEntry {
   sentAt: string;
 }
 
+/** A Draft as it stands now, with the Student's edits. */
+export interface DraftCardEntry {
+  type: "draft_card";
+  draft: Draft;
+  sentAt: string;
+}
+
 export type ConversationEvent =
   /** The Student's message had something hidden. This is the message as Buddy kept it. */
   | { type: "hidden"; text: string; note: string }
@@ -104,6 +119,7 @@ export type ConversationEvent =
   | { type: "crisis_card" }
   | { type: "read_permission_card"; connection: string }
   | { type: "guidebook_card"; item: GuidebookItem }
+  | { type: "draft_card"; draft: Draft }
   | { type: "done"; reply: ChatMessage }
   | { type: "error"; message: string };
 
@@ -114,7 +130,7 @@ export interface Conversation {
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
-  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry)[];
+  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | DraftCardEntry)[];
 }
 
 export interface ConversationDeps {
@@ -131,6 +147,7 @@ export interface ConversationDeps {
 
 export function createConversation(deps: ConversationDeps): Conversation {
   const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, logError } = deps;
+  const drafts = createDrafts({ store, clock, guidebook });
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -239,7 +256,8 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const items = guidebook.search(query, kind ? { kind } : {});
       turn.tools.push(`${lookedFor} for ${JSON.stringify(query)} and found ${items.length}.`);
       noteSourcesLookedAt(turn, items.flatMap((item) => item.sources));
-      return toolAnswer(call, items.length > 0 ? guidebook.describeForClaude(items) : NOTHING_IN_THE_GUIDEBOOK);
+      if (items.length > 0) return toolAnswer(call, guidebook.describeForClaude(items));
+      return toolAnswer(call, kind === "contact" ? NO_CONTACT_IN_THE_GUIDEBOOK : NOTHING_IN_THE_GUIDEBOOK);
     } catch (error) {
       logError(error);
       turn.tools.push(`${lookedFor}, but something went wrong.`);
@@ -275,6 +293,34 @@ export function createConversation(deps: ConversationDeps): Conversation {
       };
     }
     return { cards, answer: toolAnswer(call, "The cards are on the Student's screen, each with its Source. Now reply to them.") };
+  }
+
+  /** The Contact's card goes first, so that the Draft comes with who it's to and their Source. */
+  function makeHandoff(call: ToolCall, shownThisTurn: Map<number, string>, afterMessageId: number, now: Date, turn: TurnRecord) {
+    const { contact_id: contactId, why, subject, body } = (call.input ?? {}) as Record<string, unknown>;
+    if (![why, subject, body].every((words) => typeof words === "string" && words.trim() !== "")) {
+      turn.tools.push("Tried to write a Draft, but with nothing to say.");
+      return { answer: toolFailure(call, "why, subject and body must each say something.") };
+    }
+    const contact = guidebook.itemsWithIds([contactId as number])[0];
+    if (!contact) {
+      turn.tools.push("Tried to write a Draft to a Contact that isn't in the Guidebook.");
+      return { answer: toolFailure(call, "That isn't in the Guidebook, because it was reported or has left its Source. Don't mention it.") };
+    }
+    if (contact.kind !== "contact") {
+      turn.tools.push("Tried to write a Draft to something that isn't a Contact.");
+      return { answer: toolFailure(call, `That isn't a Contact. Use ${FIND_CONTACTS_TOOL.name} to find one.`) };
+    }
+    const cards = addCards([contact], shownThisTurn, afterMessageId, now, turn);
+    try {
+      const draft = drafts.write({ contact, why: why as string, subject: subject as string, body: body as string, afterMessageId });
+      turn.tools.push(`Wrote a Draft to ${JSON.stringify(contact.name)}.`);
+      return { cards, draft, answer: toolAnswer(call, HANDOFF_MADE) };
+    } catch (error) {
+      logError(error);
+      turn.tools.push(`Tried to write a Draft to ${JSON.stringify(contact.name)}, but couldn't save it.`);
+      return { cards, answer: toolFailure(call, "The Draft couldn't be saved. Tell the Student, and don't say you wrote it.") };
+    }
   }
 
   async function answerCall(call: ToolCall, originMessageId: number, turn: TurnRecord) {
@@ -314,6 +360,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       let checkingIn = false;
       const suggestedThisTurn = new Set<string>();
       const cardsThisTurn = new Map<number, string>();
+      let handoffMade = false;
       const turn = newTurnRecord();
       const noteIfClaudeCant = () => (cardShown ? CRISIS_NOTE : checkingIn ? CHECK_IN_NOTE : null);
 
@@ -355,7 +402,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
         noteFactsGiven(turn, factsGiven);
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}\n\n${QUESTIONS_REMINDER}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${drafts.newestEditNote()}\n\n${QUESTIONS_REMINDER}`,
         };
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
@@ -407,6 +454,16 @@ export function createConversation(deps: ConversationDeps): Conversation {
                 } else if (call.name === SHOW_GUIDEBOOK_CARDS_TOOL.name) {
                   const { answer, cards } = showGuidebookCards(call, cardsThisTurn, studentMessageId!, now, turn);
                   for (const item of cards) yield { type: "guidebook_card", item };
+                  answers.push(answer);
+                } else if (call.name === MAKE_HANDOFF_TOOL.name) {
+                  if (handoffMade) {
+                    answers.push(toolFailure(call, "You've made this reply's one Handoff, so don't make another. Now reply to the Student."));
+                    continue;
+                  }
+                  const { answer, cards = [], draft } = makeHandoff(call, cardsThisTurn, studentMessageId!, now, turn);
+                  for (const item of cards) yield { type: "guidebook_card", item };
+                  if (draft) yield { type: "draft_card", draft };
+                  handoffMade = draft !== undefined;
                   answers.push(answer);
                 } else {
                   answers.push(await answerCall(call, studentMessageId!, turn));
@@ -465,6 +522,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const readPermissionCards = store.listReadPermissionCards(THE_STUDENT);
       const guidebookCards = store.listGuidebookCards(THE_STUDENT);
       const itemsOnCards = guidebook.itemsWithIds(guidebookCards.map((card) => card.itemId));
+      const draftCards = drafts.list();
       return store
         .listMessages(THE_STUDENT)
         .filter(isShownToStudent)
@@ -487,6 +545,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
               item: itemsOnCards.find((item) => item.id === card.itemId) ?? null,
               sentAt: card.createdAt.toISOString(),
             })),
+          // Last, so that a Draft follows its Contact's card, as it did when it first appeared.
+          ...draftCards
+            .filter((card) => card.afterMessageId === message.id)
+            .map(({ afterMessageId: _, ...draft }) => ({ type: "draft_card" as const, draft, sentAt: draft.createdAt })),
         ]);
     },
   };
@@ -516,6 +578,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[]): ClaudeReque
       SEARCH_GUIDEBOOK_TOOL,
       FIND_CONTACTS_TOOL,
       SHOW_GUIDEBOOK_CARDS_TOOL,
+      MAKE_HANDOFF_TOOL,
     ],
     messages,
   };

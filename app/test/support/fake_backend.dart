@@ -61,6 +61,21 @@ class FakeBackend implements BuddyBackend {
     reported.add(id);
   }
 
+  final List<(int, String, String)> draftEdits = [];
+  Object? draftEditError;
+  String? draftEditHiddenNote;
+
+  @override
+  Future<EditedDraft> editDraft(int id, {required String subject, required String body}) async {
+    if (draftEditError case final error?) throw error;
+    draftEdits.add((id, subject, body));
+    final old = history.whereType<DraftCardItem>().firstWhere((card) => card.draft.id == id).draft;
+    return EditedDraft(
+      draft: Draft(id: id, contact: old.contact, why: old.why, subject: subject, body: body),
+      hiddenNote: draftEditHiddenNote,
+    );
+  }
+
   List<ActivityEntry> activity = [];
   Object? activityError;
 
