@@ -12,6 +12,15 @@ export interface PageReading {
   html: string;
   /** What the server told the page's own scripts, if the read asked for any. See ReadOptions. */
   answers?: PageAnswer[];
+  /** The frames inside the page, because `text` and `html` stop at a frame's edge. A portal may keep everything in them. */
+  frames?: FrameReading[];
+}
+
+/** One frame inside a page, read the same way. Each stands alone: nothing says a frame's words are the page's. */
+export interface FrameReading {
+  url: string;
+  text: string;
+  html: string;
 }
 
 /** What a page's own script got back from a server. Nothing extra is asked for to get this. */

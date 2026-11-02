@@ -9,7 +9,7 @@ import { createProfile } from "./profile.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { attribute, elementsNamed, wordsIn } from "./tuportal-pages.ts";
 import { TUPORTAL_PAGES, type TuportalPage } from "./tuportal-rules.ts";
-import { tuportal, TUPORTAL_SECTIONS } from "./tuportal.ts";
+import { partToRead, tuportal, TUPORTAL_SECTIONS } from "./tuportal.ts";
 
 /**
  * Checks the TUportal reader against a real login, for someone who must not see the Student's records.
@@ -76,13 +76,54 @@ function headingsOf(html: string): string[] {
   return [...new Set(headings)].slice(0, MOST_HEADINGS);
 }
 
+/** Each line of what a frame shows, with only the ordinary words left: the labels the reader goes by, never an amount. */
+function lineShapes(text: string): string[] {
+  const shapes = text
+    .split(/\r?\n/)
+    .map((line) => line.trim().toLowerCase())
+    .filter(Boolean)
+    .map((line) =>
+      line
+        .split(/\s+/)
+        .map((word) => (/\d/.test(word) ? (word.includes("$") ? ":money" : ":n") : WORDS_IT_MAY_SHOW.has(word.replace(/[^\p{L}]/gu, "")) ? word.replace(/[^\p{L}]/gu, "") : ":word"))
+        .join(" "),
+    );
+  return [...new Set(shapes)].slice(0, MOST_HEADINGS);
+}
+
 function addressesIn(html: string, tag: string, name: string): string[] {
   return elementsNamed(parse(html), tag).flatMap((element) => attribute(element, name) ?? []);
 }
 
+/** Anything with a run of digits or a long opaque string in it could be a username, an id or a token. */
+const COULD_BE_A_PAGE_NAME = /^(?!(?:.*\d){3})[A-Za-z0-9._-]{1,32}$/;
+
+/**
+ * The rules need these addresses exactly, and the portal's own names for its apps aren't on the list of
+ * ordinary words, so a part of a frame's or refused request's address on Temple's own hosts comes out as it
+ * is if it can only be a name for a page: no digits to speak of, nothing opaque, and not a word the Student's
+ * pages show, where their name would be. What follows a ? never comes out, only what each value is called.
+ */
+function addressOfAppPage(address: string, base: string | undefined, wordsOnPages: Set<string>): string {
+  const url = URL.parse(address, base);
+  if (!url) return ":text";
+  if (!url.hostname.endsWith(".temple.edu")) return cleanPath(address, base);
+  const part = (segment: string) => {
+    const lower = segment.toLowerCase();
+    if (ordinaryWords(lower, /[-_]/)) return segment;
+    return COULD_BE_A_PAGE_NAME.test(segment) && !wordsOnPages.has(lower) ? segment : ":text";
+  };
+  const path = url.pathname.split("/").filter(Boolean).map(part).join("/");
+  const names = [...new Set(url.searchParams.keys())].map((name) => `${part(name)}=:value`);
+  return `/${path}${names.length > 0 ? `?${names.join("&")}` : ""}`;
+}
+
+const wordsShownOn = (visits: PageVisit[]) =>
+  new Set(visits.flatMap((visit) => `${visit.reading?.title ?? ""} ${visit.reading?.text ?? ""}`.toLowerCase().split(/[^\p{L}\p{N}._-]+/u)).filter(Boolean));
+
 /** Where the page's frames come from, because the portal may keep what matters in one. */
-function frameLines(html: string, pageAddress: string, sites: Record<string, Site>): string[] {
-  const lines = addressesIn(html, "iframe", "src").map((source) => `frame: ${hostToShow(source, pageAddress, sites)} ${cleanPath(source, pageAddress)}`);
+function frameLines(html: string, pageAddress: string, sites: Record<string, Site>, wordsOnPages: Set<string>): string[] {
+  const lines = addressesIn(html, "iframe", "src").map((source) => `frame: ${hostToShow(source, pageAddress, sites)} ${addressOfAppPage(source, pageAddress, wordsOnPages)}`);
   return [...new Set(lines)];
 }
 
@@ -111,7 +152,35 @@ interface PageVisit {
 interface Refusal {
   method: string;
   host: string;
-  path: string;
+  /** Kept whole only until it's printed, by way of addressOfAppPage. */
+  address: string;
+  /** What it was sending, whole until it's printed by way of fieldNames. */
+  body: string | undefined;
+}
+
+/** Longer than a page's name, and written the same for everyone: AppsTupEventsIndex_Load. */
+const COULD_BE_A_FIELD_NAME = /^(?!(?:.*\d){3})[A-Za-z0-9._-]{1,64}$/;
+
+/** Which of the portal's services a request calls, which is the code's word, not the Student's, and decides whether it only reads. */
+function serviceAsked(body: string): string | null {
+  const service = new URLSearchParams(body).get("serviceName");
+  return service !== null && /^[A-Za-z_]{1,64}$/.test(service) ? service : null;
+}
+
+/** What a refused request's fields are called, because that's what says whether it only reads. Never their values. */
+function fieldNames(body: string | undefined): string {
+  if (!body) return "";
+  let names: string[];
+  try {
+    const parsed: unknown = JSON.parse(body);
+    names = parsed !== null && typeof parsed === "object" ? Object.keys(parsed) : [];
+  } catch {
+    names = [...new URLSearchParams(body).keys()];
+  }
+  // These are the code's names for things, and never the Student's, so a word that's also on a page is no reason to hide one.
+  const safe = names.map((name) => (COULD_BE_A_FIELD_NAME.test(name) ? name : `:text(${name.length})`));
+  const service = serviceAsked(body);
+  return safe.length > 0 ? ` fields: ${[...new Set(safe)].join(", ")}${service ? ` serviceName=${service}` : ""}` : " (a body)";
 }
 
 /** A class's name is from the code, where its message could say anything. */
@@ -152,7 +221,8 @@ function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: P
             refusals.push({
               method: /^[A-Z]{1,10}$/.test(request.method) ? request.method : "OTHER",
               host: hostToShow(request.url, undefined, sites),
-              path: cleanPath(request.url),
+              address: request.url,
+              body: request.body,
             });
           }
           return decision;
@@ -281,14 +351,15 @@ async function runChecked({ browser, connection = tuportal, sites, student, prin
       continue;
     }
     const note = visitNote(visit, sites);
-    const understood = note === "" && visit.reading !== null && understand(visit.reading) !== null;
+    const understood = note === "" && visit.reading !== null && understand(partToRead(name, visit.reading)) !== null;
     print(`  ${name} ${visit.asked}: ${understood ? "understood" : "NOT understood"}${note}`);
     if (!understood) notUnderstood.push({ visit, name });
   }
 
   print("");
   print("Refused by the guard:");
-  const refused = [...new Set(refusals.map((refusal) => `  ${refusal.method} ${refusal.host} ${refusal.path}`))];
+  const wordsOnPages = wordsShownOn(visits);
+  const refused = [...new Set(refusals.map((refusal) => `  ${refusal.method} ${refusal.host} ${addressOfAppPage(refusal.address, undefined, wordsOnPages)}${fieldNames(refusal.body)}`))];
   print(refused.length === 0 ? "  nothing" : refused.join("\n"));
 
   if (status.needsLogin) return EXIT_LOGIN_NEEDED;
@@ -306,9 +377,16 @@ async function runChecked({ browser, connection = tuportal, sites, student, prin
     if (!visit.reading) continue;
     print("");
     print(`The ${name} page, which the reader couldn't understand:`);
-    for (const line of [...frameLines(visit.reading.html, visit.reading.url, sites), ...headingsOf(visit.reading.html).map((heading) => `heading: ${heading}`)]) print(`  ${line}`);
+    for (const line of [...frameLines(visit.reading.html, visit.reading.url, sites, wordsOnPages), ...headingsOf(visit.reading.html).map((heading) => `heading: ${heading}`)]) print(`  ${line}`);
     // How many rows there are could be how many holds there are.
     for (const line of structureOf(visit.reading.html)) print(line.replace(/ ×\d+$/, " (repeated)"));
+    for (const frame of visit.reading.frames ?? []) {
+      print("");
+      print(`Inside the ${name} page, the frame ${hostToShow(frame.url, undefined, sites)} ${addressOfAppPage(frame.url, undefined, wordsOnPages)}:`);
+      for (const heading of headingsOf(frame.html)) print(`  heading: ${heading}`);
+      if (name === "balance") for (const line of lineShapes(frame.text)) print(`  line: ${line}`);
+      for (const line of structureOf(frame.html)) print(line.replace(/ ×\d+$/, " (repeated)"));
+    }
   }
   return notUnderstood.length > 0 ? EXIT_PAGES_NOT_UNDERSTOOD : EXIT_OK;
 }

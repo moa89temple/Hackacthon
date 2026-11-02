@@ -1,5 +1,5 @@
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
-import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type PageAnswer, type PageReading, type ReadOptions } from "../../src/buddys-browser.ts";
+import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type FrameReading, type PageAnswer, type PageReading, type ReadOptions } from "../../src/buddys-browser.ts";
 import type { ArmableGuard, RequestGuard } from "../../src/network-guard.ts";
 import { isAnswerToKeep } from "../../src/page-answers.ts";
 
@@ -18,9 +18,11 @@ export interface SavedPage {
   finalUrl?: string;
   html?: string;
   /** What the page loads for itself, which the guard is asked about in turn. */
-  alsoRequests?: { url: string; method: string }[];
+  alsoRequests?: { url: string; method: string; body?: string; contentType?: string }[];
   /** What the server tells the page's own scripts. A read gets only those it asks for. */
   answers?: PageAnswer[];
+  /** The frames inside it. */
+  frames?: FrameReading[];
 }
 
 /**
@@ -101,6 +103,7 @@ export class RecordingBrowser implements BuddysBrowser {
       text: page.text,
       accessibilitySnapshot: page.accessibilitySnapshot,
       html: page.html ?? "",
+      ...(page.frames ? { frames: page.frames } : {}),
       ...(options.answersFrom
         ? { answers: (page.answers ?? []).filter(({ url: address }) => isAnswerToKeep(address, options.answersFrom!)) }
         : {}),

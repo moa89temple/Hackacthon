@@ -54,21 +54,29 @@ export function tuportalPage(html: string, more: Partial<SavedPage> = {}): Saved
   return { title: "TUportal", accessibilitySnapshot: "", ...pageFrom(html), ...more };
 }
 
+/** Where the real Cost & Aid tab keeps the balance. */
+export const BALANCE_FRAME = `${TUPORTAL}/html/TEMPLE/apps/tup/Channels/index.jsp?x=made-up`;
+
+/** The Cost & Aid tab, with what's given as what its frame shows, and a heading outside it, as the real one has. */
+function costAndAidPage(html: string, more: Partial<SavedPage> = {}): SavedPage {
+  return tuportalPage(`<h2>Student Account</h2><iframe src="${BALANCE_FRAME}"></iframe>`, { frames: [{ url: BALANCE_FRAME, ...pageFrom(html) }], ...more });
+}
+
 /** The made-up pages, as TUportal would serve them to a Student with a working login. */
 export function saveTuportalPages(browser: RecordingBrowser, { holds = "holds" }: { holds?: string } = {}): void {
   const pages: [string, string][] = [
     [`${TUPORTAL}/`, "<h1>Made-up TUportal front page</h1>"],
     [HOME_PAGE, '<h1>Made-up TUportal home</h1><a href="/group/home/costs-and-aid">Cost &amp; Aid</a>'],
     [HOLDS_PAGE, savedTuportalHtml(holds)],
-    [BALANCE_PAGE, savedTuportalHtml("balance")],
     [REGISTRATION_PAGE, savedTuportalHtml("registration")],
   ];
   for (const [url, html] of pages) browser.savedPages.set(url, tuportalPage(html));
+  browser.savedPages.set(BALANCE_PAGE, costAndAidPage(savedTuportalHtml("balance")));
 }
 
 /** Changes one saved page, as if something had changed on TUportal since the last read. */
 export function changeTuportalPage(browser: RecordingBrowser, url: string, html: string, more: Partial<SavedPage> = {}): void {
-  browser.savedPages.set(url, tuportalPage(html, more));
+  browser.savedPages.set(url, url === BALANCE_PAGE ? costAndAidPage(html, more) : tuportalPage(html, more));
 }
 
 /** TUportal sending a browser with no working login to Temple's sign-on page. */

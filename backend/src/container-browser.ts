@@ -1,5 +1,5 @@
 import { chromium, type BrowserContext, type Page } from "playwright-core";
-import { PageBlocked, type BuddysBrowser, type PageReading } from "./buddys-browser.ts";
+import { PageBlocked, type BuddysBrowser, type FrameReading, type PageReading } from "./buddys-browser.ts";
 import { submitFormOnPage } from "./form-in-page.ts";
 import { attachGuard, type GuardConnection } from "./guard-connection.ts";
 import type { RequestGuard } from "./network-guard.ts";
@@ -13,7 +13,28 @@ const SETTLE_TIMEOUT_MS = 10_000;
 const APP_TIMEOUT_MS = 30_000;
 /** Once it has, what's left to come is small, and an app like this may never go quiet. */
 const APP_SETTLE_TIMEOUT_MS = 3_000;
+/** The page has already loaded, so a frame that isn't readable by now has failed. */
+const FRAME_TIMEOUT_MS = 3_000;
 const BLOCKED_ERROR = "net::ERR_BLOCKED_BY_CLIENT";
+
+/** Every frame that loaded. One that can't be read, such as one the guard refused, simply isn't among them. */
+async function framesOn(page: Page): Promise<FrameReading[]> {
+  const frames = page.frames().filter((frame) => frame !== page.mainFrame() && frame.url().startsWith("http"));
+  const read = await Promise.all(
+    frames.map(async (frame) => {
+      try {
+        return {
+          url: frame.url(),
+          text: await frame.locator("body").innerText({ timeout: FRAME_TIMEOUT_MS }),
+          html: await frame.content(),
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return read.filter((frame) => frame !== null);
+}
 
 export interface ContainerBrowserSettings {
   /** The container's control port. See browser/compose.yaml. */
@@ -115,6 +136,7 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
             text: await page.locator("body").innerText({ timeout: PAGE_TIMEOUT_MS }),
             accessibilitySnapshot: await page.locator("body").ariaSnapshot({ timeout: PAGE_TIMEOUT_MS }),
             html: await page.content(),
+            frames: await framesOn(page),
           };
         } catch (error) {
           throw blockedByGuard(error, guarded);

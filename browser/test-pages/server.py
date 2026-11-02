@@ -225,6 +225,14 @@ TUPORTAL_HIDDEN_EMPTY_MESSAGE = """
 <div class="made-up-card">MARKERHOLD Bursar</div>
 """
 
+# The real Cost & Aid tab keeps the balance in a frame, and words outside it mustn't count.
+TUPORTAL_COST_AND_AID = """
+<title>MARKERPAGETITLE</title>
+<h2>Student Account</h2>
+<p>Current Balance: $111.11</p>
+<iframe src="/html/TEMPLE/apps/tup/Channels/index.jsp"></iframe>
+"""
+
 # Fills itself in after it has loaded, as a portal's channels can.
 TUPORTAL_BALANCE = """
 <title>MARKERPAGETITLE</title>
@@ -245,7 +253,8 @@ TUPORTAL_REGISTRATION = """
 TUPORTAL_PAGES = {
     "/group/home": '<title>MARKERPAGETITLE</title><h1>Welcome, MARKERSTUDENT</h1><a href="/group/home/costs-and-aid">Cost &amp; Aid</a>',
     "/group/home/student-record-services?holds?pweb": TUPORTAL_HOLDS,
-    "/group/home/costs-and-aid": TUPORTAL_BALANCE,
+    "/group/home/costs-and-aid": TUPORTAL_COST_AND_AID,
+    "/html/TEMPLE/apps/tup/Channels/index.jsp": TUPORTAL_BALANCE,
     "/group/home/student": TUPORTAL_REGISTRATION,
 }
 

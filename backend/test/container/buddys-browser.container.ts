@@ -22,9 +22,9 @@ import { keepToReadablePages } from "../../src/readable-pages.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
 import { openStore } from "../../src/store.ts";
 import { systemClock } from "../../src/clock.ts";
-import { tuportalAt } from "../../src/tuportal.ts";
+import { partToRead, tuportalAt } from "../../src/tuportal.ts";
 import { runTuportalCheck } from "../../src/tuportal-check.ts";
-import { readHoldsPage } from "../../src/tuportal-pages.ts";
+import { readBalancePage, readHoldsPage } from "../../src/tuportal-pages.ts";
 import { isTuportalLoginPage, tuportalBlockedPages, tuportalReadablePages } from "../../src/tuportal-rules.ts";
 import { tumailAt } from "../../src/tumail.ts";
 import { runTumailCheck } from "../../src/tumail-check.ts";
@@ -1099,6 +1099,15 @@ describe("the TUportal reader, against made-up pages in the real browser", () =>
     expect(output).toMatch(/registration \/group\/home\/student: understood/);
     expect(output).not.toMatch(/marker/i);
     expect(output).not.toContain("876");
+  });
+
+  it("reads what a frame fills in after it loads, as the real Cost & Aid tab has it", async () => {
+    await logInToTuportal();
+
+    const reading = await browser.read(`${HOME}group/home/costs-and-aid`, portalGuards.forReading());
+
+    expect(reading.frames?.map(({ url }) => new URL(url).pathname)).toEqual(["/html/TEMPLE/apps/tup/Channels/index.jsp"]);
+    expect(readBalancePage(partToRead("balance", reading))).toEqual({ cents: 87654, credit: false });
   });
 
   it("nothing a page tries that's blocked gets out, and nothing is ever submitted", async () => {

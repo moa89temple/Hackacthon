@@ -3,6 +3,7 @@ import { settings } from "../src/settings.ts";
 import { runTuportalCheck, type TuportalCheckDeps } from "../src/tuportal-check.ts";
 import { RecordingBrowser } from "./support/recording-browser.ts";
 import {
+  BALANCE_FRAME,
   BALANCE_PAGE,
   changeTuportalPage,
   expireTuportalLogin,
@@ -40,7 +41,7 @@ const LEAKY_HTML = `<!doctype html>
 <head><title>MARKERTITLE</title><script>window.who = "MARKERSCRIPT";</script><style>.x::after { content: "MARKERSTYLE"; }</style></head>
 <body class="portal" data-student="MARKERNAME">
   <!-- MARKERCOMMENT -->
-  <h1 class="page-heading">Welcome, MARKERNAME</h1>
+  <h1 class="page-heading">Welcome, MARKERNAME markerslug</h1>
   <table class="made-table" data-row-kind="MARKERNAME">
     <tr><th>Hold Type</th><th>MARKERHEADING</th></tr>
     <tr class="row"><td>$1,234.56</td></tr><tr class="row"><td>$1,234.56</td></tr><tr class="row"><td>$1,234.56</td></tr>
@@ -154,8 +155,58 @@ describe("with pages it doesn't understand", () => {
 
     const { output } = await check(browser);
 
-    expect(output).toContain("frame: prd-banner.temple.edu /prod8/:text/bwskoacc.p_viewacct");
+    expect(output).toContain("frame: prd-banner.temple.edu /prod8/:text/bwskoacc.P_ViewAcct?who=:value");
     expect(output).toContain("frame: (a host off the portal) /:text");
+    expect(output).not.toMatch(SECRETS);
+  });
+
+  it("shows the name of a page a frame opens, because the rules need it exactly, and hides anything that could be someone's", async () => {
+    const browser = browserWithAllPages();
+    const frame = (path: string) => `<iframe src="https://tuportal6.temple.edu${path}"></iframe>`;
+    changeTuportalPage(
+      browser,
+      HOLDS_PAGE,
+      `<p>Welcome, Markerfirstname</p>${frame("/html/TEMPLE/apps/our/Dashboard/index.jsp")}${frame("/html/tuf12345/Markerfirstname/made-up.jsp")}${frame("/html/abc123def456/made-up.jsp")}`,
+    );
+
+    const { output } = await check(browser);
+
+    expect(output).toContain("frame: tuportal6.temple.edu /html/TEMPLE/apps/our/Dashboard/index.jsp");
+    expect(output).toContain("frame: tuportal6.temple.edu /html/:text/:text/made-up.jsp");
+    expect(output).toContain("frame: tuportal6.temple.edu /html/:text/made-up.jsp");
+    expect(output).not.toMatch(/tuf12345|Markerfirstname|abc123def456/);
+  });
+
+  it("names the fields of a refused request and the service it asks for, and never what the fields hold", async () => {
+    const browser = browserWithAllPages();
+    changeTuportalPage(browser, HOLDS_PAGE, "<p>Made-up</p>", {
+      alsoRequests: [
+        {
+          url: `${TUPORTAL}/html/TEMPLE/apps/our/Dashboard/ajax.jsp`,
+          method: "POST",
+          body: "ID20140722=MARKERACTION&tuid=915123456&serviceName=holds&note=MARKERNOTE",
+          contentType: "application/x-www-form-urlencoded",
+        },
+      ],
+    });
+
+    const { output } = await check(browser);
+
+    expect(output).toContain("POST tuportal6.temple.edu /html/TEMPLE/apps/our/Dashboard/ajax.jsp fields: :text(10), tuid, serviceName, note serviceName=holds");
+    expect(output).not.toMatch(/MARKER|915123456/);
+  });
+
+  it("shows the balance frame's lines with only ordinary words, and never an amount", async () => {
+    const browser = browserWithAllPages();
+
+    changeTuportalPage(browser, BALANCE_PAGE, "<p>Made-up</p>", {
+      frames: [{ url: BALANCE_FRAME, html: "<p>Made-up</p>", text: "Your Current Balance is MARKERWORD\n$1,234.56" }],
+    });
+
+    const { output } = await check(browser);
+
+    expect(output).toContain("line: your current balance :word :word");
+    expect(output).toContain("line: :money");
     expect(output).not.toMatch(SECRETS);
   });
 
@@ -214,7 +265,7 @@ describe("with pages it doesn't understand", () => {
 
     expect(output).toContain("GET tuportal6.temple.edu /group/home/registration");
     expect(output).toContain("POST tuportal6.temple.edu /group/home/student-record-services");
-    expect(output).toContain("GET prd-wlssb.temple.edu /prod8/bwskoacc.p_viewacct");
+    expect(output).toContain("GET prd-wlssb.temple.edu /prod8/bwskoacc.P_ViewAcct?who=:value");
     expect(output).not.toMatch(SECRETS);
   });
 

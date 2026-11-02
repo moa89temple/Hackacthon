@@ -18,6 +18,7 @@ import {
 import {
   isTuportalLoginPage,
   isTuportalPage,
+  TUPORTAL_FRAMES,
   TUPORTAL_HOME,
   TUPORTAL_ID,
   TUPORTAL_PAGES,
@@ -139,6 +140,21 @@ export const TUPORTAL_SECTIONS = [
   }),
 ];
 
+/**
+ * The part of a page the wanted words are on. For a page that keeps them in a frame, that's the frame and
+ * nothing else, and only one from the page's own host: another's words aren't TUportal's.
+ */
+export function partToRead(page: TuportalReadPage, reading: PageReading): PageToRead {
+  const frame = TUPORTAL_FRAMES[page];
+  if (!frame) return reading;
+  const host = URL.parse(reading.url)?.hostname;
+  const frames = (reading.frames ?? []).filter(({ url }) => {
+    const address = URL.parse(url);
+    return address?.hostname === host && frame.test(address?.pathname ?? "");
+  });
+  return { html: frames.map(({ html }) => html).join("\n"), text: frames.map(({ text }) => text).join("\n") };
+}
+
 function listOf(words: string[]): string {
   return words.length === 1 ? words[0]! : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
 }
@@ -175,7 +191,7 @@ async function readTuportal(home: string, hosts: string[] | undefined, { browser
     try {
       const reading = await open(wanted.page);
       // Somewhere else on the portal isn't the page, however much it reads like it.
-      if (isTuportalPage(wanted.page, reading.url)) understood = wanted.understand(reading);
+      if (isTuportalPage(wanted.page, reading.url)) understood = wanted.understand(partToRead(wanted.page, reading));
     } catch (error) {
       if (error instanceof ReadProblem) throw error;
       if (error instanceof TakeoverInProgress) throw new ReadProblem(STUDENT_IN_CONTROL);

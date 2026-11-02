@@ -1,3 +1,4 @@
+import { partToRead } from "../src/tuportal.ts";
 import { describe, expect, it } from "vitest";
 import { hasPasswordField, readBalancePage, readHoldsPage, readRegistrationPage } from "../src/tuportal-pages.ts";
 import { pageFrom, savedPage } from "./support/tuportal-pages.ts";
@@ -144,5 +145,47 @@ describe("a page that asks for a password", () => {
   it("is somewhere to log in", () => {
     expect(hasPasswordField('<form><input type="password" name="j_password"></form>')).toBe(true);
     expect(hasPasswordField(savedPage("holds").html)).toBe(false);
+  });
+});
+
+describe("the part of a page the reader goes by", () => {
+  const reading = (frames: { url: string; text: string }[], text = "") => ({
+    url: "https://tuportal6.temple.edu/group/home/costs-and-aid",
+    title: "",
+    accessibilitySnapshot: "",
+    html: "",
+    text,
+    frames: frames.map((frame) => ({ ...frame, html: "" })),
+  });
+  const CHANNELS = "https://tuportal6.temple.edu/html/TEMPLE/apps/tup/Channels/index.jsp?x=1";
+
+  it("is the balance frame, and the words outside it don't count", () => {
+    const part = partToRead("balance", reading([{ url: CHANNELS, text: "Your Current Balance\n$20.00" }], "Current Balance: $99.00"));
+    expect(readBalancePage(part)).toEqual({ cents: 2000, credit: false });
+  });
+
+  it("is nothing when that frame didn't load, however much the page seems to say", () => {
+    expect(readBalancePage(partToRead("balance", reading([], "Current Balance: $99.00")))).toBeNull();
+  });
+
+  it("isn't another host's frame at the same address, or another app's on the same host", () => {
+    const part = partToRead(
+      "balance",
+      reading([
+        { url: "https://elsewhere.example.test/html/TEMPLE/apps/tup/Channels/index.jsp", text: "Current Balance: $99.00" },
+        { url: "https://tuportal6.temple.edu/html/TEMPLE/apps/tup/Bursar/TuitionCalculator/index.jsp", text: "Current Balance: $99.00" },
+      ]),
+    );
+    expect(readBalancePage(part)).toBeNull();
+  });
+
+  it("gives no answer when two frames disagree", () => {
+    const part = partToRead("balance", reading([{ url: CHANNELS, text: "Current Balance: $20.00" }, { url: CHANNELS, text: "Current Balance: $99.00" }]));
+    expect(readBalancePage(part)).toBeNull();
+  });
+
+  it("is the whole page for a page with no frame named", () => {
+    const whole = reading([], "You have no holds");
+    expect(partToRead("holds", whole).text).toBe("You have no holds");
   });
 });

@@ -1,8 +1,18 @@
 import type { PagePattern, Site } from "./browser-access.ts";
 
 /**
- * Everything Buddy assumes about TUportal's addresses, in one place. NOTHING HERE HAS BEEN CHECKED AGAINST
- * A REAL LOGIN. `npm run check-tuportal` shows where each guess lands, without showing the Student's records.
+ * Everything Buddy assumes about TUportal's addresses, in one place. `npm run check-tuportal` shows where
+ * each one lands, without showing the Student's records.
+ *
+ * What a real login showed, on 2026-11-02:
+ * - Logged in, tuportal6.temple.edu/group/home is the home page, and the holds, Cost & Aid and Student
+ *   addresses in TUPORTAL_PAGES are all real pages.
+ * - The balance is in a frame on Cost & Aid: see TUPORTAL_FRAMES.
+ * - The holds page has no holds on it. Its frame is the registrar's Dashboard, whose own script sends the
+ *   Student on to Banner's bwskoacc.P_ViewHold. Banner is refused whole, so holds aren't read yet.
+ * - That Dashboard's ajax.jsp is one address for everything it does, including amending a record and
+ *   re-enrolling, chosen by a field in the body. It must never go on a read-only list by its address.
+ * - The Student tab has no registration status on it.
  *
  * What Temple's public pages say, as of November 2026:
  * - registrar.temple.edu/course-registration links View Holds at
@@ -14,9 +24,6 @@ import type { PagePattern, Site } from "./browser-access.ts";
  *   add/drop on Student Tools, in its SSB9 Registration channel.
  *
  * What's a guess:
- * - TUPORTAL_HOST as the host the reader starts from, and that logged in, /group/home is the home page.
- * - The addresses of the Cost & Aid and Student tabs in TUPORTAL_PAGES. Only the holds page's is from Temple.
- * - That any of these pages hold what's wanted in the page itself, rather than in a frame from Banner.
  * - BANNER_HOSTS, which come from memory rather than from anything of Temple's that could be read.
  * - The Touchnet hosts behind TUpay.
  */
@@ -45,6 +52,14 @@ export const TUPORTAL_PAGES = {
 export type TuportalPage = keyof typeof TUPORTAL_PAGES;
 /** A page that has something of the Student's on it, as the home page doesn't. */
 export type TuportalReadPage = Exclude<TuportalPage, "home">;
+
+/**
+ * Where on its page the wanted part really is, for a page that keeps it in a frame. A real login showed the
+ * Cost & Aid tab keeping "Your Current Balance" in this one. A page like this says nothing outside its frame.
+ */
+export const TUPORTAL_FRAMES: Partial<Record<TuportalReadPage, RegExp>> = {
+  balance: /^\/html\/[^/]+\/apps\/tup\/Channels\/index\.jsp$/,
+};
 
 /** Temple links the same page under both of these, and which a logged-in browser ends up on isn't known. */
 const pathsOf = (address: string) => {
