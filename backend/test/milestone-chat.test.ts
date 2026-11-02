@@ -18,6 +18,9 @@ import { textBlock, toolUseBlock } from "./support/scripted-claude.ts";
 const FIND = "find_standard_milestones";
 const SHOW = "show_milestone_cards";
 
+/** What else the calendar has, so that a new reading of it isn't a poor one. */
+const theRest = [WITHDRAW_7B, ADD_DROP_16_WEEK, FINALS_FIRST_DAYS, PRIORITY_REGISTRATION_FALL];
+
 let backend: BackendHarness;
 let withdraw: any;
 
@@ -60,6 +63,7 @@ describe("what Claude is told", () => {
     expect((request.tools as { name: string }[]).map((tool) => tool.name)).toEqual(expect.arrayContaining([FIND, SHOW]));
     expect(request.system).toContain(`call ${FIND}`);
     expect(request.system).toContain(SHOW);
+    expect(request.system).toMatch(/call find_standard_milestones first[^\n]*suggest asking their academic advisor/);
     expect(JSON.stringify(request.messages.at(-1))).toMatch(/Standard Milestones/);
   });
 });
@@ -125,6 +129,29 @@ describe("answering a deadline question", () => {
 
     expect(cardsIn(await backend.sendAndCollect("When?")).map((milestone) => milestone.id)).toEqual([withdraw.id]);
     expect(cardsIn(await backend.sendAndCollect("When again?")).map((milestone) => milestone.id)).toEqual([withdraw.id]);
+  });
+
+  it("gives every date in a reply its card, however many there are", async () => {
+    backend.claude.willReply(toolCall(FIND, { query: "upcoming deadlines" }), {
+      chunks: ["November 30, December 7, December 9 and February 1 are next."],
+    });
+
+    const events = await backend.sendAndCollect("What's coming up?");
+
+    expect(cardsIn(events).map((milestone) => milestone.name)).toEqual([
+      WITHDRAW_7B.name,
+      WITHDRAW_16_WEEK.name,
+      FINALS_FIRST_DAYS.name,
+      FAFSA_PRIORITY.name,
+    ]);
+  });
+
+  it("doesn't take the 7 in 7-week for a date", async () => {
+    backend.claude.willReply(toolCall(FIND, { query: "withdraw" }), { chunks: ["Is that a 7-week course or a 16-week one?"] });
+
+    const events = await backend.sendAndCollect("When's the last day to withdraw?");
+
+    expect(cardsIn(events)).toEqual([]);
   });
 
   it("shows the card when a reply names a Milestone in full without looking it up", async () => {
@@ -240,7 +267,7 @@ describe("cards in the saved conversation", () => {
     await backend.sendAndCollect("When's the last day to withdraw?");
 
     backend.web.save(CALENDAR_PAGE, savedOfficePage(CALENDAR_PAGE).replace("Monday, December 7", "Wednesday, December 16"));
-    backend.claude.willReply(haikuFindsDates({ ...WITHDRAW_16_WEEK, date: "2026-12-16", date_quote: "Wednesday, December 16" }));
+    backend.claude.willReply(haikuFindsDates(...theRest, { ...WITHDRAW_16_WEEK, date: "2026-12-16", date_quote: "Wednesday, December 16" }));
     await backend.discovery.run();
 
     const card = (await backend.history()).find((entry) => entry.type === "milestone_card");
@@ -252,7 +279,7 @@ describe("cards in the saved conversation", () => {
     await backend.sendAndCollect("When's the last day to withdraw?");
 
     backend.web.save(CALENDAR_PAGE, `${savedOfficePage(CALENDAR_PAGE)}<p>Updated.</p>`);
-    backend.claude.willReply(haikuFindsDates(FINALS_FIRST_DAYS));
+    backend.claude.willReply(haikuFindsDates(...theRest));
     await backend.discovery.run();
 
     const card = (await backend.history()).find((entry) => entry.type === "milestone_card");

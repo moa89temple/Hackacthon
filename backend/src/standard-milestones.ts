@@ -31,7 +31,8 @@ export interface StandardMilestones {
 
 const MOST_UPCOMING_RESULTS = 6;
 const MOST_PASSED_RESULTS = 2;
-const MOST_CARDS_FOR_A_REPLY = 3;
+/** For what's only a guess at what a reply means. A date the reply plainly gives always gets its card. */
+const MOST_CARDS_FOR_A_GUESS = 3;
 
 /** In a question about dates these would match nearly every Milestone. */
 const DATE_WORDS = new Set(["when", "whens", "date", "dates", "deadline", "deadlines", "last", "day", "days", "due", "next", "coming", "up", "upcoming"]);
@@ -42,14 +43,19 @@ function dayInWords(iso: string): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", dateStyle: "full" }).format(new Date(`${iso}T12:00:00Z`));
 }
 
-/** One line for each thing with the same name and date, whichever pages give it. */
-function asMilestones(stored: StoredMilestone[], today: string): StandardMilestone[] {
+/** The pages' rows for each thing with the same name and date. */
+function sameMilestone(stored: StoredMilestone[]): StoredMilestone[][] {
   const byNameAndDate = new Map<string, StoredMilestone[]>();
   for (const row of stored) {
     const key = `${row.key}@${(row.fields as MilestoneFields).date}`;
     byNameAndDate.set(key, [...(byNameAndDate.get(key) ?? []), row]);
   }
-  return [...byNameAndDate.values()].map((rows) => {
+  return [...byNameAndDate.values()];
+}
+
+/** One for each thing with the same name and date, whichever pages give it. */
+function asMilestones(stored: StoredMilestone[], today: string): StandardMilestone[] {
+  return sameMilestone(stored).map((rows) => {
     const { name, term, date, endDate } = rows[0]!.fields as MilestoneFields;
     return {
       id: rows[0]!.id,
@@ -66,12 +72,13 @@ function asMilestones(stored: StoredMilestone[], today: string): StandardMilesto
 
 const byDate = (a: StandardMilestone, b: StandardMilestone) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name);
 
-function relevance(fields: MilestoneFields, queryStems: Set<string>): number {
+function relevance(rows: StoredMilestone[], queryStems: Set<string>): number {
   const stemsOf = (texts: string[]) => new Set(texts.flatMap(wordsIn).map(stem));
+  const all = rows.map((row) => row.fields as MilestoneFields);
   const weighted: [Set<string>, number][] = [
-    [stemsOf([fields.name]), 3],
-    [stemsOf(fields.searchTerms), 2],
-    [stemsOf([fields.term ?? "", fields.office]), 1],
+    [stemsOf(all.map((fields) => fields.name)), 3],
+    [stemsOf(all.flatMap((fields) => fields.searchTerms)), 2],
+    [stemsOf(all.flatMap((fields) => [fields.term ?? "", fields.office])), 1],
   ];
   let score = 0;
   for (const word of queryStems) {
@@ -103,9 +110,9 @@ export function createStandardMilestones(deps: { store: Store; clock: Clock }): 
       if (queryStems.size === 0) return upcoming().slice(0, MOST_UPCOMING_RESULTS);
 
       const stored = store.listStandardMilestones();
-      const fieldsOf = new Map(stored.map((row) => [row.id, row.fields as MilestoneFields]));
+      const rowsOf = new Map(sameMilestone(stored).map((rows) => [rows[0]!.id, rows]));
       const matches = asMilestones(stored, todayInPhiladelphia(clock.now()))
-        .map((milestone) => ({ milestone, score: relevance(fieldsOf.get(milestone.id)!, queryStems) }))
+        .map((milestone) => ({ milestone, score: relevance(rowsOf.get(milestone.id)!, queryStems) }))
         .filter(({ score }) => score > 0)
         .toSorted((a, b) => b.score - a.score || byDate(a.milestone, b.milestone))
         .map(({ milestone }) => milestone);
@@ -127,14 +134,15 @@ export function createStandardMilestones(deps: { store: Store; clock: Clock }): 
         (milestone) => saysMonthAndDay(reply, milestone.date) || (milestone.endDate !== null && saysMonthAndDay(reply, milestone.endDate)),
       );
       // In another language the month's name won't match, so the day's number is what's left to go on.
-      const fromLookup = dated.length > 0 ? dated : lookedUp.filter(({ date }) => new RegExp(`\\b${Number(date.slice(8))}${ORDINAL}\\b`).test(reply));
+      // It isn't one if it's the 7 in "7-week".
+      const guessed = lookedUp.filter(({ date }) => new RegExp(`\\b${Number(date.slice(8))}${ORDINAL}\\b(?![-–]|\\s*week)`).test(reply));
       const words = ` ${wordsIn(reply).join(" ")} `;
       const named = upcoming()
         .filter((milestone) => wordsIn(milestone.name).length >= 2 && words.includes(` ${wordsIn(milestone.name).join(" ")} `))
         // Each term has its own of many of these, and the soonest is what a name with no date means.
         .filter((milestone, index, list) => list.findIndex((other) => other.name === milestone.name) === index);
-      const unique = [...fromLookup, ...named].filter((milestone, index, list) => list.findIndex((other) => other.id === milestone.id) === index);
-      return unique.slice(0, MOST_CARDS_FOR_A_REPLY);
+      const guesses = [...(dated.length > 0 ? [] : guessed), ...named].slice(0, MOST_CARDS_FOR_A_GUESS);
+      return [...dated, ...guesses].filter((milestone, index, list) => list.findIndex((other) => other.id === milestone.id) === index);
     },
 
     describeForClaude(milestones) {

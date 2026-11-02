@@ -106,16 +106,44 @@ describe("Discovery reading the calendar and deadline pages", () => {
     });
   });
 
-  it("merges a Milestone that two pages give the same date for, keeping both Sources", async () => {
-    await discover(
-      [{ ...LOAN_CHANGE_FINAL, date_quote: "Monday, November 30", what_quote: "Last day to withdraw from a 7-week (7B) course" }],
-      [LOAN_CHANGE_FINAL],
+  /** The aid deadlines page with a line of the calendar added, so that both give it, under the same term. */
+  const aidPageRepeatsWithdrawal = () =>
+    backend.web.save(
+      AID_DEADLINES_PAGE,
+      savedOfficePage(AID_DEADLINES_PAGE).replace("Fall 2026:", "Fall 2026:</p><p>Monday, December 7</p><p>Last day to withdraw from a Full Term 16-week course</p><p>"),
     );
 
-    const milestones = await backend.upcomingMilestones();
+  it("merges a Milestone that two pages give the same date for, keeping both Sources", async () => {
+    aidPageRepeatsWithdrawal();
 
+    await discover([WITHDRAW_16_WEEK], [WITHDRAW_16_WEEK]);
+
+    const milestones = await backend.upcomingMilestones();
     expect(milestones).toHaveLength(1);
     expect(milestones[0].sources.map((source: any) => source.url).toSorted()).toEqual([CALENDAR_PAGE, AID_DEADLINES_PAGE].toSorted());
+  });
+
+  it("finds a merged Milestone by the search words of either page", async () => {
+    aidPageRepeatsWithdrawal();
+
+    await discover([WITHDRAW_16_WEEK], [{ ...WITHDRAW_16_WEEK, search_terms: ["quit"] }]);
+
+    expect(names(backend.milestones.search("quit"))).toEqual([WITHDRAW_16_WEEK.name]);
+  });
+
+  it("keeps both parts of finals when a reading gives them one name", async () => {
+    const lastDays = {
+      ...FINALS_FIRST_DAYS,
+      date: "2026-12-14",
+      end_date: "2026-12-15",
+      date_quote: "Monday, December 14 - Tuesday, December 15",
+      what_quote: "Days 4 & 5 of Final Exams for Full Term 16-week Courses (1)",
+    };
+    const sameName = { name: "Final Exams for Full Term 16-week Courses" };
+
+    await discover([{ ...FINALS_FIRST_DAYS, ...sameName }, { ...lastDays, ...sameName }]);
+
+    expect((await backend.upcomingMilestones()).map((milestone) => milestone.date)).toEqual(["2026-12-09", "2026-12-14"]);
   });
 
   it("gives Haiku the names that office's pages already have, so that a Milestone keeps its name", async () => {
@@ -204,8 +232,55 @@ describe("what Buddy's own code checks against the page", () => {
     expect(await kept(withdrawal({ what_quote: "Last day to leave a class" }))).toEqual([]);
   });
 
-  it("drops a name with a number its words don't have", async () => {
+  it("drops a name with a number its description doesn't have", async () => {
     expect(await kept(withdrawal({ name: "Last day to withdraw from a 7-week course" }))).toEqual([]);
+  });
+
+  it("drops a name its description doesn't back up, because that's a date on the wrong thing", async () => {
+    const wrongName = {
+      name: "Last day to withdraw from a course",
+      date: "2026-10-26",
+      date_quote: "Monday, October 26",
+      what_quote: "Priority registration for Spring 2027 begins",
+    };
+    expect(await kept(wrongName)).toEqual([]);
+  });
+
+  it("keeps a name that leaves out some of its description's words", async () => {
+    const shorter = { name: "Last day to withdraw from a 16-week course" };
+    expect(await kept(withdrawal(shorter))).toEqual([shorter.name]);
+  });
+
+  it("drops another date's description from the same line, when a date comes between them", async () => {
+    await discover(
+      [],
+      [
+        {
+          name: "Last day to submit a 2026-27 FAFSA for Fall 2026",
+          date: "2027-04-19",
+          date_quote: "April 19, 2027",
+          what_quote: "The last day to submit a 2026-27 FAFSA for Fall 2026",
+        },
+      ],
+    );
+
+    expect(await backend.upcomingMilestones()).toEqual([]);
+  });
+
+  it("drops a description that comes after its date on the same line, where it belongs to the next date", async () => {
+    await discover(
+      [],
+      [
+        {
+          name: "Last day to submit a 2026-27 for Spring 2027",
+          date: "2026-11-30",
+          date_quote: "November 30, 2026",
+          what_quote: "The last day to submit a 2026-27 for Spring 2027",
+        },
+      ],
+    );
+
+    expect(await backend.upcomingMilestones()).toEqual([]);
   });
 
   it("drops a range whose end the quoted words don't say", async () => {
@@ -223,12 +298,21 @@ describe("what Buddy's own code checks against the page", () => {
     expect(await backend.upcomingMilestones()).toEqual([]);
   });
 
-  it("clears a term that isn't on the page, and keeps the date", async () => {
-    await discover([{ ...WITHDRAW_16_WEEK, term: "Autumn 2026" }]);
+  it("takes the term from the heading the date comes under, whatever Haiku says", async () => {
+    await discover([{ ...PRIORITY_REGISTRATION_FALL, term: "Fall 2026" } as DateFromHaiku], [LOAN_CHANGE_FINAL]);
+
+    const milestones = await backend.upcomingMilestones();
+
+    expect(milestones.map((milestone) => milestone.term)).toEqual(["Fall 2026", "Spring 2027"]);
+    expect(milestones[1].name).toBe(PRIORITY_REGISTRATION_FALL.name);
+  });
+
+  it("gives a date that comes under no heading no term", async () => {
+    await discover([], [FAFSA_PRIORITY]);
 
     const [milestone] = await backend.upcomingMilestones();
 
-    expect(milestone).toMatchObject({ name: WITHDRAW_16_WEEK.name, term: null });
+    expect(milestone.term).toBeNull();
   });
 
   it("counts a Milestone once when a page's reading gives it twice", async () => {
@@ -250,24 +334,56 @@ describe("what Buddy's own code checks against the page", () => {
 });
 
 describe("each shape of date on the real pages", () => {
-  async function fromRealPage(url: string, item: DateFromHaiku): Promise<any[]> {
+  async function fromRealPage(url: string, ...items: DateFromHaiku[]): Promise<any[]> {
     await backend.stop();
     backend = await BackendHarness.start({ offices: [], milestoneOffices: [{ name: "An office", pages: [url] }] });
-    backend.claude.willReply(haikuFindsDates(item));
+    backend.claude.willReply(haikuFindsDates(...items));
     await backend.discovery.run();
     return await backend.upcomingMilestones();
   }
 
-  it("takes a late fee from the priority registration page, where its description is on the next line", async () => {
-    const [fee] = await fromRealPage("https://registrar.temple.edu/priority-registration-spring", {
-      name: "Late registration fee begins",
-      term: "Spring 2027",
-      date: "2027-01-11",
-      date_quote: "Monday, January 11, 2027",
-      what_quote: "$100 - All Students",
+  it("takes a date from the second year's calendar, under its own term", async () => {
+    const [start] = await fromRealPage("https://registrar.temple.edu/academic-calendar/2027-2028-academic-calendar", {
+      name: "Last day to withdraw from a 7-week (7A) course",
+      date: "2027-10-04",
+      date_quote: "Monday, October 4",
+      what_quote: "Last day to withdraw from a 7-week (7A) course",
     });
 
-    expect(fee).toMatchObject({ term: "Spring 2027", when: "Monday, January 11, 2027" });
+    expect(start).toMatchObject({ term: "Fall 2027", when: "Monday, October 4, 2027" });
+  });
+
+  it("keeps every line of a real calendar when Haiku reads it faithfully", async () => {
+    const url = "https://registrar.temple.edu/academic-calendar/2027-2028-academic-calendar";
+    const lines = readOfficePage(savedOfficePage(url)).text.split("\n");
+    const startsWithDate = /^((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day), (\w+ \d+)(?: at [^-]*)?(?: - (\w+), (\w+ \d+))?/;
+    /** A weekday only falls on that date in one of these years, which is how a person would check. */
+    const isoOn = (weekday: string, monthAndDay: string) => {
+      for (const year of [2027, 2028]) {
+        const day = new Date(`${monthAndDay}, ${year} 12:00 UTC`);
+        if (day.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }) === weekday) return day.toISOString().slice(0, 10);
+      }
+      throw new Error(`No year fits ${weekday}, ${monthAndDay}`);
+    };
+    const items = lines.flatMap((line, index) => {
+      const match = startsWithDate.exec(line);
+      if (!match) return [];
+      return lines[index + 1]!.split(";").map((part) => ({
+        name: part.trim(),
+        date: isoOn(match[1]!, match[2]!),
+        end_date: match[3] ? isoOn(match[3], match[4]!) : null,
+        date_quote: line,
+        what_quote: part.trim(),
+      }));
+    });
+    expect(items.length).toBeGreaterThan(80);
+
+    const milestones = await fromRealPage(url, ...items);
+
+    expect(items.filter((item) => !milestones.some((milestone) => milestone.name === item.name && milestone.date === item.date))).toEqual([]);
+    expect(milestones.find((milestone) => milestone.name === "Last day to withdraw from a Full Term 16-week (1) course")).toMatchObject({
+      term: "Spring 2028",
+    });
   });
 
   it("takes a deadline from the financial aid page, where its description is on the same line", async () => {
@@ -349,6 +465,64 @@ describe("refreshing when the pages change", () => {
     await backend.discovery.run();
 
     expect(names(await backend.upcomingMilestones())).toEqual([FINALS_FIRST_DAYS.name]);
+  });
+
+  it("keeps what it has when a reading finds less than half of a page's dates, and asks again next time", async () => {
+    const others = [WITHDRAW_7B, FINALS_FIRST_DAYS];
+    await discover([WITHDRAW_16_WEEK, ...others]);
+    officeEdits(CALENDAR_PAGE, "Updated.");
+    backend.claude.willReply(haikuFindsDates(FINALS_FIRST_DAYS));
+
+    await backend.discovery.run();
+    expect(names(await backend.upcomingMilestones())).toHaveLength(3);
+
+    backend.claude.willReply(haikuFindsDates(WITHDRAW_16_WEEK, ...others));
+    const requestsBefore = backend.claude.requests.length;
+    await backend.discovery.run();
+    expect(backend.claude.requests).toHaveLength(requestsBefore + 1);
+  });
+
+  it("asks again next time when every date of a first reading fails its check", async () => {
+    await discover([{ ...WITHDRAW_16_WEEK, date: "2026-12-14" }]);
+    expect(await backend.upcomingMilestones()).toEqual([]);
+
+    backend.clock.moveForward(DAY);
+    backend.claude.willReply(haikuFindsDates(WITHDRAW_16_WEEK));
+    await backend.discovery.run();
+
+    expect(names(await backend.upcomingMilestones())).toEqual([WITHDRAW_16_WEEK.name]);
+  });
+
+  it("settles on a page that really has no dates, and doesn't keep asking", async () => {
+    await discover([]);
+    const requestsBefore = backend.claude.requests.length;
+
+    await backend.discovery.run();
+
+    expect(backend.claude.requests).toHaveLength(requestsBefore);
+  });
+
+  it("reads a page again once a date it gave no year for has passed, so that the next one shows", async () => {
+    await discover([], [FAFSA_PRIORITY]);
+
+    // February 2, 2027. The page hasn't changed.
+    backend.clock.moveForward(new Date("2027-02-02T15:00:00Z").getTime() - backend.clock.now().getTime());
+    backend.claude.willReply(haikuFindsDates({ ...FAFSA_PRIORITY, date: "2028-02-01" }));
+
+    await backend.discovery.run();
+
+    const milestones = await backend.upcomingMilestones();
+    expect(milestones.at(-1)).toMatchObject({ name: FAFSA_PRIORITY.name, when: "Tuesday, February 1, 2028" });
+  });
+
+  it("doesn't read a page again for a passed date its words gave a year for", async () => {
+    await discover([], [LOAN_CHANGE_FINAL]);
+    backend.clock.moveForward(60 * DAY);
+    const requestsBefore = backend.claude.requests.length;
+
+    await backend.discovery.run();
+
+    expect(backend.claude.requests).toHaveLength(requestsBefore);
   });
 
   it("adds a date that's new on the page", async () => {

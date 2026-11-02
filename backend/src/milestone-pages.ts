@@ -14,9 +14,6 @@ export const MILESTONE_OFFICES: Office[] = [
     pages: [
       `${OF_REGISTRAR}/academic-calendar/2026-2027-academic-calendar`,
       `${OF_REGISTRAR}/academic-calendar/2027-2028-academic-calendar`,
-      `${OF_REGISTRAR}/priority-registration-spring`,
-      `${OF_REGISTRAR}/priority-registration-summer`,
-      `${OF_REGISTRAR}/priority-registration-fall`,
     ],
   },
   {

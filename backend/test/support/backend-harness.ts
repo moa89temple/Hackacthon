@@ -112,6 +112,11 @@ export class BackendHarness {
     return this.#backend.discovery;
   }
 
+  /** What the rest of the backend sees of the Standard Milestones. */
+  get milestones(): RunningBackend["milestones"] {
+    return this.#backend.milestones;
+  }
+
   /** What the Today tab asks for. */
   async upcomingMilestones(): Promise<any[]> {
     const response = await fetch(`${this.url}/milestones/upcoming`, { headers: this.deviceHeaders });

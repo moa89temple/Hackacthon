@@ -14,7 +14,6 @@ export const TEST_MILESTONE_OFFICES: Office[] = [
 
 export type DateFromHaiku = {
   name: string;
-  term?: string | null;
   date: string;
   end_date?: string | null;
   date_quote: string;
@@ -24,14 +23,13 @@ export type DateFromHaiku = {
 
 /** Haiku's answer for one page. */
 export function haikuFindsDates(...items: DateFromHaiku[]): ScriptedReply {
-  const complete = items.map((item) => ({ term: null, end_date: null, search_terms: [], ...item }));
+  const complete = items.map((item) => ({ end_date: null, search_terms: [], ...item }));
   return { content: [textBlock(JSON.stringify({ items: complete }))] };
 }
 
 /** Each of these is what the saved 2026-27 calendar really says. */
 export const WITHDRAW_16_WEEK: DateFromHaiku = {
   name: "Last day to withdraw from a Full Term 16-week course",
-  term: "Fall 2026",
   date: "2026-12-07",
   date_quote: "Monday, December 7",
   what_quote: "Last day to withdraw from a Full Term 16-week course",
@@ -39,7 +37,6 @@ export const WITHDRAW_16_WEEK: DateFromHaiku = {
 };
 export const WITHDRAW_7B: DateFromHaiku = {
   name: "Last day to withdraw from a 7-week (7B) course",
-  term: "Fall 2026",
   date: "2026-11-30",
   date_quote: "Monday, November 30",
   what_quote: "Last day to withdraw from a 7-week (7B) course",
@@ -47,7 +44,6 @@ export const WITHDRAW_7B: DateFromHaiku = {
 };
 export const ADD_DROP_16_WEEK: DateFromHaiku = {
   name: "Last day to add with instructor permission or drop a Full Term 16-week course",
-  term: "Fall 2026",
   date: "2026-09-08",
   date_quote: "Tuesday, September 8",
   what_quote: "Last day to add with instructor permission or drop a Full Term 16-week (1) course",
@@ -55,7 +51,6 @@ export const ADD_DROP_16_WEEK: DateFromHaiku = {
 };
 export const FINALS_FIRST_DAYS: DateFromHaiku = {
   name: "Days 1-3 of Final Exams for Full Term 16-week Courses",
-  term: "Fall 2026",
   date: "2026-12-09",
   end_date: "2026-12-11",
   date_quote: "Wednesday, December 9 - Friday, December 11",
@@ -64,7 +59,6 @@ export const FINALS_FIRST_DAYS: DateFromHaiku = {
 };
 export const PRIORITY_REGISTRATION_FALL: DateFromHaiku = {
   name: "Priority registration for Fall 2027 begins",
-  term: "Spring 2027",
   date: "2027-03-29",
   date_quote: "Monday, March 29",
   what_quote: "Priority registration for Fall 2027 begins",
@@ -81,7 +75,6 @@ export const FAFSA_PRIORITY: DateFromHaiku = {
 };
 export const LOAN_CHANGE_FINAL: DateFromHaiku = {
   name: "Final deadline to submit a loan change form",
-  term: "Fall 2026",
   date: "2026-11-30",
   date_quote: "November 30, 2026",
   what_quote: "Final deadline to submit a loan change form",

@@ -215,7 +215,7 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('says what the Source link does and when it was last seen', (tester) async {
+    testWidgets('says what tapping the Source does and when it was last seen', (tester) async {
       final handle = tester.ensureSemantics();
       await openToday(tester, FakeBackend()..upcoming = [withdrawal()]);
 
