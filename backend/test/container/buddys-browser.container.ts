@@ -661,8 +661,9 @@ describe("the guard around a Takeover", () => {
     await startTakeover("site");
     await asTheStudent(async (screen) => {
       await screen.goto(page("/ticking"));
+      // While still connected: a worker starting just as this connection closes may never run.
+      await settle();
     });
-    await settle();
     expect(ledger().map((entry) => entry.path)).toContain("/tick");
 
     await finishTakeover();
