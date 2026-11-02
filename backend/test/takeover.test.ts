@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TakeoverInProgress } from "../src/browser-access.ts";
-import { BackendHarness, OTHER_TEST_SITE, TEST_SITE } from "./support/backend-harness.ts";
+import { TakeoverInProgress, UnknownSite } from "../src/browser-access.ts";
+import { PageBlocked } from "../src/buddys-browser.ts";
+import { BackendHarness, OTHER_TEST_SITE, PUBLIC_TEST_PAGE, TEST_SITE } from "./support/backend-harness.ts";
 
 let backend: BackendHarness;
 
 beforeEach(async () => {
   backend = await BackendHarness.start();
   backend.browser.savedPages.set(TEST_SITE.homeUrl, {
+    title: "Dashboard",
+    text: "Your courses",
+    accessibilitySnapshot: '- heading "Dashboard"',
+  });
+  backend.browser.savedPages.set(PUBLIC_TEST_PAGE, {
     title: "Dashboard",
     text: "Your courses",
     accessibilitySnapshot: '- heading "Dashboard"',
@@ -65,13 +71,13 @@ describe("starting a Takeover", () => {
     expect(response.status).toBe(503);
     expect(await backend.currentTakeover()).toBeNull();
     backend.browser.unreachable = false;
-    await expect(backend.browserAccess.read(TEST_SITE.homeUrl)).resolves.toMatchObject({ title: "Dashboard" });
+    await expect(backend.browserAccess.read(PUBLIC_TEST_PAGE)).resolves.toMatchObject({ title: "Dashboard" });
   });
 
   it("waits for a read already under way before giving the Student the screen", async () => {
     let finishRead!: () => void;
     backend.browser.holdReads = new Promise((resolve) => (finishRead = resolve));
-    const read = backend.browserAccess.read(TEST_SITE.homeUrl);
+    const read = backend.browserAccess.read(PUBLIC_TEST_PAGE);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     const starting = backend.startTakeover("canvas");
@@ -79,13 +85,13 @@ describe("starting a Takeover", () => {
 
     // New reads are already refused, but the screen isn't the Student's until the read ends.
     await expect(backend.browserAccess.read(TEST_SITE.homeUrl)).rejects.toThrow(TakeoverInProgress);
-    expect(backend.browser.actions).toEqual([{ type: "read", url: TEST_SITE.homeUrl }]);
+    expect(backend.browser.actions).toEqual([{ type: "read", url: PUBLIC_TEST_PAGE }]);
 
     finishRead();
     await read;
     await starting;
     expect(backend.browser.actions).toEqual([
-      { type: "read", url: TEST_SITE.homeUrl },
+      { type: "read", url: PUBLIC_TEST_PAGE },
       { type: "show", url: TEST_SITE.homeUrl },
     ]);
   });
@@ -137,8 +143,8 @@ describe("during a Takeover", () => {
   it("refuses a read that was waiting its turn when the Takeover started", async () => {
     let finishFirstRead!: () => void;
     backend.browser.holdReads = new Promise((resolve) => (finishFirstRead = resolve));
-    const first = backend.browserAccess.read(TEST_SITE.homeUrl);
-    const waiting = backend.browserAccess.read(TEST_SITE.homeUrl);
+    const first = backend.browserAccess.read(PUBLIC_TEST_PAGE);
+    const waiting = backend.browserAccess.read(PUBLIC_TEST_PAGE);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     const starting = backend.startTakeover("canvas");
@@ -152,6 +158,46 @@ describe("during a Takeover", () => {
   });
 });
 
+describe("reading a site with no Read Permission", () => {
+  it("is refused before it reaches the browser", async () => {
+    await expect(backend.browserAccess.read(TEST_SITE.homeUrl)).rejects.toThrow(PageBlocked);
+
+    expect(backend.browser.actions).toEqual([]);
+  });
+
+  it("is refused even right after the Student logged in, because Done checks the login only", async () => {
+    await backend.startTakeover("canvas");
+    await backend.finishTakeover();
+    const before = backend.browser.actions.length;
+
+    await expect(backend.browserAccess.read(TEST_SITE.homeUrl)).rejects.toThrow(PageBlocked);
+
+    expect(backend.browser.actions).toHaveLength(before);
+  });
+
+  it("lets the login check read only the site's home page", async () => {
+    await backend.startTakeover("canvas");
+    await backend.finishTakeover();
+
+    expect(backend.browser.actions.filter((action) => action.type === "read")).toEqual([
+      { type: "read", url: TEST_SITE.homeUrl },
+    ]);
+  });
+
+  it("makes the login check refuse a site Buddy doesn't know", async () => {
+    await expect(backend.browserAccess.readToCheckLogin("nope")).rejects.toThrow(UnknownSite);
+  });
+
+  it("says the Student isn't signed in when the site sends the check somewhere the guard refuses", async () => {
+    backend.browser.savedPages.get(TEST_SITE.homeUrl)!.finalUrl = "https://elsewhere.test/";
+    await backend.startTakeover("canvas");
+
+    const response = await backend.finishTakeover();
+
+    expect(await response.json()).toMatchObject({ signedIn: false });
+  });
+});
+
 describe("tapping Done", () => {
   it("hands control back to Buddy, who can read the page again", async () => {
     await backend.startTakeover("canvas");
@@ -160,8 +206,8 @@ describe("tapping Done", () => {
 
     expect(response.status).toBe(200);
     expect(await backend.currentTakeover()).toBeNull();
-    expect(await backend.browserAccess.read(TEST_SITE.homeUrl)).toEqual({
-      url: TEST_SITE.homeUrl,
+    expect(await backend.browserAccess.read(PUBLIC_TEST_PAGE)).toEqual({
+      url: PUBLIC_TEST_PAGE,
       title: "Dashboard",
       text: "Your courses",
       accessibilitySnapshot: '- heading "Dashboard"',

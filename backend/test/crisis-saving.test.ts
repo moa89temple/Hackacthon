@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createActionCards } from "../src/action-cards.ts";
 import { createConversation } from "../src/conversation.ts";
 import { createCrisisCheck } from "../src/crisis-check.ts";
 import { createGuidebook } from "../src/guidebook.ts";
@@ -40,6 +41,7 @@ function send(text: string, storeInUse: Store): Promise<any[]> {
     profile: createProfile({ connectionName: (id) => id, store: storeInUse, clock }),
     connections: { describeForTurn: () => "" } as unknown as Connections,
     guidebook: createGuidebook({ store: storeInUse, clock }),
+    actionCards: createActionCards({ store: storeInUse, clock, routines: [], logError }),
     logError,
   });
   return Array.fromAsync(conversation.send(text));

@@ -4,3 +4,6 @@ services:
   browser:
     volumes:
       - ./test-pages:/test-pages:ro
+    # A name that looks public, for checks of what a page may load from an address nobody listed.
+    extra_hosts:
+      - "cdn.elsewhere.test:127.0.0.1"

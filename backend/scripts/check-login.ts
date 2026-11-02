@@ -12,7 +12,7 @@ if (!site) throw new Error(`Unknown site: ${id}`);
 const backend = await startLocalBackend();
 
 try {
-  const page = await backend.browserAccess.read(site.homeUrl);
+  const page = await backend.browserAccess.readToCheckLogin(id);
   const url = new URL(page.url);
   console.log(`Landed on: ${url.hostname}${url.pathname}`);
   console.log(`Title: ${page.title}`);

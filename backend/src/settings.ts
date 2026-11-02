@@ -33,7 +33,27 @@ export const settings = {
   },
   /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
   connectionTypes: [googleCalendar],
-  /** The sites a Student can log in to through a Takeover. */
+  /**
+   * Public pages Buddy's Browser may open, each as this exact host. A whole domain would be wrong:
+   * Temple's single sign-on could log it in to a Connection that has no Read Permission.
+   */
+  publicHosts: [
+    "www.temple.edu",
+    "bulletin.temple.edu",
+    "registrar.temple.edu",
+    "now.temple.edu",
+    "counseling.temple.edu",
+    "studentsuccess.temple.edu",
+    "careercenter.temple.edu",
+    "sfs.temple.edu",
+    "wellness.temple.edu",
+    "studentaffairs.temple.edu",
+  ],
+  /**
+   * The sites a Student can log in to through a Takeover. Each site's rules for the network guard go
+   * here too, as data: see Site in browser-access.ts. No site has formPages yet, so Buddy can't ask to
+   * submit anything in real use.
+   */
   sites: {
     canvas: {
       name: "Canvas",

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../backend/buddy_backend.dart';
 import '../connections/connections_controller.dart';
 import '../connections/read_permission_card.dart';
+import 'action_card.dart';
 import '../widgets/buddy_avatar.dart';
 import 'chat_controller.dart';
 import 'crisis_card.dart';
@@ -97,6 +98,13 @@ class _MessageListState extends State<_MessageList> {
               chat: chat,
               openPhone: widget.openPhone,
               announce: chat.newestGuidebookCards.any((newest) => identical(newest, item)),
+            ),
+          ActionCardItem() => ActionCardView(
+              // By the card's id, because the item is replaced each time the card changes.
+              key: ValueKey('action-card-${item.card.id}'),
+              card: item.card,
+              chat: chat,
+              announce: chat.newestActionCards.any((newest) => identical(newest, item)),
             ),
         },
     ];

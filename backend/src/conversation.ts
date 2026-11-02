@@ -1,3 +1,4 @@
+import { ActionRefused, type ActionCard, type ActionCards } from "./action-cards.ts";
 import { newTurnRecord, noteFactsGiven, noteSourcesLookedAt, replyDecided, replyFailed, type TurnRecord } from "./activity.ts";
 import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./claude.ts";
 import { describeInPhiladelphia, type Clock } from "./clock.ts";
@@ -13,6 +14,7 @@ import {
   CRISIS_CARD_TOOL,
   FIND_CONTACTS_TOOL,
   REMEMBER_TOOL,
+  REQUEST_ACTION_TOOL,
   SEARCH_GUIDEBOOK_TOOL,
   SHOW_GUIDEBOOK_CARDS_TOOL,
   SUGGEST_CONNECTION_TOOL,
@@ -97,6 +99,13 @@ export interface GuidebookCardEntry {
   sentAt: string;
 }
 
+/** An Action card as it stands now, in words from Buddy's code. */
+export interface ActionCardEntry {
+  type: "action_card";
+  card: ActionCard;
+  sentAt: string;
+}
+
 export type ConversationEvent =
   /** The Student's message had something hidden. This is the message as Buddy kept it. */
   | { type: "hidden"; text: string; note: string }
@@ -104,6 +113,7 @@ export type ConversationEvent =
   | { type: "crisis_card" }
   | { type: "read_permission_card"; connection: string }
   | { type: "guidebook_card"; item: GuidebookItem }
+  | { type: "action_card"; card: ActionCard }
   | { type: "done"; reply: ChatMessage }
   | { type: "error"; message: string };
 
@@ -114,7 +124,7 @@ export interface Conversation {
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
-  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry)[];
+  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry)[];
 }
 
 export interface ConversationDeps {
@@ -126,11 +136,12 @@ export interface ConversationDeps {
   profile: Profile;
   connections: Connections;
   guidebook: Guidebook;
+  actionCards: ActionCards;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -277,6 +288,28 @@ export function createConversation(deps: ConversationDeps): Conversation {
     return { cards, answer: toolAnswer(call, "The cards are on the Student's screen, each with its Source. Now reply to them.") };
   }
 
+  /** Only ever makes a card. Nothing Claude can call gives the Action Permission or runs a step. */
+  function requestAction(call: ToolCall, askedThisTurn: Map<string, number>, afterMessageId: number, turn: TurnRecord) {
+    const asked = JSON.stringify(call.input);
+    const earlier = askedThisTurn.get(asked);
+    if (earlier !== undefined) return { answer: toolAnswer(call, actionCardOnScreen(earlier)) };
+    const replaces = (call.input as { replaces_card?: unknown } | null)?.replaces_card;
+    try {
+      const card = actionCards.request(call.input, {
+        afterMessageId,
+        ...(typeof replaces === "number" ? { replaces } : {}),
+      });
+      askedThisTurn.set(asked, card.id);
+      turn.tools.push(`Asked for your Approve on an Action card: ${card.title}`);
+      return { answer: toolAnswer(call, actionCardOnScreen(card.id)), card };
+    } catch (error) {
+      turn.tools.push("Tried to ask for an Action card, but Buddy refused it.");
+      if (error instanceof ActionRefused) return { answer: toolFailure(call, `${error.message} No card was shown.`) };
+      logError(error);
+      return { answer: toolFailure(call, "The card couldn't be made. No card was shown, so tell the Student.") };
+    }
+  }
+
   async function answerCall(call: ToolCall, originMessageId: number, turn: TurnRecord) {
     if (call.name === CHECK_CALENDAR_TOOL.name) return checkCalendar(call, turn);
     if (call.name === SEARCH_GUIDEBOOK_TOOL.name) return searchGuidebook(call, turn);
@@ -314,6 +347,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       let checkingIn = false;
       const suggestedThisTurn = new Set<string>();
       const cardsThisTurn = new Map<number, string>();
+      const actionsAskedThisTurn = new Map<string, number>();
       const turn = newTurnRecord();
       const noteIfClaudeCant = () => (cardShown ? CRISIS_NOTE : checkingIn ? CHECK_IN_NOTE : null);
 
@@ -355,7 +389,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
         noteFactsGiven(turn, factsGiven);
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}\n\n${QUESTIONS_REMINDER}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}\n\n${QUESTIONS_REMINDER}${actionCards.noteForTurn()}`,
         };
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
@@ -364,7 +398,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
         let wordsSoFar = "";
 
         for (let requests = 0; requests < MAX_REQUESTS_PER_TURN; requests++) {
-          const request = chatRequest(chatModel, [...history, ...toClaudeMessages(toolRounds)]);
+          const request = chatRequest(chatModel, [...history, ...toClaudeMessages(toolRounds)], actionCards.canAsk());
           let wroteThisRound = false;
           for await (const event of claude.stream(request)) {
             if (event.type === "text") {
@@ -407,6 +441,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
                 } else if (call.name === SHOW_GUIDEBOOK_CARDS_TOOL.name) {
                   const { answer, cards } = showGuidebookCards(call, cardsThisTurn, studentMessageId!, now, turn);
                   for (const item of cards) yield { type: "guidebook_card", item };
+                  answers.push(answer);
+                } else if (call.name === REQUEST_ACTION_TOOL.name) {
+                  const { answer, card } = requestAction(call, actionsAskedThisTurn, studentMessageId!, turn);
+                  if (card) yield { type: "action_card", card };
                   answers.push(answer);
                 } else {
                   answers.push(await answerCall(call, studentMessageId!, turn));
@@ -465,6 +503,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const readPermissionCards = store.listReadPermissionCards(THE_STUDENT);
       const guidebookCards = store.listGuidebookCards(THE_STUDENT);
       const itemsOnCards = guidebook.itemsWithIds(guidebookCards.map((card) => card.itemId));
+      const actionCardsSoFar = actionCards.list();
       return store
         .listMessages(THE_STUDENT)
         .filter(isShownToStudent)
@@ -487,6 +526,13 @@ export function createConversation(deps: ConversationDeps): Conversation {
               item: itemsOnCards.find((item) => item.id === card.itemId) ?? null,
               sentAt: card.createdAt.toISOString(),
             })),
+          ...actionCardsSoFar
+            .filter(({ afterMessageId }) => afterMessageId === message.id)
+            .map(({ card, createdAt }) => ({
+              type: "action_card" as const,
+              card,
+              sentAt: createdAt.toISOString(),
+            })),
         ]);
     },
   };
@@ -498,7 +544,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
  * still change between versions of Buddy, which would make the API reject the thinking blocks
  * in a saved conversation. drop_block has it drop them instead, so the conversation carries on.
  */
-function chatRequest(model: string, messages: ClaudeMessageParam[]): ClaudeRequest {
+function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForActions: boolean): ClaudeRequest {
   return {
     model,
     max_tokens: 64000,
@@ -516,6 +562,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[]): ClaudeReque
       SEARCH_GUIDEBOOK_TOOL,
       FIND_CONTACTS_TOOL,
       SHOW_GUIDEBOOK_CARDS_TOOL,
+      ...(canAskForActions ? [REQUEST_ACTION_TOOL] : []),
     ],
     messages,
   };
@@ -532,6 +579,10 @@ function toolAnswer(call: ToolCall, content: string) {
 
 function toolFailure(call: ToolCall, content: string) {
   return { type: "tool_result", tool_use_id: call.id, is_error: true, content };
+}
+
+function actionCardOnScreen(id: number): string {
+  return `Card ${id} is on the Student's screen. Nothing has happened: only their Approve tap on it lets Buddy do this, and a typed yes never counts. Now reply to them.`;
 }
 
 function joinWords(earlier: string, later: string): string {

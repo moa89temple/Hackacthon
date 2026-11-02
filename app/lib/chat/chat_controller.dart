@@ -43,6 +43,15 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   List<GuidebookCardItem> newestGuidebookCards = const [];
 
+  /// The Action cards from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  List<ActionCardItem> newestActionCards = const [];
+
+  /// The Action cards with a tap on its way, which can't take another until it's answered.
+  final Set<int> _cardsBeingDecided = {};
+
+  bool isBeingDecided(ActionCard card) => _cardsBeingDecided.contains(card.id);
+
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
   Future<void> loadHistory() async {
@@ -68,6 +77,7 @@ class ChatController extends ChangeNotifier {
     newestCard = null;
     newestReadPermissionCard = null;
     newestGuidebookCards = const [];
+    newestActionCards = const [];
     _changed();
 
     ChatMessage? reply;
@@ -97,6 +107,11 @@ class ChatController extends ChangeNotifier {
             final card = GuidebookCardItem(event.item);
             items = [...items, card];
             newestGuidebookCards = [...newestGuidebookCards, card];
+            _changed();
+          case ReplyActionCard():
+            final card = ActionCardItem(event.card);
+            items = [...items, card];
+            newestActionCards = [...newestActionCards, card];
             _changed();
           case ReplyDone():
             reply = event.reply;
@@ -130,6 +145,41 @@ class ChatController extends ChangeNotifier {
           existing,
     ];
     _changed();
+  }
+
+  /// The Student's Approve tap. Returns why it didn't count, when it didn't. Throws if there's no
+  /// telling what the backend did, and then tapping again is safe.
+  Future<String?> approve(ActionCard card) =>
+      _decide(card, () => _backend.approveActionCard(card.id, card.fingerprint));
+
+  /// The Student's Decline tap. Returns why it didn't count, when it didn't.
+  Future<String?> decline(ActionCard card) => _decide(card, () => _backend.declineActionCard(card.id));
+
+  /// Only one tap at a time goes to the backend for a card, however fast the Student taps.
+  Future<String?> _decide(ActionCard card, Future<ActionCardAnswer> Function() tap) async {
+    if (!_cardsBeingDecided.add(card.id)) return null;
+    _changed();
+    try {
+      final answer = await tap();
+      _showCard(answer.card);
+      return answer.refusal;
+    } finally {
+      _cardsBeingDecided.remove(card.id);
+      _changed();
+    }
+  }
+
+  /// Asks the backend how a card that was running has got on.
+  Future<void> checkCard(ActionCard card) async {
+    _showCard(await _backend.loadActionCard(card.id));
+    _changed();
+  }
+
+  void _showCard(ActionCard card) {
+    items = [
+      for (final existing in items)
+        if (existing is ActionCardItem && existing.card.id == card.id) ActionCardItem(card) else existing,
+    ];
   }
 
   void _changed() {
