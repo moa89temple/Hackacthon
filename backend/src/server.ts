@@ -9,6 +9,15 @@ import {
   type BrowserAccess,
   type Site,
 } from "./browser-access.ts";
+import {
+  BadAddress,
+  createConnections,
+  NoReadPermission,
+  ReadPermissionAlreadyGiven,
+  UnknownConnection,
+  type Connections,
+  type ConnectionType,
+} from "./connections.ts";
 import { createConversation } from "./conversation.ts";
 import { createCrisisCheck } from "./crisis-check.ts";
 import { createDevices, type Devices } from "./devices.ts";
@@ -23,6 +32,7 @@ const PAIR_ROUTE = "/devices/pair";
 export interface BackendOptions {
   adapters: Adapters;
   sites: Record<string, Site>;
+  connectionTypes: ConnectionType[];
   /** The host names the backend answers to. Requests for any other name are refused. */
   allowedHosts: string[];
   databasePath: string;
@@ -36,6 +46,7 @@ export interface BackendOptions {
 export interface RunningBackend {
   url: string;
   browserAccess: BrowserAccess;
+  connections: Connections;
   devices: Devices;
   close(): Promise<void>;
 }
@@ -43,7 +54,19 @@ export interface RunningBackend {
 export async function startBackend(options: BackendOptions): Promise<RunningBackend> {
   const store = openStore(options.databasePath);
   const devices = createDevices({ store, clock: options.adapters.clock });
-  const profile = createProfile({ store, clock: options.adapters.clock });
+  const profile = createProfile({
+    store,
+    clock: options.adapters.clock,
+    connectionName: (id) => options.connectionTypes.find((type) => type.id === id)?.name ?? id,
+  });
+  const connections = createConnections({
+    types: options.connectionTypes,
+    web: options.adapters.web,
+    clock: options.adapters.clock,
+    store,
+    profile,
+    logError: (error) => app.log.error(error),
+  });
   const conversation = createConversation({
     claude: options.adapters.claude,
     clock: options.adapters.clock,
@@ -55,6 +78,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
       logError: (error) => app.log.error(error),
     }),
     profile,
+    connections,
     logError: (error) => app.log.error(error),
   });
   const browserAccess = createBrowserAccess({
@@ -75,7 +99,10 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
   liveView.attachTo(app);
 
-  app.addHook("onClose", async () => store.close());
+  app.addHook("onClose", async () => {
+    connections.stopSchedule();
+    store.close();
+  });
 
   app.addHook("onRequest", async (request, reply) => {
     if (!isAllowedHost(request.headers.host, options.allowedHosts)) {
@@ -90,7 +117,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
-    const status = browserErrorStatus(error);
+    const status = browserErrorStatus(error) ?? connectionErrorStatus(error);
     if (status) return reply.code(status).send({ error: error.message });
     request.log.error(error);
     return reply.code(error.statusCode ?? 500).send({ error: "Something went wrong" });
@@ -123,9 +150,10 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
 
   addProfileRoutes(app, profile);
   addBrowserRoutes(app, browserAccess);
+  addConnectionRoutes(app, connections);
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, devices, close: () => app.close() };
+  return { url, browserAccess, connections, devices, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {
@@ -153,6 +181,24 @@ function isFactId(id: string): boolean {
   return /^\d{1,15}$/.test(id);
 }
 
+/** The address travels in a request's body, because URLs end up in the logs. */
+function addConnectionRoutes(app: FastifyInstance, connections: Connections): void {
+  app.get("/connections", async () => ({ connections: connections.list() }));
+
+  app.post<{ Params: { id: string }; Body: { address?: unknown } | undefined }>(
+    "/connections/:id/read-permission",
+    async (request) => ({ connection: await connections.give(request.params.id, request.body?.address) }),
+  );
+
+  app.delete<{ Params: { id: string } }>("/connections/:id/read-permission", async (request) => ({
+    connection: connections.revoke(request.params.id),
+  }));
+
+  app.post<{ Params: { id: string } }>("/connections/:id/read", async (request) => ({
+    connection: await connections.read(request.params.id),
+  }));
+}
+
 function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess): void {
   app.get("/takeover", async () => ({ takeover: browserAccess.currentTakeover() }));
 
@@ -178,6 +224,14 @@ function isAllowedHost(hostHeader: string | undefined, allowedHosts: string[]): 
   } catch {
     return false;
   }
+}
+
+function connectionErrorStatus(error: unknown): number | undefined {
+  if (error instanceof UnknownConnection) return 404;
+  if (error instanceof NoReadPermission) return 403;
+  if (error instanceof ReadPermissionAlreadyGiven) return 409;
+  if (error instanceof BadAddress) return 400;
+  return undefined;
 }
 
 function browserErrorStatus(error: unknown): number | undefined {

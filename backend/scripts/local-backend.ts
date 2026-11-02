@@ -10,6 +10,7 @@ export function startLocalBackend(): Promise<RunningBackend> {
   return startBackend({
     adapters: productionAdapters(readSecrets(), settings.browser),
     sites: settings.sites,
+    connectionTypes: settings.connectionTypes,
     allowedHosts: settings.allowedHosts,
     databasePath: settings.databasePath,
     chatModel: settings.chatModel,

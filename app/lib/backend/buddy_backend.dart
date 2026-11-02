@@ -20,6 +20,14 @@ class CrisisCardItem extends ConversationItem {
   CrisisCardItem();
 }
 
+/// A Read Permission card that Buddy suggested. Its content comes from the backend's list of
+/// Connections, never from the model.
+class ReadPermissionCardItem extends ConversationItem {
+  const ReadPermissionCardItem(this.connectionId);
+
+  final String connectionId;
+}
+
 class ChatMessage extends ConversationItem {
   const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote});
 
@@ -41,6 +49,8 @@ class ProfileFact {
   const ProfileFact({
     required this.id,
     required this.text,
+    this.detail,
+    this.connectionName,
     required this.isFromConversation,
     required this.savedAt,
     required this.wasEdited,
@@ -49,6 +59,8 @@ class ProfileFact {
   factory ProfileFact.fromJson(Map<String, dynamic> json) => ProfileFact(
         id: json['id'] as int,
         text: json['text'] as String,
+        detail: json['detail'] as String?,
+        connectionName: (json['origin'] as Map<String, dynamic>)['name'] as String?,
         isFromConversation: (json['origin'] as Map<String, dynamic>)['type'] == 'conversation',
         savedAt: DateTime.parse(json['savedAt'] as String),
         wasEdited: json['editedAt'] != null,
@@ -56,6 +68,12 @@ class ProfileFact {
 
   final int id;
   final String text;
+
+  /// Written by the backend and shown below the text, such as when a calendar event happens.
+  final String? detail;
+
+  /// The Connection it came from, if it came from one.
+  final String? connectionName;
   final bool isFromConversation;
   final DateTime savedAt;
   final bool wasEdited;
@@ -69,6 +87,75 @@ class EditedFact {
 
   /// What to tell the Student if something in their edit was hidden.
   final String? hiddenNote;
+}
+
+/// The address the Student must paste to connect, and how to find it.
+class AddressRequest {
+  const AddressRequest({required this.label, required this.steps});
+
+  factory AddressRequest.fromJson(Map<String, dynamic> json) => AddressRequest(
+        label: json['label'] as String,
+        steps: [for (final step in json['steps'] as List<dynamic>) step as String],
+      );
+
+  final String label;
+  final List<String> steps;
+}
+
+/// What the Read Permission card says.
+class ReadPermissionCardContent {
+  const ReadPermissionCardContent({required this.reads, required this.notes, this.warning, this.address});
+
+  factory ReadPermissionCardContent.fromJson(Map<String, dynamic> json) => ReadPermissionCardContent(
+        reads: [for (final line in json['reads'] as List<dynamic>) line as String],
+        notes: [for (final line in json['notes'] as List<dynamic>) line as String],
+        warning: json['warning'] as String?,
+        address: switch (json['address']) {
+          final Map<String, dynamic> address => AddressRequest.fromJson(address),
+          _ => null,
+        },
+      );
+
+  /// Exactly what Buddy will read.
+  final List<String> reads;
+  final List<String> notes;
+
+  /// Says so when the service's own rules forbid automated tools.
+  final String? warning;
+  final AddressRequest? address;
+}
+
+/// A system Buddy can read for the Student, once they give its Read Permission.
+class Connection {
+  const Connection({
+    required this.id,
+    required this.name,
+    required this.on,
+    this.lastReadAt,
+    this.lastReadProblem,
+    required this.card,
+  });
+
+  factory Connection.fromJson(Map<String, dynamic> json) => Connection(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        on: json['on'] as bool,
+        lastReadAt: switch (json['lastReadAt']) {
+          final String at => DateTime.parse(at),
+          _ => null,
+        },
+        lastReadProblem: json['lastReadProblem'] as String?,
+        card: ReadPermissionCardContent.fromJson(json['card'] as Map<String, dynamic>),
+      );
+
+  final String id;
+  final String name;
+  final bool on;
+  final DateTime? lastReadAt;
+
+  /// What went wrong the last time Buddy tried to read it, for the Student to read.
+  final String? lastReadProblem;
+  final ReadPermissionCardContent card;
 }
 
 sealed class ReplyEvent {
@@ -91,6 +178,12 @@ class ReplyText extends ReplyEvent {
 /// Buddy is showing the Crisis card. It comes as soon as the backend knows, ahead of any reply.
 class ReplyCrisisCard extends ReplyEvent {
   const ReplyCrisisCard();
+}
+
+/// Buddy is suggesting a Connection, with its Read Permission card.
+class ReplyReadPermissionCard extends ReplyEvent {
+  const ReplyReadPermissionCard(this.connectionId);
+  final String connectionId;
 }
 
 /// The turn ended. This is the reply as saved, and it replaces whatever streamed in.
@@ -116,6 +209,12 @@ class BackendException implements Exception {
 /// The backend said no to a pairing code.
 class PairingRefused implements Exception {
   const PairingRefused();
+}
+
+/// The backend said no to a Read Permission, and [message] is meant for the Student.
+class ReadPermissionRefused implements Exception {
+  const ReadPermissionRefused(this.message);
+  final String message;
 }
 
 /// The Student in control of Buddy's Browser.
@@ -168,6 +267,17 @@ abstract interface class BuddyBackend {
 
   /// Also succeeds if the fact was already gone.
   Future<void> deleteFact(int id);
+
+  Future<List<Connection>> loadConnections();
+
+  /// The Student's tap on the card. Throws [ReadPermissionRefused] if the backend says no.
+  Future<Connection> giveReadPermission(String id, String? address);
+
+  /// Also deletes what Buddy saved from this Connection.
+  Future<Connection> revokeReadPermission(String id);
+
+  /// Reads now. A read that fails shows in what comes back.
+  Future<Connection> readConnection(String id);
 
   /// The Takeover under way, if there is one.
   Future<Takeover?> currentTakeover();
@@ -230,6 +340,7 @@ class HttpBuddyBackend implements BuddyBackend {
         _messagesUrl = baseUrl.resolve('/conversation/messages'),
         _takeoverUrl = baseUrl.resolve('/takeover'),
         _factsUrl = baseUrl.resolve('/profile/facts'),
+        _connectionsUrl = baseUrl.resolve('/connections'),
         _keyHeader = {'authorization': 'Bearer $deviceKey'},
         _client = client ?? http.Client();
 
@@ -237,6 +348,7 @@ class HttpBuddyBackend implements BuddyBackend {
   final Uri _messagesUrl;
   final Uri _takeoverUrl;
   final Uri _factsUrl;
+  final Uri _connectionsUrl;
   final Map<String, String> _keyHeader;
   final void Function() _onKeyRefused;
   final http.Client _client;
@@ -290,6 +402,50 @@ class HttpBuddyBackend implements BuddyBackend {
     final response = await _client.delete(_factsUrl.resolve('/profile/facts/$id'), headers: _keyHeader);
     if (response.statusCode == 204 || response.statusCode == 404) return;
     _check(response.statusCode, 'Deleting a fact');
+  }
+
+  @override
+  Future<List<Connection>> loadConnections() async {
+    final response = await _client.get(_connectionsUrl, headers: _keyHeader);
+    _check(response.statusCode, 'Loading Connections');
+    return [
+      for (final connection in _decode(response)['connections'] as List<dynamic>)
+        Connection.fromJson(connection as Map<String, dynamic>),
+    ];
+  }
+
+  Uri _connectionUrl(String id, String action) =>
+      _baseUrl.replace(pathSegments: ['connections', id, action]);
+
+  Connection _parseConnection(http.Response response) =>
+      Connection.fromJson(_decode(response)['connection'] as Map<String, dynamic>);
+
+  @override
+  Future<Connection> giveReadPermission(String id, String? address) async {
+    final response = await _client.post(
+      _connectionUrl(id, 'read-permission'),
+      headers: {..._keyHeader, 'content-type': 'application/json'},
+      body: jsonEncode({'address': address}),
+    );
+    if (response.statusCode == 400 || response.statusCode == 409) {
+      throw ReadPermissionRefused(_decode(response)['error'] as String);
+    }
+    _check(response.statusCode, 'Giving a Read Permission');
+    return _parseConnection(response);
+  }
+
+  @override
+  Future<Connection> revokeReadPermission(String id) async {
+    final response = await _client.delete(_connectionUrl(id, 'read-permission'), headers: _keyHeader);
+    _check(response.statusCode, 'Revoking a Read Permission');
+    return _parseConnection(response);
+  }
+
+  @override
+  Future<Connection> readConnection(String id) async {
+    final response = await _client.post(_connectionUrl(id, 'read'), headers: _keyHeader);
+    _check(response.statusCode, 'Reading a Connection');
+    return _parseConnection(response);
   }
 
   @override
@@ -347,14 +503,18 @@ class HttpBuddyBackend implements BuddyBackend {
           liveViewHeaders: _keyHeader,
         );
 
-  ConversationItem _parseItem(Map<String, dynamic> json) =>
-      json['type'] == 'crisis_card' ? CrisisCardItem() : ChatMessage.fromJson(json);
+  ConversationItem _parseItem(Map<String, dynamic> json) => switch (json['type']) {
+        'crisis_card' => CrisisCardItem(),
+        'read_permission_card' => ReadPermissionCardItem(json['connection'] as String),
+        _ => ChatMessage.fromJson(json),
+      };
 
   /// Returns null for event types added after this version of the app.
   ReplyEvent? _parseEvent(Map<String, dynamic> json) => switch (json['type']) {
         'hidden' => ReplyHidden(text: json['text'] as String, note: json['note'] as String),
         'text' => ReplyText(json['text'] as String),
         'crisis_card' => const ReplyCrisisCard(),
+        'read_permission_card' => ReplyReadPermissionCard(json['connection'] as String),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),
         _ => null,

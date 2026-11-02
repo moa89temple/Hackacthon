@@ -1,12 +1,15 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ConnectionType } from "../../src/connections.ts";
 import { createDevices } from "../../src/devices.ts";
+import { googleCalendar } from "../../src/google-calendar.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
 import { openStore } from "../../src/store.ts";
 import { MovableClock } from "./movable-clock.ts";
 import { readEvents } from "./read-events.ts";
 import { RecordingBrowser } from "./recording-browser.ts";
+import { SavedWeb } from "./saved-web.ts";
 import { ScriptedClaude } from "./scripted-claude.ts";
 
 export const TEST_CHAT_MODEL = "test-chat-model";
@@ -22,11 +25,28 @@ export const OTHER_TEST_SITE = {
   loginHosts: ["portal.test"],
 };
 
+export const CALENDAR = googleCalendar.id;
+/** Made up, in the shape of the address Google gives. */
+export const SECRET_ADDRESS =
+  "https://calendar.google.com/calendar/ical/student%40example.test/private-0123456789abcdef0123456789abcdef/basic.ics";
+export const WARNED_CONNECTION = "warned";
+
+/** A Connection with a warning on its card and no address, standing in for those to come. */
+const warnedConnection: ConnectionType = {
+  id: WARNED_CONNECTION,
+  name: "A service with rules",
+  card: { reads: ["Your things."], notes: [], warning: "This service's own rules forbid automated tools.", address: null },
+  whileOnTellClaude: "Nothing to do.",
+  read: async () => [],
+  describeForClaude: () => "Nothing.",
+};
+
 /** A real backend on a real port with a fresh SQLite file, and test adapters. */
 export class BackendHarness {
   readonly claude = new ScriptedClaude();
   readonly clock = new MovableClock("2026-11-02T14:00:00Z");
   readonly browser = new RecordingBrowser();
+  readonly web = new SavedWeb();
   readonly #directory = mkdtempSync(join(tmpdir(), "buddy-test-"));
   #backend!: RunningBackend;
   /** The key of the phone every helper here acts as, paired the way the real app pairs. */
@@ -51,8 +71,9 @@ export class BackendHarness {
 
   async #boot(): Promise<void> {
     this.#backend = await startBackend({
-      adapters: { claude: this.claude, clock: this.clock, browser: this.browser },
+      adapters: { claude: this.claude, clock: this.clock, browser: this.browser, web: this.web },
       sites: { canvas: TEST_SITE, tuportal: OTHER_TEST_SITE },
+      connectionTypes: [googleCalendar, warnedConnection],
       allowedHosts: ["127.0.0.1"],
       databasePath: join(this.#directory, "buddy.sqlite"),
       chatModel: TEST_CHAT_MODEL,
@@ -151,6 +172,41 @@ export class BackendHarness {
 
   deleteFact(id: unknown): Promise<Response> {
     return fetch(`${this.url}/profile/facts/${id}`, { method: "DELETE", headers: this.deviceHeaders });
+  }
+
+  async connections(): Promise<any[]> {
+    const response = await fetch(`${this.url}/connections`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { connections: any[] }).connections;
+  }
+
+  /** The Student tapping to give the Read Permission on the card. */
+  giveReadPermission(connection: string, address: unknown): Promise<any> {
+    return fetch(`${this.url}/connections/${connection}/read-permission`, {
+      method: "POST",
+      headers: { ...this.deviceHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ address }),
+    });
+  }
+
+  revokeReadPermission(connection: string): Promise<any> {
+    return fetch(`${this.url}/connections/${connection}/read-permission`, {
+      method: "DELETE",
+      headers: this.deviceHeaders,
+    });
+  }
+
+  /** The Student tapping Read now. */
+  readNow(connection: string): Promise<any> {
+    return fetch(`${this.url}/connections/${connection}/read`, { method: "POST", headers: this.deviceHeaders });
+  }
+
+  /** What the backend's timer does each minute. */
+  readDueConnections(): Promise<void> {
+    return this.#backend.connections.readDue();
+  }
+
+  startSchedule(everyMs: number): void {
+    this.#backend.connections.startSchedule(everyMs);
   }
 
   startTakeover(site: unknown): Promise<Response> {

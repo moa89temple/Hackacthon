@@ -1,9 +1,17 @@
 import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./claude.ts";
-import type { Clock } from "./clock.ts";
+import { describeInPhiladelphia, type Clock } from "./clock.ts";
+import { NoReadPermission, type Connections } from "./connections.ts";
 import type { CrisisCheck, CrisisOutcome } from "./crisis-check.ts";
+import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { hiddenNote, maskSecrets } from "./masking.ts";
 import { describeProfile, type Profile } from "./profile.ts";
-import { BUDDY_SYSTEM_PROMPT, CRISIS_CARD_TOOL, REMEMBER_TOOL } from "./system-prompt.ts";
+import {
+  BUDDY_SYSTEM_PROMPT,
+  CHECK_CALENDAR_TOOL,
+  CRISIS_CARD_TOOL,
+  REMEMBER_TOOL,
+  SUGGEST_CONNECTION_TOOL,
+} from "./system-prompt.ts";
 import { THE_STUDENT, type NewMessage, type Store, type StoredMessage } from "./store.ts";
 
 const REFUSAL_NOTE =
@@ -54,11 +62,19 @@ export interface CrisisCardEntry {
   sentAt: string;
 }
 
+/** The app draws the card from what the backend says about this Connection. */
+export interface ReadPermissionCardEntry {
+  type: "read_permission_card";
+  connection: string;
+  sentAt: string;
+}
+
 export type ConversationEvent =
   /** The Student's message had something hidden. This is the message as Buddy kept it. */
   | { type: "hidden"; text: string; note: string }
   | { type: "text"; text: string }
   | { type: "crisis_card" }
+  | { type: "read_permission_card"; connection: string }
   | { type: "done"; reply: ChatMessage }
   | { type: "error"; message: string };
 
@@ -69,7 +85,7 @@ export interface Conversation {
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
-  history(): (ChatMessage | CrisisCardEntry)[];
+  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry)[];
 }
 
 export interface ConversationDeps {
@@ -79,11 +95,12 @@ export interface ConversationDeps {
   chatModel: string;
   crisisCheck: CrisisCheck;
   profile: Profile;
+  connections: Connections;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** Ends a turn Claude didn't finish. Saving can be what failed, so that can't stop the note. */
@@ -105,7 +122,46 @@ export function createConversation(deps: ConversationDeps): Conversation {
     }
   }
 
-  function answerCall(call: ToolCall, originMessageId: number) {
+  async function checkCalendar(call: ToolCall) {
+    try {
+      if ((call.input as { read_again?: unknown } | null)?.read_again === true) {
+        // A read that fails shows in the description, which falls back on the last reading.
+        await connections.read(GOOGLE_CALENDAR_ID);
+      }
+      return toolAnswer(call, connections.describeForClaude(GOOGLE_CALENDAR_ID));
+    } catch (error) {
+      if (error instanceof NoReadPermission) {
+        return toolFailure(
+          call,
+          `The Student hasn't given Google Calendar a Read Permission, so you can't see it. Use ${SUGGEST_CONNECTION_TOOL.name} if it would help.`,
+        );
+      }
+      logError(error);
+      return toolFailure(call, "The calendar couldn't be checked. Tell the Student, and don't guess at their schedule.");
+    }
+  }
+
+  /** The card appears only for a Connection Buddy has that's still off. */
+  function suggestConnection(call: ToolCall, suggestedThisTurn: Set<string>, afterMessageId: number, now: Date) {
+    const id = (call.input as { connection?: unknown } | null)?.connection;
+    const connection = connections.list().find((candidate) => candidate.id === id);
+    if (!connection) return { answer: toolFailure(call, "There's no such Connection.") };
+    if (connection.on) {
+      return { answer: toolFailure(call, `${connection.name} is already connected, so there's nothing to suggest.`) };
+    }
+    const onScreen = toolAnswer(call, "The card is on the Student's screen. Only their tap on it gives the Read Permission. Now reply to them.");
+    if (suggestedThisTurn.has(connection.id)) return { answer: onScreen };
+    suggestedThisTurn.add(connection.id);
+    try {
+      store.addReadPermissionCard(THE_STUDENT, { connection: connection.id, afterMessageId, createdAt: now });
+    } catch (error) {
+      logError(error);
+    }
+    return { answer: onScreen, card: connection.id };
+  }
+
+  async function answerCall(call: ToolCall, originMessageId: number) {
+    if (call.name === CHECK_CALENDAR_TOOL.name) return checkCalendar(call);
     if (call.name === CRISIS_CARD_TOOL.name) {
       return toolAnswer(call, "The Crisis card is on the Student's screen. Now reply to them.");
     }
@@ -129,6 +185,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const now = clock.now();
       let cardShown = false;
       let checkingIn = false;
+      const suggestedThisTurn = new Set<string>();
       const noteIfClaudeCant = () => (cardShown ? CRISIS_NOTE : checkingIn ? CHECK_IN_NOTE : null);
 
       try {
@@ -165,7 +222,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
 
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(profile.list())}\n\n${QUESTIONS_REMINDER}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsToldToBuddy(profile))}\n\n${connections.describeForTurn()}\n\n${QUESTIONS_REMINDER}`,
         };
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
@@ -200,7 +257,16 @@ export function createConversation(deps: ConversationDeps): Conversation {
             if (message.stop_reason === "tool_use") {
               const calls = toolCallsIn(message.content);
               if (!cardShown && calls.some((call) => call.name === CRISIS_CARD_TOOL.name)) yield showCard();
-              const answers = calls.map((call) => answerCall(call, studentMessageId!));
+              const answers = [];
+              for (const call of calls) {
+                if (call.name === SUGGEST_CONNECTION_TOOL.name) {
+                  const { answer, card } = suggestConnection(call, suggestedThisTurn, studentMessageId!, now);
+                  if (card) yield { type: "read_permission_card", connection: card };
+                  answers.push(answer);
+                } else {
+                  answers.push(await answerCall(call, studentMessageId!));
+                }
+              }
               toolRounds.push(reply, { role: "user", content: answers, createdAt: now });
               wordsSoFar = joinWords(wordsSoFar, textOf(message.content));
               continue;
@@ -235,6 +301,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
 
     history() {
       const cards = store.listCrisisCards(THE_STUDENT);
+      const readPermissionCards = store.listReadPermissionCards(THE_STUDENT);
       return store
         .listMessages(THE_STUDENT)
         .filter(isShownToStudent)
@@ -243,6 +310,13 @@ export function createConversation(deps: ConversationDeps): Conversation {
           ...cards
             .filter((card) => card.afterMessageId === message.id)
             .map((card) => ({ type: "crisis_card" as const, sentAt: card.createdAt.toISOString() })),
+          ...readPermissionCards
+            .filter((card) => card.afterMessageId === message.id)
+            .map((card) => ({
+              type: "read_permission_card" as const,
+              connection: card.connection,
+              sentAt: card.createdAt.toISOString(),
+            })),
         ]);
     },
   };
@@ -264,7 +338,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[]): ClaudeReque
     betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
     fallbacks: "default",
     system: BUDDY_SYSTEM_PROMPT,
-    tools: [CRISIS_CARD_TOOL, REMEMBER_TOOL],
+    tools: [CRISIS_CARD_TOOL, REMEMBER_TOOL, CHECK_CALENDAR_TOOL, SUGGEST_CONNECTION_TOOL],
     messages,
   };
 }
@@ -334,12 +408,12 @@ function blocksToResend(blocks: ContentBlock[]): ContentBlock[] {
 }
 
 function describeCurrentTime(now: Date): string {
-  const formatted = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    dateStyle: "full",
-    timeStyle: "short",
-  }).format(now);
-  return `The current time in Philadelphia is ${formatted}.`;
+  return `The current time in Philadelphia is ${describeInPhiladelphia(now)}.`;
+}
+
+/** A calendar can run to dozens of lines, so Claude gets those from its tool, when it needs them. */
+function factsToldToBuddy(profile: Profile) {
+  return profile.list().filter((fact) => fact.origin.type === "conversation");
 }
 
 function toChatMessage(message: StoredMessage): ChatMessage {

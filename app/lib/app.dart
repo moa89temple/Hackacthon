@@ -4,6 +4,7 @@ import 'backend/buddy_backend.dart';
 import 'chat/buddy_tab.dart';
 import 'chat/chat_controller.dart';
 import 'chat/crisis_card.dart';
+import 'connections/connections_controller.dart';
 import 'device/app_lock.dart';
 import 'device/device_store.dart';
 import 'device/lock_screen.dart';
@@ -216,20 +217,27 @@ class _TabsState extends State<_Tabs> {
     ..addListener(_showNewCrisisCard)
     ..addListener(_refreshProfileAfterTurn);
   late final ProfileController _profile = ProfileController(widget.backend)..load();
+  late final ConnectionsController _connections = ConnectionsController(widget.backend, onFactsChanged: _profile.load)
+    ..load();
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
   int _selected = 0;
 
-  /// Buddy saves facts during a turn, and the You tab may be open when it finishes.
+  /// Buddy saves facts and reads Connections during a turn, and the You tab may be open when it finishes.
   void _refreshProfileAfterTurn() {
     final replying = _chat.replyInProgress != null;
-    if (_wasReplying && !replying && _selected == _youTab) _profile.load();
+    if (_wasReplying && !replying && _selected == _youTab) _refreshYouTab();
     _wasReplying = replying;
   }
 
   void _selectTab(int index) {
     setState(() => _selected = index);
-    if (index == _youTab) _profile.load();
+    if (index == _youTab) _refreshYouTab();
+  }
+
+  void _refreshYouTab() {
+    _profile.load();
+    _connections.load();
   }
 
   /// A Crisis card can arrive while the Student is on another tab, and they mustn't miss it.
@@ -244,6 +252,7 @@ class _TabsState extends State<_Tabs> {
   void dispose() {
     _chat.dispose();
     _profile.dispose();
+    _connections.dispose();
     super.dispose();
   }
 
@@ -258,10 +267,15 @@ class _TabsState extends State<_Tabs> {
       body: IndexedStack(
         index: _selected,
         children: [
-          BuddyTab(chat: _chat, openPhone: widget.openPhone),
+          BuddyTab(chat: _chat, connections: _connections, openPhone: widget.openPhone),
           const TodayTab(),
           const RoadmapTab(),
-          YouTab(backend: widget.backend, profile: _profile, liveViewBuilder: widget.liveViewBuilder),
+          YouTab(
+            backend: widget.backend,
+            profile: _profile,
+            connections: _connections,
+            liveViewBuilder: widget.liveViewBuilder,
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

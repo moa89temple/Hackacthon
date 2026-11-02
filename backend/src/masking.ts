@@ -3,7 +3,11 @@ export const HIDDEN_MARKS = {
   password: "[password hidden]",
   ssn: "[Social Security number hidden]",
   card: "[card number hidden]",
+  calendarAddress: "[secret calendar address hidden]",
 };
+
+/** Anyone with this address can read the calendar, so it's a secret like a password is. */
+const SECRET_CALENDAR_ADDRESS = /(?:[a-z]+:\/\/)?calendar\.google\.com\/calendar\/ical\/\S*private-\S+/gi;
 
 const KEYWORD =
   "(?:(?<![\\p{L}\\p{N}])(?:pass(?:word|wd|code|phrase)|pwd|pw|pin|contrase[ñn]a|senha|mot de passe|passwort|kennwort|пароль)|كلمة (?:المرور|السر)|密码|密碼|パスワード|비밀번호)";
@@ -43,7 +47,7 @@ const NAMES_AN_SSN =
 const DIGIT_RUN = /\d+(?:[\s._/–—-]{1,3}\d+)*/g;
 
 /**
- * Hides passwords, Social Security numbers and card numbers. Everything the Student types goes
+ * Hides passwords, Social Security numbers, card numbers and secret calendar addresses. Everything the Student types goes
  * through this before it's saved or sent to Claude. It leans toward hiding: a number hidden by
  * mistake costs little, and one let through can't be taken back. Labelled passwords go first, so
  * that one made of digits is hidden whole, and the looser search for them goes last, so that a
@@ -51,6 +55,7 @@ const DIGIT_RUN = /\d+(?:[\s._/–—-]{1,3}\d+)*/g;
  */
 export function maskSecrets(text: string): string {
   const withoutLabelledPasswords = text
+    .replace(SECRET_CALENDAR_ADDRESS, HIDDEN_MARKS.calendarAddress)
     .replace(AFTER_COLON, (_, lead: string) => lead + HIDDEN_MARKS.password)
     .replace(AFTER_WORD, (whole: string, lead: string, value: string) =>
       NOT_A_PASSWORD.has(bareWord(value)) ? whole : lead + HIDDEN_MARKS.password,
@@ -73,6 +78,7 @@ export function hiddenNote(maskedText: string): string | null {
     maskedText.includes(HIDDEN_MARKS.password) && "a password",
     maskedText.includes(HIDDEN_MARKS.ssn) && "a Social Security number",
     maskedText.includes(HIDDEN_MARKS.card) && "a card number",
+    maskedText.includes(HIDDEN_MARKS.calendarAddress) && "a secret calendar address",
   ].filter((kind) => kind !== false);
   if (hidden.length === 0) return null;
   const list = hidden.length === 1 ? hidden[0] : `${hidden.slice(0, -1).join(", ")} and ${hidden.at(-1)}`;

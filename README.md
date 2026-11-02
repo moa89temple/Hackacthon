@@ -90,6 +90,8 @@ Every message goes through `backend/src/masking.ts` first, before it's saved, be
 - **Card numbers:** 13 to 19 digits that pass the card checksum, even with an expiry date or security code right after them. If other digits pass the checksum along with part of a card, those are hidden too.
 - **Passwords and PINs:** the word after "my password is" or "changed my password to", all of a quoted password, the rest of the line after "password:", or anything with both letters and digits (or four digits in a row) within six words after the word "password". It also reads a few other languages. Ordinary talk such as "my password is expired" is left alone.
 
+- **Secret calendar addresses:** a Google Calendar address with `private-` in it, because anyone who has one can read the calendar.
+
 It leans toward hiding, so it will sometimes hide a number that wasn't a secret.
 
 ### Known limits
@@ -120,6 +122,25 @@ Claude can also raise the card itself at any point in a conversation, through it
 - Each message is checked by itself. Noticing a risk that builds up over several messages is left to Claude.
 - The check runs on the backend, so if the app can't reach the backend, no card appears.
 - The app locks when it goes into the background, so coming back from a call means unlocking it again.
+
+## Connect Google Calendar
+
+On the You tab, tap **Connect** next to Google Calendar, or use the card Buddy shows if it suggests connecting it. The card says exactly what Buddy will read. Paste the calendar's secret address and tap **Give Read Permission**. A typed "yes" in the chat never gives it. To find the address, open Google Calendar on a computer, go to **Settings**, pick your calendar under **Settings for my calendars**, open **Integrate calendar**, and copy **Secret address in iCal format**.
+
+Buddy then reads the calendar at 7 a.m., 1 p.m. and 7 p.m. Philadelphia time, and when you tap **Read now** or ask it to look again in the chat. If the laptop was asleep at one of those times, Buddy reads once when it wakes.
+
+Each event or repeating series in the next 14 days becomes one Profile fact. You can edit or delete it on the You tab, and that lasts through later reads. An edit changes the name Buddy sees, not the times. Buddy's free-time list comes from `backend/src/google-calendar.ts`: nothing marked busy between 8 a.m. and 8 p.m., in gaps of at least 30 minutes. Deleting a fact means Buddy can't count that event as busy.
+
+Revoking the Read Permission deletes the address and every fact from the calendar, but not what Claude was already shown, as the limits below explain. The address is checked to be Google's own, stays on the laptop, is never returned by the backend and is never sent to Claude. If you paste it in the chat, it's hidden before anything is saved or sent.
+
+### Known limits
+
+- Calendar events Claude has already seen stay in the conversation's history after you revoke, as with a deleted fact, until the conversation is deleted. Buddy is told not to use or mention them. The history is on the laptop's disk too.
+- That Claude won't suggest a Connection when it wouldn't help, won't offer it twice and won't save calendar details as your own facts are instructions to Claude, checked by `npm run smoke`, not guarantees.
+- The feed doesn't say which guest is you, so an event you declined still counts as busy if Google includes it. Only the one calendar whose address you paste is read.
+- Anyone who invites you can put text on your calendar. Claude is told it's only ever information, but that's an instruction too.
+- Reads depend on the laptop being on and awake. A read that fails waits for the next read time, unless you tap **Read now**.
+- All times are on Philadelphia's clock, wherever you are.
 
 ## Log in to a site
 
@@ -168,7 +189,7 @@ cd backend
 npm test
 npm run typecheck
 npm run test:browser   # checks against the real container, on local test pages. Needs Docker Desktop.
-npm run smoke          # makes real Claude calls, including Profile, masking and Crisis tests, which cost real money
+npm run smoke          # makes real Claude calls, including Profile, masking, Crisis and calendar tests, which cost real money
 
 cd app
 flutter test

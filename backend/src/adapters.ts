@@ -2,6 +2,7 @@ import type { BuddysBrowser } from "./buddys-browser.ts";
 import { containerBrowser, type ContainerBrowserSettings } from "./container-browser.ts";
 import { anthropicClaude, type Claude } from "./claude.ts";
 import { systemClock, type Clock } from "./clock.ts";
+import { realWeb, type Web } from "./web.ts";
 
 /**
  * Everything outside Buddy, plugged in at one place when the backend starts.
@@ -11,6 +12,7 @@ export interface Adapters {
   claude: Claude;
   clock: Clock;
   browser: BuddysBrowser;
+  web: Web;
 }
 
 export function productionAdapters(
@@ -21,5 +23,6 @@ export function productionAdapters(
     claude: anthropicClaude(secrets.anthropicApiKey),
     clock: systemClock,
     browser: containerBrowser(browserSettings),
+    web: realWeb(),
   };
 }

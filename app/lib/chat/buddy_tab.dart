@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
+import '../connections/connections_controller.dart';
+import '../connections/read_permission_card.dart';
 import '../widgets/buddy_avatar.dart';
 import 'chat_controller.dart';
 import 'crisis_card.dart';
 
 class BuddyTab extends StatelessWidget {
-  const BuddyTab({super.key, required this.chat, required this.openPhone});
+  const BuddyTab({super.key, required this.chat, required this.connections, required this.openPhone});
 
   final ChatController chat;
+  final ConnectionsController connections;
   final PhoneOpener openPhone;
 
   @override
@@ -29,14 +32,15 @@ class BuddyTab extends StatelessWidget {
       return const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading your conversation'));
     }
     if (chat.couldNotLoad) return _CouldNotLoad(onRetry: chat.loadHistory);
-    return _MessageList(chat: chat, openPhone: openPhone);
+    return _MessageList(chat: chat, connections: connections, openPhone: openPhone);
   }
 }
 
 class _MessageList extends StatefulWidget {
-  const _MessageList({required this.chat, required this.openPhone});
+  const _MessageList({required this.chat, required this.connections, required this.openPhone});
 
   final ChatController chat;
+  final ConnectionsController connections;
   final PhoneOpener openPhone;
 
   @override
@@ -79,6 +83,11 @@ class _MessageListState extends State<_MessageList> {
           CrisisCardItem() => CrisisCard(
               announce: identical(item, chat.newestCard),
               openPhone: widget.openPhone,
+            ),
+          ReadPermissionCardItem() => ConversationReadPermissionCard(
+              connectionId: item.connectionId,
+              connections: widget.connections,
+              announce: identical(item, chat.newestReadPermissionCard),
             ),
         },
     ];

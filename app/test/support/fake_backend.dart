@@ -27,6 +27,31 @@ class FakeBackend implements BuddyBackend {
   /// What the next edit comes back as, when it isn't just the new words.
   EditedFact? nextEditResult;
 
+  List<Connection> connections = [];
+  Object? connectionsError;
+
+  /// Makes every read and revoke fail.
+  Object? connectionChangeError;
+  Object? giveError;
+  final List<(String, String?)> gave = [];
+  final List<String> revoked = [];
+  final List<String> reads = [];
+
+  /// What each change comes back as. By default, the Connection as it was.
+  Connection? connectionAfterGive;
+  Connection? connectionAfterRevoke;
+  Connection? connectionAfterRead;
+  bool holdRead = false;
+  final Completer<void> _readGate = Completer<void>();
+
+  void releaseRead() => _readGate.complete();
+
+  Connection _changed(String id, Connection? after) {
+    final updated = after ?? connections.firstWhere((connection) => connection.id == id);
+    connections = [for (final old in connections) old.id == id ? updated : old];
+    return updated;
+  }
+
   Takeover? takeoverUnderWay;
   Takeover? takeoverToStart;
   Object? startTakeoverError;
@@ -80,6 +105,34 @@ class FakeBackend implements BuddyBackend {
   Future<void> deleteFact(int id) async {
     if (changeError case final error?) throw error;
     deletions.add(id);
+  }
+
+  @override
+  Future<List<Connection>> loadConnections() async {
+    if (connectionsError case final error?) throw error;
+    return connections;
+  }
+
+  @override
+  Future<Connection> giveReadPermission(String id, String? address) async {
+    if (giveError case final error?) throw error;
+    gave.add((id, address));
+    return _changed(id, connectionAfterGive);
+  }
+
+  @override
+  Future<Connection> revokeReadPermission(String id) async {
+    if (connectionChangeError case final error?) throw error;
+    revoked.add(id);
+    return _changed(id, connectionAfterRevoke);
+  }
+
+  @override
+  Future<Connection> readConnection(String id) async {
+    if (connectionChangeError case final error?) throw error;
+    reads.add(id);
+    if (holdRead) await _readGate.future;
+    return _changed(id, connectionAfterRead);
   }
 
   @override

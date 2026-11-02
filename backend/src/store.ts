@@ -48,10 +48,45 @@ export interface StoredPairingCode {
 export interface StoredProfileFact {
   id: number;
   text: string;
-  originType: "conversation";
-  originMessageId: number;
+  /** The Student's message it came from, for a fact from the conversation. */
+  originMessageId: number | null;
+  /** The Connection it came from, for a fact from a Connection. */
+  originConnection: string | null;
+  /** Written by the backend and shown below the text, such as an event's times. */
+  detail: string | null;
+  /** What the Connection's own code keeps with the fact. Never shown to the Student or Claude as is. */
+  data: unknown;
   savedAt: Date;
   editedAt: Date | null;
+}
+
+/** One fact from reading a Connection. The key stays the same from one read to the next. */
+export interface ConnectionFactToStore {
+  key: string;
+  text: string;
+  detail: string;
+  data: unknown;
+}
+
+/** A Read Permission the Student gave. It lasts until they revoke it. */
+export interface StoredReadPermission {
+  id: number;
+  connection: string;
+  /** The secret address, for a Connection that's read through one. Never leaves the backend. */
+  address: string | null;
+  givenAt: Date;
+  lastReadAt: Date | null;
+  /** When Buddy last tried, whether it worked or not. */
+  lastTriedAt: Date | null;
+  /** What went wrong the last time, for the Student to read. Null once a read works. */
+  lastReadProblem: string | null;
+}
+
+/** A Read Permission card that was shown in the conversation. Its content comes from the code. */
+export interface StoredReadPermissionCard {
+  connection: string;
+  afterMessageId: number;
+  createdAt: Date;
 }
 
 export interface Store {
@@ -71,12 +106,30 @@ export interface Store {
   addDevice(studentId: string, device: { keyHash: string; pairedAt: Date }): void;
   isDeviceKey(keyHash: string): boolean;
   deviceKeyHashes(): string[];
-  addProfileFact(studentId: string, fact: Omit<StoredProfileFact, "id" | "editedAt">): StoredProfileFact;
+  addProfileFact(
+    studentId: string,
+    fact: { text: string; originMessageId: number; savedAt: Date },
+  ): StoredProfileFact;
   listProfileFacts(studentId: string): StoredProfileFact[];
   /** Returns the edited fact, or null if this Student has no such fact. */
   editProfileFact(studentId: string, id: number, text: string, editedAt: Date): StoredProfileFact | null;
-  /** Returns whether this Student had such a fact. */
+  /**
+   * Returns whether this Student had such a fact. A fact from a Connection stays deleted through
+   * later reads, until the Read Permission is revoked.
+   */
   deleteProfileFact(studentId: string, id: number): boolean;
+  readPermission(studentId: string, connection: string): StoredReadPermission | null;
+  giveReadPermission(studentId: string, connection: string, permission: { address: string | null; givenAt: Date }): void;
+  /** Deletes the Read Permission, its address and every fact from this Connection, on disk too. */
+  revokeReadPermission(studentId: string, connection: string): void;
+  /**
+   * Brings this Connection's facts into line with a read, all together, and keeps the Student's
+   * edits and deletions. Does nothing if this Read Permission no longer stands.
+   */
+  saveConnectionReading(studentId: string, permissionId: number, facts: ConnectionFactToStore[], readAt: Date): void;
+  recordReadProblem(permissionId: number, problem: string, triedAt: Date): void;
+  addReadPermissionCard(studentId: string, card: StoredReadPermissionCard): void;
+  listReadPermissionCards(studentId: string): StoredReadPermissionCard[];
   close(): void;
 }
 
@@ -126,12 +179,45 @@ const MIGRATIONS = [
      edited_at TEXT
    );
    CREATE INDEX profile_facts_by_student ON profile_facts (student_id, id);`,
+  `ALTER TABLE profile_facts ADD COLUMN origin_connection TEXT;
+   ALTER TABLE profile_facts ADD COLUMN origin_key TEXT;
+   ALTER TABLE profile_facts ADD COLUMN detail TEXT;
+   ALTER TABLE profile_facts ADD COLUMN data TEXT;
+   CREATE UNIQUE INDEX profile_facts_from_connection
+     ON profile_facts (student_id, origin_connection, origin_key) WHERE origin_connection IS NOT NULL;
+   CREATE TABLE read_permissions (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     connection TEXT NOT NULL,
+     address TEXT,
+     given_at TEXT NOT NULL,
+     last_read_at TEXT,
+     last_tried_at TEXT,
+     last_read_problem TEXT,
+     UNIQUE (student_id, connection)
+   );
+   CREATE TABLE deleted_connection_facts (
+     student_id TEXT NOT NULL,
+     connection TEXT NOT NULL,
+     origin_key TEXT NOT NULL,
+     PRIMARY KEY (student_id, connection, origin_key)
+   );
+   CREATE TABLE read_permission_cards (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     connection TEXT NOT NULL,
+     after_message_id INTEGER NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   CREATE INDEX read_permission_cards_by_student ON read_permission_cards (student_id, id);`,
 ];
 
 export function openStore(databasePath: string): Store {
   mkdirSync(dirname(databasePath), { recursive: true });
   const db = new DatabaseSync(databasePath);
   db.exec("PRAGMA journal_mode = WAL");
+  // So that what's deleted, such as a secret address, is overwritten rather than left in free space.
+  db.exec("PRAGMA secure_delete = ON");
   migrate(db);
 
   const insert = db.prepare(
@@ -166,19 +252,57 @@ export function openStore(databasePath: string): Store {
   const selectDevice = db.prepare(`SELECT 1 FROM devices WHERE key_hash = ?`);
   const selectDeviceKeys = db.prepare(`SELECT key_hash FROM devices`);
   const insertFact = db.prepare(
-    `INSERT INTO profile_facts (student_id, text, origin_type, origin_message_id, saved_at) VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO profile_facts (student_id, text, origin_type, origin_message_id, saved_at) VALUES (?, ?, 'conversation', ?, ?)`,
   );
   const selectFacts = db.prepare(
-    `SELECT id, text, origin_type, origin_message_id, saved_at, edited_at FROM profile_facts WHERE student_id = ? ORDER BY id`,
+    `SELECT id, text, origin_message_id, origin_connection, detail, data, saved_at, edited_at
+     FROM profile_facts WHERE student_id = ? ORDER BY id`,
   );
   const updateFact = db.prepare(`UPDATE profile_facts SET text = ?, edited_at = ? WHERE student_id = ? AND id = ?`);
   const deleteFact = db.prepare(`DELETE FROM profile_facts WHERE student_id = ? AND id = ?`);
+  const selectFactOrigin = db.prepare(`SELECT origin_connection, origin_key FROM profile_facts WHERE student_id = ? AND id = ?`);
+  const insertDeletedFact = db.prepare(
+    `INSERT OR IGNORE INTO deleted_connection_facts (student_id, connection, origin_key) VALUES (?, ?, ?)`,
+  );
+  const selectDeletedFacts = db.prepare(
+    `SELECT origin_key FROM deleted_connection_facts WHERE student_id = ? AND connection = ?`,
+  );
+  const selectPermission = db.prepare(`SELECT * FROM read_permissions WHERE student_id = ? AND connection = ?`);
+  const selectPermissionById = db.prepare(`SELECT connection FROM read_permissions WHERE student_id = ? AND id = ?`);
+  const insertPermission = db.prepare(
+    `INSERT INTO read_permissions (student_id, connection, address, given_at) VALUES (?, ?, ?, ?)`,
+  );
+  const deletePermission = db.prepare(`DELETE FROM read_permissions WHERE student_id = ? AND connection = ?`);
+  const deleteConnectionFacts = db.prepare(`DELETE FROM profile_facts WHERE student_id = ? AND origin_connection = ?`);
+  const deleteDeletedFacts = db.prepare(`DELETE FROM deleted_connection_facts WHERE student_id = ? AND connection = ?`);
+  const selectConnectionFacts = db.prepare(
+    `SELECT id, origin_key, edited_at FROM profile_facts WHERE student_id = ? AND origin_connection = ?`,
+  );
+  const insertConnectionFact = db.prepare(
+    `INSERT INTO profile_facts (student_id, text, origin_type, origin_connection, origin_key, detail, data, saved_at)
+     VALUES (?, ?, 'connection', ?, ?, ?, ?, ?)`,
+  );
+  const updateConnectionFact = db.prepare(`UPDATE profile_facts SET text = ?, detail = ?, data = ?, saved_at = ? WHERE id = ?`);
+  const updateEditedConnectionFact = db.prepare(`UPDATE profile_facts SET detail = ?, data = ?, saved_at = ? WHERE id = ?`);
+  const deleteFactById = db.prepare(`DELETE FROM profile_facts WHERE id = ?`);
+  const recordRead = db.prepare(
+    `UPDATE read_permissions SET last_read_at = ?, last_tried_at = ?, last_read_problem = NULL WHERE id = ?`,
+  );
+  const recordProblem = db.prepare(`UPDATE read_permissions SET last_tried_at = ?, last_read_problem = ? WHERE id = ?`);
+  const insertPermissionCard = db.prepare(
+    `INSERT INTO read_permission_cards (student_id, connection, after_message_id, created_at) VALUES (?, ?, ?, ?)`,
+  );
+  const selectPermissionCards = db.prepare(
+    `SELECT connection, after_message_id, created_at FROM read_permission_cards WHERE student_id = ? ORDER BY id`,
+  );
   const listFacts = (studentId: string): StoredProfileFact[] =>
     selectFacts.all(studentId).map((row: any) => ({
       id: row.id,
       text: row.text,
-      originType: row.origin_type,
       originMessageId: row.origin_message_id,
+      originConnection: row.origin_connection,
+      detail: row.detail,
+      data: row.data ? JSON.parse(row.data) : null,
       savedAt: new Date(row.saved_at),
       editedAt: row.edited_at ? new Date(row.edited_at) : null,
     }));
@@ -269,14 +393,8 @@ export function openStore(databasePath: string): Store {
     },
 
     addProfileFact(studentId, fact) {
-      const { lastInsertRowid } = insertFact.run(
-        studentId,
-        fact.text,
-        fact.originType,
-        fact.originMessageId,
-        fact.savedAt.toISOString(),
-      );
-      return { ...fact, id: Number(lastInsertRowid), editedAt: null };
+      const { lastInsertRowid } = insertFact.run(studentId, fact.text, fact.originMessageId, fact.savedAt.toISOString());
+      return { ...fact, id: Number(lastInsertRowid), originConnection: null, detail: null, data: null, editedAt: null };
     },
 
     listProfileFacts: listFacts,
@@ -287,7 +405,88 @@ export function openStore(databasePath: string): Store {
     },
 
     deleteProfileFact(studentId, id) {
-      return deleteFact.run(studentId, id).changes !== 0;
+      return inTransaction(db, () => {
+        const origin = selectFactOrigin.get(studentId, id) as any;
+        if (origin?.origin_connection) insertDeletedFact.run(studentId, origin.origin_connection, origin.origin_key);
+        return deleteFact.run(studentId, id).changes !== 0;
+      });
+    },
+
+    readPermission(studentId, connection) {
+      const row = selectPermission.get(studentId, connection) as any;
+      if (!row) return null;
+      return {
+        id: row.id,
+        connection: row.connection,
+        address: row.address,
+        givenAt: new Date(row.given_at),
+        lastReadAt: row.last_read_at ? new Date(row.last_read_at) : null,
+        lastTriedAt: row.last_tried_at ? new Date(row.last_tried_at) : null,
+        lastReadProblem: row.last_read_problem,
+      };
+    },
+
+    giveReadPermission(studentId, connection, permission) {
+      insertPermission.run(studentId, connection, permission.address, permission.givenAt.toISOString());
+    },
+
+    revokeReadPermission(studentId, connection) {
+      inTransaction(db, () => {
+        deleteConnectionFacts.run(studentId, connection);
+        deleteDeletedFacts.run(studentId, connection);
+        deletePermission.run(studentId, connection);
+      });
+      // secure_delete covers the database file, and this empties the log of recent changes.
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    },
+
+    saveConnectionReading(studentId, permissionId, facts, readAt) {
+      inTransaction(db, () => {
+        const permission = selectPermissionById.get(studentId, permissionId) as any;
+        if (!permission) return;
+        const at = readAt.toISOString();
+        const incomingKeys = new Set(facts.map((fact) => fact.key));
+        const deletedKeys = new Set(selectDeletedFacts.all(studentId, permission.connection).map((row: any) => row.origin_key));
+        const existing = new Map(
+          selectConnectionFacts.all(studentId, permission.connection).map((row: any) => [row.origin_key, row]),
+        );
+
+        for (const fact of facts) {
+          if (deletedKeys.has(fact.key)) continue;
+          const row: any = existing.get(fact.key);
+          const data = JSON.stringify(fact.data);
+          if (!row) {
+            insertConnectionFact.run(studentId, fact.text, permission.connection, fact.key, fact.detail, data, at);
+          } else if (row.edited_at) {
+            updateEditedConnectionFact.run(fact.detail, data, at, row.id);
+          } else {
+            updateConnectionFact.run(fact.text, fact.detail, data, at, row.id);
+          }
+        }
+        for (const [key, row] of existing as Map<string, any>) {
+          if (incomingKeys.has(key)) continue;
+          // The Student's own words stay, so that a series they renamed doesn't return under its old name.
+          if (row.edited_at) updateEditedConnectionFact.run(null, null, at, row.id);
+          else deleteFactById.run(row.id);
+        }
+        recordRead.run(at, at, permissionId);
+      });
+    },
+
+    recordReadProblem(permissionId, problem, triedAt) {
+      recordProblem.run(triedAt.toISOString(), problem, permissionId);
+    },
+
+    addReadPermissionCard(studentId, card) {
+      insertPermissionCard.run(studentId, card.connection, card.afterMessageId, card.createdAt.toISOString());
+    },
+
+    listReadPermissionCards(studentId) {
+      return selectPermissionCards.all(studentId).map((row: any) => ({
+        connection: row.connection,
+        afterMessageId: row.after_message_id,
+        createdAt: new Date(row.created_at),
+      }));
     },
 
     close() {

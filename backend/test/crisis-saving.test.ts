@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createConversation } from "../src/conversation.ts";
 import { createCrisisCheck } from "../src/crisis-check.ts";
+import type { Connections } from "../src/connections.ts";
 import { createProfile } from "../src/profile.ts";
 import { openStore, type Store } from "../src/store.ts";
 import { MovableClock } from "./support/movable-clock.ts";
@@ -35,7 +36,8 @@ function send(text: string, storeInUse: Store): Promise<any[]> {
     store: storeInUse,
     chatModel: "chat",
     crisisCheck: createCrisisCheck({ claude, model: "crisis", timeoutMs: 50, logError }),
-    profile: createProfile({ store: storeInUse, clock }),
+    profile: createProfile({ connectionName: (id) => id, store: storeInUse, clock }),
+    connections: { describeForTurn: () => "" } as unknown as Connections,
     logError,
   });
   return Array.fromAsync(conversation.send(text));

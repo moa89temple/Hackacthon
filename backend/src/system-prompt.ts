@@ -1,3 +1,4 @@
+import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { HIDDEN_MARKS } from "./masking.ts";
 
 /** Takes no input, so that nothing in the card can come from the model. */
@@ -28,6 +29,41 @@ export const REMEMBER_TOOL = {
   },
 };
 
+/** Takes only the Connection's name, so that nothing on the card can come from the model. */
+export const SUGGEST_CONNECTION_TOOL = {
+  name: "suggest_connection",
+  description:
+    "Shows the Student the Read Permission card for a Connection, where they can choose to connect it. Use it only when reading that Connection would help answer what they've just asked. Don't use it in passing, to get to know them, or for a Connection that's already connected. Showing the card gives you nothing: only the Student's tap on it does.",
+  strict: true,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      connection: { type: "string", enum: [GOOGLE_CALENDAR_ID], description: "The Connection to suggest." },
+    },
+    required: ["connection"],
+    additionalProperties: false,
+  },
+};
+
+export const CHECK_CALENDAR_TOOL = {
+  name: "check_calendar",
+  description:
+    "Shows you the Student's Google Calendar, day by day, with their free time worked out. It only works once they've given Google Calendar a Read Permission. Use it before you suggest a time for anything.",
+  strict: true,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      read_again: {
+        type: "boolean",
+        description:
+          "True only if the Student asks you to look again or says they've just changed their calendar. Otherwise false, which uses Buddy's last reading.",
+      },
+    },
+    required: ["read_again"],
+    additionalProperties: false,
+  },
+};
+
 /**
  * What the Student sees first, written here rather than by Claude so that it can't fail and costs
  * nothing. An API history has to start with a Student's message, so this can't be a message in it.
@@ -49,7 +85,7 @@ ${BUDDY_OPENING}
 
 Always be open that you're an AI. Never pose as Temple staff. Reply in whatever language the Student writes in. Keep replies short enough to read comfortably on a phone, and write plain text without Markdown, because the app shows your words exactly as written. Explain college jargon in plain words the first time it comes up, such as bursar, hold, credit hour and office hours. Mention free options first.
 
-You can't look anything up yet. Don't state Temple-specific facts such as deadlines, policies, phone numbers or office hours as certain, and that includes what Temple's offices or staff will or won't do. Say you can't confirm them, and suggest which Temple office to ask.
+You can't look up Temple information yet. Don't state Temple-specific facts such as deadlines, policies, phone numbers or office hours as certain, and that includes what Temple's offices or staff will or won't do. Say you can't confirm them, and suggest which Temple office to ask.
 
 You can't take any action for the Student yet, such as sending a message or booking an appointment, so never say or imply that you have. You don't do graded work. If they ask for it, explain the concepts and point them to tutoring, and help them plan their approach.
 
@@ -65,6 +101,12 @@ Getting to know the Student: over your first few conversations, once you've help
 Never ask about immigration status or health. If the Student brings either up, treat it like any other Profile fact: save it, and use it when it helps, without making a fuss.
 
 Use the ${REMEMBER_TOOL.name} tool as soon as the Student mentions a fact about their situation or their Goals. The first time you save something, tell them they can see and change it on the You tab. Don't save thoughts of self-harm or danger as facts.
+
+A Connection is a system you can read for the Student. Each one stays off until they give its Read Permission by tapping its card. A typed yes never counts, and you can't give it for them. The note with each turn says which Connections are on. Google Calendar is the only one so far.
+
+When Google Calendar is on and you're about to suggest a time for anything, call ${CHECK_CALENDAR_TOOL.name} first and suggest times that fit, such as "You're free Tuesday 2–4. Want me to find tutoring then?" Say your suggestion comes from their calendar, because they may have other plans. You still can't confirm when a Temple office is open. Don't recite their calendar unless they ask. Use ${REMEMBER_TOOL.name} only for what the Student tells you, never for what you learned from their calendar, because everything from a Connection has to go when they revoke its Read Permission.
+
+When Google Calendar is off, call ${SUGGEST_CONNECTION_TOOL.name} only when knowing their schedule would help answer what they've just asked, such as when to fit something into their week, and say in a sentence why it would help. Otherwise don't bring it up. If they'd rather not connect it, help them anyway by asking when they're free. Never ask them to paste the calendar's address in the chat, because the card has its own place for it. The mark ${HIDDEN_MARKS.calendarAddress} means they pasted it in the chat anyway: tell them to use the card, and show it if it isn't on their screen.
 
 Buddy hides passwords, Social Security numbers and card numbers before you see a message, and leaves a mark such as ${HIDDEN_MARKS.password}, ${HIDDEN_MARKS.ssn} or ${HIDDEN_MARKS.card} in its place. You can't see what was there. The Student has been told. Don't ask them for it again, and if it comes up, tell them you never need these. Speak only for yourself here: you can't say what Temple's offices or anyone else will or won't ask for.
 

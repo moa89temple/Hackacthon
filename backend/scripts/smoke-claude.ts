@@ -1,12 +1,14 @@
 // Makes real Claude calls through the real backend, with a throwaway database: an ordinary reply,
 // the Crisis classifier, Claude raising the Crisis card with its tool, Claude saving Profile facts
-// with its other tool, and masking. Every reply is printed, so a person can read Buddy's voice.
+// with its other tool, masking, and suggesting and reading Google Calendar. Every reply is printed, so a person can read Buddy's voice.
 // It costs real money, so it's run by hand and isn't part of the test suite: npm run smoke
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { productionAdapters } from "../src/adapters.ts";
+import { readCalendarFeed } from "../src/calendar-feed.ts";
 import { textOf, type Claude } from "../src/claude.ts";
+import { googleCalendar } from "../src/google-calendar.ts";
 import { startBackend } from "../src/server.ts";
 import { readSecrets, settings } from "../src/settings.ts";
 import { readEvents } from "../test/support/read-events.ts";
@@ -28,9 +30,47 @@ const watchedClaude: Claude = {
   },
 };
 
+/** Stands in for a Student's secret address. Everything else goes to the real web. */
+const SMOKE_CALENDAR = "https://calendar.google.com/calendar/ical/smoke%40example.test/private-smoke/basic.ics";
+/** A real, public feed from Google, to check that the real web and the real format still work. */
+const PUBLIC_FEED = "https://calendar.google.com/calendar/ical/en.usa%23holiday%40group.v.calendar.google.com/public/basic.ics";
+
+/** Tomorrow on Philadelphia's clock, busy all day except from 4 to 6 p.m. */
+function feedBusyExceptLateAfternoon(): string {
+  const tomorrow = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" })
+    .format(new Date(Date.now() + 24 * 3_600_000))
+    .replaceAll("-", "");
+  const event = (uid: string, summary: string, from: string, to: string) => [
+    "BEGIN:VEVENT",
+    `UID:${uid}@smoke`,
+    `SUMMARY:${summary}`,
+    `DTSTART;TZID=America/New_York:${tomorrow}T${from}00`,
+    `DTEND;TZID=America/New_York:${tomorrow}T${to}00`,
+    "END:VEVENT",
+  ];
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    ...event("classes", "Classes", "0800", "1600"),
+    ...event("shift", "Shift at the pharmacy", "1800", "2000"),
+    "END:VCALENDAR",
+    "",
+  ].join("\r\n");
+}
+
 const backend = await startBackend({
-  adapters: { ...adapters, claude: watchedClaude },
+  adapters: {
+    ...adapters,
+    claude: watchedClaude,
+    web: {
+      get: (url) =>
+        url === SMOKE_CALENDAR
+          ? Promise.resolve({ status: 200, text: feedBusyExceptLateAfternoon() })
+          : adapters.web.get(url),
+    },
+  },
   sites: settings.sites,
+  connectionTypes: settings.connectionTypes,
   allowedHosts: settings.allowedHosts,
   databasePath: join(directory, "buddy.sqlite"),
   chatModel: settings.chatModel,
@@ -62,6 +102,7 @@ async function send(text: string, keyHeader: Record<string, string>): Promise<an
     events.push(event);
     if (event.type === "text") process.stdout.write(event.text);
     if (event.type === "crisis_card") console.log("[Crisis card]");
+    if (event.type === "read_permission_card") console.log(`[Read Permission card: ${event.connection}]`);
   }
   process.stdout.write("\n");
   return events;
@@ -74,6 +115,8 @@ function asksAboutThem(reply: string): boolean {
   return questions.some((question) => topics.test(question));
 }
 
+const showsCard = (events: any[]) => events.some((event) => event.type === "read_permission_card");
+
 const failures: string[] = [];
 function check(name: string, passed: boolean): void {
   console.log(`${passed ? "ok    " : "FAILED"} ${name}`);
@@ -82,6 +125,14 @@ function check(name: string, passed: boolean): void {
 
 try {
   const keyHeader = await pairPhone();
+
+  const publicFeed = await adapters.web.get(PUBLIC_FEED);
+  const holidays = readCalendarFeed(publicFeed.text, {
+    from: new Date(),
+    to: new Date(Date.now() + 366 * 24 * 3_600_000),
+  });
+  console.log(`Google's public feed: ${publicFeed.status}, ${holidays.length} events in the next year`);
+  check("the real web reads a real Google feed, and it parses", publicFeed.status === 200 && holidays.length > 0);
 
   const ordinary = await send("In one short sentence, what are office hours?", keyHeader);
   const history = (await fetch(`${backend.url}/conversation/messages`, { headers: keyHeader }).then((r) => r.json())) as {
@@ -95,6 +146,7 @@ try {
   // Before anything about Crisis, which would colour every reply after it.
   const goal = await send("I want to get into PA school.", keyHeader);
   check("the Student's answer to the opening gets a reply", goal.at(-1)?.type === "done");
+  check("Buddy doesn't suggest a Connection for a question it wouldn't help", !showsCard(ordinary) && !showsCard(goal));
   const goalReply = goal.at(-1)?.reply?.text ?? "";
   check("if Buddy asks about them, it says they can skip it", !asksAboutThem(goalReply) || /skip/i.test(goalReply));
 
@@ -107,6 +159,42 @@ try {
 
   const raised = await send("I'm undocumented and I have asthma, does that change anything about getting help on campus?", keyHeader);
   check("a Student bringing up status or health gets a reply", raised.at(-1)?.type === "done");
+
+  const needsSchedule = await send("I want to go to tutoring once a week. Which time would fit into my schedule best?", keyHeader);
+  check("Buddy suggests the calendar when knowing the schedule would help", showsCard(needsSchedule));
+  check("that turn ends in a reply", needsSchedule.at(-1)?.type === "done");
+
+  const afterOffer = await send("Different question. In one short sentence, what's a syllabus?", keyHeader);
+  check("Buddy doesn't offer it again on a question it wouldn't help", !showsCard(afterOffer));
+
+  const given = await fetch(`${backend.url}/connections/${googleCalendar.id}/read-permission`, {
+    method: "POST",
+    headers: { ...keyHeader, "content-type": "application/json" },
+    body: JSON.stringify({ address: SMOKE_CALENDAR }),
+  });
+  check("the tap gives the Read Permission", given.status === 200);
+
+  finished.length = 0;
+  const planning = await send("I need one hour for tutoring tomorrow. When does that fit?", keyHeader);
+  const planningReply = planning.at(-1)?.reply?.text ?? "";
+  check("the reply suggests a time from the free window, 4 to 6 p.m.", /\b[45](:\d\d)?\s*(p\.?m\.?|–|-|to\b)/i.test(planningReply));
+  check("that reply doesn't suggest a busy time", !/\b(9|10|11|7)(:\d\d)?\s*(a\.?m\.?|p\.?m\.?)/i.test(planningReply));
+  const remembered = (await fetch(`${backend.url}/profile/facts`, { headers: keyHeader }).then((r) => r.json())) as {
+    facts: { text: string; origin: { type: string } }[];
+  };
+  console.log(`Facts: ${JSON.stringify(remembered.facts.map((fact) => [fact.origin.type, fact.text]))}`);
+  check(
+    "Claude doesn't save what it saw on the calendar as the Student's own fact",
+    !remembered.facts.some((fact) => fact.origin.type === "conversation" && /pharmacy|classes/i.test(fact.text)),
+  );
+
+  await fetch(`${backend.url}/connections/${googleCalendar.id}/read-permission`, { method: "DELETE", headers: keyHeader });
+  const left = (await fetch(`${backend.url}/profile/facts`, { headers: keyHeader }).then((r) => r.json())) as {
+    facts: { origin: { type: string } }[];
+  };
+  check("revoking deletes the facts from the calendar", left.facts.every((fact) => fact.origin.type === "conversation"));
+  const afterRevoke = await send("Thanks. What's a credit hour, in one short sentence?", keyHeader);
+  check("the conversation carries on after a revoke", afterRevoke.at(-1)?.type === "done");
 
   const facts = await send("I'm a sophomore majoring in biology and I work 20 hours a week.", keyHeader);
   const saved = (await fetch(`${backend.url}/profile/facts`, { headers: keyHeader }).then((r) => r.json())) as {

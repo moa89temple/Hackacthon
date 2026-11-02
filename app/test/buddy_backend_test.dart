@@ -45,6 +45,200 @@ void main() {
     expect(messages.map((message) => message.isFromBuddy), [false, true]);
   });
 
+  group('Connections', () {
+    const keyHeader = 'Bearer the-key';
+    final connectionJson = {
+      'id': 'google-calendar',
+      'name': 'Google Calendar',
+      'on': true,
+      'lastReadAt': '2026-11-02T14:00:00.000Z',
+      'lastReadProblem': null,
+      'card': {
+        'reads': ['Each event.'],
+        'notes': ['Good to know.'],
+        'warning': null,
+        'address': {
+          'label': 'Secret address',
+          'steps': ['Copy it.'],
+        },
+      },
+    };
+
+    HttpBuddyBackend backendAnswering(Future<http.Response> Function(http.Request request) answer) => HttpBuddyBackend(
+          baseUrl,
+          deviceKey: 'the-key',
+          onKeyRefused: () {},
+          client: MockClient(answer),
+        );
+
+    test('loads the list, with its card', () async {
+      final backend = backendAnswering((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/connections');
+        expect(request.headers['authorization'], keyHeader);
+        return http.Response(jsonEncode({'connections': [connectionJson]}), 200);
+      });
+
+      final [connection] = await backend.loadConnections();
+
+      expect(connection.id, 'google-calendar');
+      expect(connection.on, isTrue);
+      expect(connection.lastReadAt, DateTime.utc(2026, 11, 2, 14));
+      expect(connection.lastReadProblem, isNull);
+      expect(connection.card.reads, ['Each event.']);
+      expect(connection.card.warning, isNull);
+      expect(connection.card.address?.label, 'Secret address');
+      expect(connection.card.address?.steps, ['Copy it.']);
+    });
+
+    test('reads a card with a warning and no address', () async {
+      final backend = backendAnswering((request) async {
+        return http.Response(
+          jsonEncode({
+            'connections': [
+              {
+                ...connectionJson,
+                'lastReadAt': null,
+                'lastReadProblem': 'It failed.',
+                'card': {'reads': <String>[], 'notes': <String>[], 'warning': 'Their rules forbid it.', 'address': null},
+              },
+            ],
+          }),
+          200,
+        );
+      });
+
+      final [connection] = await backend.loadConnections();
+
+      expect(connection.lastReadAt, isNull);
+      expect(connection.lastReadProblem, 'It failed.');
+      expect(connection.card.warning, 'Their rules forbid it.');
+      expect(connection.card.address, isNull);
+    });
+
+    test('sends the address in the body when giving a Read Permission, never in the address bar', () async {
+      final backend = backendAnswering((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/connections/google-calendar/read-permission');
+        expect(request.url.query, isEmpty);
+        expect(request.headers['authorization'], keyHeader);
+        expect(jsonDecode(request.body), {'address': 'https://secret.test'});
+        return http.Response(jsonEncode({'connection': connectionJson}), 200);
+      });
+
+      expect((await backend.giveReadPermission('google-calendar', 'https://secret.test')).on, isTrue);
+    });
+
+    for (final status in [400, 409]) {
+      test('passes on what the backend says when it answers $status to a Read Permission', () async {
+        final backend = backendAnswering((request) async => http.Response(jsonEncode({'error': 'Not that one.'}), status));
+
+        await expectLater(
+          backend.giveReadPermission('google-calendar', 'nope'),
+          throwsA(isA<ReadPermissionRefused>().having((refused) => refused.message, 'message', 'Not that one.')),
+        );
+      });
+    }
+
+    test('revokes', () async {
+      final backend = backendAnswering((request) async {
+        expect(request.method, 'DELETE');
+        expect(request.url.path, '/connections/google-calendar/read-permission');
+        expect(request.headers['authorization'], keyHeader);
+        return http.Response(jsonEncode({'connection': {...connectionJson, 'on': false}}), 200);
+      });
+
+      expect((await backend.revokeReadPermission('google-calendar')).on, isFalse);
+    });
+
+    test('reads now', () async {
+      final backend = backendAnswering((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/connections/google-calendar/read');
+        expect(request.headers['authorization'], keyHeader);
+        return http.Response(jsonEncode({'connection': connectionJson}), 200);
+      });
+
+      expect((await backend.readConnection('google-calendar')).name, 'Google Calendar');
+    });
+
+    test('treats a read refused for want of a Read Permission as a failure', () async {
+      final backend = backendAnswering((request) async => http.Response(jsonEncode({'error': 'No.'}), 403));
+
+      await expectLater(backend.readConnection('google-calendar'), throwsA(isA<BackendException>()));
+    });
+
+    test('notices when the key is refused', () async {
+      var refused = false;
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () => refused = true,
+        client: MockClient((request) async => http.Response('', 401)),
+      );
+
+      await expectLater(backend.loadConnections(), throwsA(isA<BackendException>()));
+
+      expect(refused, isTrue);
+    });
+
+    test('reads a fact from a Connection', () async {
+      final backend = backendAnswering((request) async {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode({
+            'facts': [
+              {
+                'id': 1,
+                'text': 'Shift at CVS',
+                'detail': 'Tue, Nov 3, 2:00 PM–5:00 PM',
+                'origin': {'type': 'connection', 'connection': 'google-calendar', 'name': 'Google Calendar'},
+                'savedAt': '2026-11-02T14:00:00.000Z',
+                'editedAt': null,
+              },
+            ],
+          })),
+          200,
+        );
+      });
+
+      final [fact] = await backend.loadFacts();
+
+      expect(fact.detail, 'Tue, Nov 3, 2:00 PM–5:00 PM');
+      expect(fact.connectionName, 'Google Calendar');
+      expect(fact.isFromConversation, isFalse);
+    });
+
+    test('puts a suggested card in its place in the history', () async {
+      final backend = backendAnswering((request) async {
+        return http.Response(
+          jsonEncode({
+            'messages': [
+              {'type': 'read_permission_card', 'connection': 'google-calendar', 'sentAt': '2026-11-02T14:00:00.000Z'},
+            ],
+          }),
+          200,
+        );
+      });
+
+      final [item] = await backend.loadHistory();
+
+      expect((item as ReadPermissionCardItem).connectionId, 'google-calendar');
+    });
+
+    test('hears when Buddy suggests a card during a turn', () async {
+      final backend = backendAnswering((request) async {
+        return http.Response.bytes(
+          utf8.encode('data: ${jsonEncode({'type': 'read_permission_card', 'connection': 'google-calendar'})}\n\n'),
+          200,
+        );
+      });
+
+      final events = await backend.send('When?').toList();
+
+      expect((events.single as ReplyReadPermissionCard).connectionId, 'google-calendar');
+    });
+  });
+
   test('puts the opening first, in Buddy\'s voice, even with nothing else to load', () async {
     final backend = HttpBuddyBackend(
       baseUrl,

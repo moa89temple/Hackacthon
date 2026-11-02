@@ -261,6 +261,8 @@ void main() {
       await openYouTab(tester, FakeBackend()..facts = [fact(1, longFact)]);
       expect(tester.takeException(), isNull, reason: 'overflow on the list');
 
+      // The Connections come first, so at this size the facts start below the screen.
+      await tester.scrollUntilVisible(find.text('Edit'), 200);
       await tester.ensureVisible(find.text('Edit'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Edit'));

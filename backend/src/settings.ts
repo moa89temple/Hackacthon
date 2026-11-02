@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
+import { googleCalendar } from "./google-calendar.ts";
 
 const secretsPath = fileURLToPath(new URL("../../.env.local", import.meta.url));
 
@@ -27,6 +28,8 @@ export const settings = {
     controlUrl: "http://127.0.0.1:9222",
     liveView: { host: "127.0.0.1", port: 6080 },
   },
+  /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
+  connectionTypes: [googleCalendar],
   /** The sites a Student can log in to through a Takeover. */
   sites: {
     canvas: {

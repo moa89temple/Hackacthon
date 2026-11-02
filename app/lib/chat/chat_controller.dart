@@ -35,6 +35,10 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   CrisisCardItem? newestCard;
 
+  /// The Read Permission card from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  ReadPermissionCardItem? newestReadPermissionCard;
+
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
   Future<void> loadHistory() async {
@@ -58,6 +62,7 @@ class ChatController extends ChangeNotifier {
     newestReply = null;
     newestHidden = null;
     newestCard = null;
+    newestReadPermissionCard = null;
     _changed();
 
     ChatMessage? reply;
@@ -77,6 +82,11 @@ class ChatController extends ChangeNotifier {
             final card = CrisisCardItem();
             items = [...items, card];
             newestCard = card;
+            _changed();
+          case ReplyReadPermissionCard():
+            final card = ReadPermissionCardItem(event.connectionId);
+            items = [...items, card];
+            newestReadPermissionCard = card;
             _changed();
           case ReplyDone():
             reply = event.reply;

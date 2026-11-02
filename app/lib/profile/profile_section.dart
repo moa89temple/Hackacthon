@@ -63,7 +63,11 @@ class _FactRow extends StatelessWidget {
 
   String _origin(BuildContext context) {
     final date = MaterialLocalizations.of(context).formatFullDate(fact.savedAt.toLocal());
-    return '${fact.isFromConversation ? 'From your chat on' : 'Saved on'} $date.${fact.wasEdited ? ' You edited it.' : ''}';
+    final source = switch (fact.connectionName) {
+      final String name => 'From $name, read on',
+      null => fact.isFromConversation ? 'From your chat on' : 'Saved on',
+    };
+    return '$source $date.${fact.wasEdited ? ' You edited it.' : ''}';
   }
 
   Future<void> _edit(BuildContext context) async {
@@ -80,7 +84,10 @@ class _FactRow extends StatelessWidget {
       builder: (context) => AlertDialog(
         scrollable: true,
         title: const Text('Delete this fact?'),
-        content: Text(fact.text),
+        content: Text(switch (fact.connectionName) {
+          final String name => '${fact.text}\n\nIt stays deleted when Buddy reads $name again.',
+          null => fact.text,
+        }),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
           TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
@@ -99,6 +106,7 @@ class _FactRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(fact.text),
+          if (fact.detail case final detail?) Text(detail),
           Text(_origin(context), style: theme.textTheme.bodySmall),
           // A Wrap, so that the buttons go on two lines when the text is large.
           Wrap(
