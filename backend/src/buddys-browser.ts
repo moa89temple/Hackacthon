@@ -10,6 +10,23 @@ export interface PageReading {
   accessibilitySnapshot: string;
   /** The page as it stood once it had loaded, after its own scripts ran. */
   html: string;
+  /** What the server told the page's own scripts, if the read asked for any. See ReadOptions. */
+  answers?: PageAnswer[];
+}
+
+/** What a page's own script got back from a server. Nothing extra is asked for to get this. */
+export interface PageAnswer {
+  url: string;
+  status: number;
+  body: string;
+}
+
+export interface ReadOptions {
+  /**
+   * For an app that builds its pages by script: the paths of the requests the page makes for itself
+   * whose answers to keep. The read waits for one of each, for a little while, before it finishes.
+   */
+  answersFrom?: RegExp[];
 }
 
 /** Exactly what the Student approved: one form, its fields and the one button to press. */
@@ -76,7 +93,7 @@ export interface BuddysBrowser {
   /** Puts this page on the screen for the Student, without reading anything from it. */
   show(url: string): Promise<void>;
   /** Opens the page out of sight and reads it. Throws PageBlocked if the guard refuses the page. */
-  read(url: string, guard: RequestGuard): Promise<PageReading>;
+  read(url: string, guard: RequestGuard, options?: ReadOptions): Promise<PageReading>;
   /** Takes whatever the Student left on the screen off it. */
   clearScreen(guard: RequestGuard): Promise<void>;
   /**

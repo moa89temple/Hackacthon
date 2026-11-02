@@ -1,5 +1,5 @@
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
-import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type PageReading } from "../../src/buddys-browser.ts";
+import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type PageAnswer, type PageReading, type ReadOptions } from "../../src/buddys-browser.ts";
 import type { ArmableGuard, RequestGuard } from "../../src/network-guard.ts";
 
 export type RecordedAction =
@@ -18,6 +18,8 @@ export interface SavedPage {
   html?: string;
   /** What the page loads for itself, which the guard is asked about in turn. */
   alsoRequests?: { url: string; method: string }[];
+  /** What the server tells the page's own scripts. A read gets only those it asks for. */
+  answers?: PageAnswer[];
 }
 
 /**
@@ -80,7 +82,7 @@ export class RecordingBrowser implements BuddysBrowser {
     await this.holdShows;
   }
 
-  async read(url: string, guard: RequestGuard): Promise<PageReading> {
+  async read(url: string, guard: RequestGuard, options: ReadOptions = {}): Promise<PageReading> {
     this.#failIfUnreachable();
     this.actions.push({ type: "read", url });
     await this.holdReads;
@@ -98,6 +100,9 @@ export class RecordingBrowser implements BuddysBrowser {
       text: page.text,
       accessibilitySnapshot: page.accessibilitySnapshot,
       html: page.html ?? "",
+      ...(options.answersFrom
+        ? { answers: (page.answers ?? []).filter(({ url: address }) => options.answersFrom!.some((pattern) => pattern.test(new URL(address).pathname))) }
+        : {}),
     };
   }
 

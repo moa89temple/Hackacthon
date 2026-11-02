@@ -92,6 +92,22 @@ export interface ReadingNews {
   events?: ConnectionEventToStore[];
   /** Part of the read didn't work, for the Student to read. */
   problem?: string | null;
+  /** Every Contact this Connection has now. Left out, it has none to speak of and nothing changes. */
+  contacts?: ContactFromConnection[];
+}
+
+/**
+ * A Contact a Connection found, such as the Student's own advisor. It goes in the Guidebook as its own
+ * item, never merged with one that has the same name, so that all of it can go with the Read Permission
+ * and nothing else has to change.
+ */
+export interface ContactFromConnection {
+  /** The fact that holds it. If the Student deletes that fact, this goes too and stays gone. */
+  factKey: string;
+  name: string;
+  /** Read by the Guidebook's own code, as for any other item. */
+  fields: unknown;
+  source: { url: string; title: string };
 }
 
 /** A Read Permission the Student gave. It lasts until they revoke it. */
@@ -303,8 +319,8 @@ export interface Store {
     entry: NewActivityEntry,
   ): void;
   /**
-   * Deletes the Read Permission, its address, its events and every fact from this Connection, on disk
-   * too. Activity's records of replies that had those facts keep their own copies. A login held in
+   * Deletes the Read Permission, its address, its events, every fact and Contact from this Connection, on
+   * disk too. Activity's records of replies that had those facts keep their own copies. A login held in
    * Buddy's Browser can't go in the same step, so its site is noted here until it has: see loginsToDelete.
    */
   revokeReadPermission(studentId: string, connection: string, entry: NewActivityEntry, loginSite?: string): void;
@@ -795,6 +811,39 @@ export function openStore(databasePath: string): Store {
      WHERE item.reported_at IS NULL
      ORDER BY item.id, mention.url`,
   );
+  // By its key, which keeps a Connection's Contacts apart from everything Discovery finds.
+  const contactKeyPrefix = (studentId: string, connection: string) => `contact:from-connection:${studentId}:${connection}:`;
+  const selectItemsByKeyPrefix = db.prepare(`SELECT id, item_key FROM guidebook_items WHERE substr(item_key, 1, length(?1)) = ?1`);
+  const selectItemPages = db.prepare(`SELECT url FROM guidebook_mentions WHERE item_id = ?`);
+  const deleteItemMentions = db.prepare(`DELETE FROM guidebook_mentions WHERE item_id = ?`);
+  const deleteItem = db.prepare(`DELETE FROM guidebook_items WHERE id = ?`);
+  const deletePageIfUnused = db.prepare(`DELETE FROM guidebook_pages WHERE url = ?1 AND url NOT IN (SELECT url FROM guidebook_mentions)`);
+
+  /** Gone whether or not it was reported, because a Report on it mustn't outlive the Read Permission. */
+  function deleteContactItem(id: number): void {
+    const pages = selectItemPages.all(id).map((row: any) => row.url as string);
+    deleteItemMentions.run(id);
+    deleteItem.run(id);
+    for (const url of pages) deletePageIfUnused.run(url);
+  }
+
+  function deleteContactsFrom(studentId: string, connection: string, keep: Set<string> = new Set()): void {
+    for (const row of selectItemsByKeyPrefix.all(contactKeyPrefix(studentId, connection)) as any[]) {
+      if (!keep.has(row.item_key)) deleteContactItem(row.id);
+    }
+  }
+
+  function replaceContactsFrom(studentId: string, connection: string, contacts: ContactFromConnection[], at: string): void {
+    const keyOf = (contact: ContactFromConnection) => `${contactKeyPrefix(studentId, connection)}${contact.factKey}`;
+    deleteContactsFrom(studentId, connection, new Set(contacts.map(keyOf)));
+    for (const contact of contacts) {
+      upsertGuidebookPage.run(contact.source.url, contact.source.title, "");
+      upsertGuidebookItem.run(keyOf(contact), contact.name);
+      const { id } = selectGuidebookItemId.get(keyOf(contact)) as any;
+      upsertMention.run(id, contact.source.url, JSON.stringify(contact.fields), at);
+    }
+  }
+
   const selectGuidebookItem = db.prepare(`SELECT 1 FROM guidebook_items WHERE id = ?`);
   const reportItem = db.prepare(`UPDATE guidebook_items SET reported_at = ? WHERE id = ? AND reported_at IS NULL`);
   const selectReportedItems = db.prepare(`SELECT id, name FROM guidebook_items WHERE reported_at IS NOT NULL ORDER BY id`);
@@ -1008,6 +1057,8 @@ export function openStore(databasePath: string): Store {
           insertDeletedFact.run(studentId, origin.origin_connection, origin.origin_key);
           // An event quotes the fact, so it goes with it.
           deleteEventsAboutFact.run(studentId, origin.origin_connection, origin.origin_key);
+          const contact = selectGuidebookItemId.get(`${contactKeyPrefix(studentId, origin.origin_connection)}${origin.origin_key}`) as any;
+          if (contact) deleteContactItem(contact.id);
         }
         return deleteFact.run(studentId, id).changes !== 0;
       });
@@ -1041,6 +1092,7 @@ export function openStore(databasePath: string): Store {
         deleteConnectionFacts.run(studentId, connection);
         deleteDeletedFacts.run(studentId, connection);
         deleteConnectionEvents.run(studentId, connection);
+        deleteContactsFrom(studentId, connection);
         deletePermission.run(studentId, connection);
         if (loginSite) insertLoginToDelete.run(studentId, loginSite);
       });
@@ -1115,6 +1167,10 @@ export function openStore(databasePath: string): Store {
         for (const event of news.events ?? []) {
           if (deletedKeys.has(event.factKey)) continue;
           insertConnectionEvent.run(studentId, permission.connection, event.kind, event.factKey, event.text, JSON.stringify(event.data), at);
+        }
+        if (news.contacts) {
+          const kept = news.contacts.filter((contact) => !deletedKeys.has(contact.factKey));
+          replaceContactsFrom(studentId, permission.connection, kept, at);
         }
         recordRead.run(at, at, news.problem ?? null, permissionId);
       });

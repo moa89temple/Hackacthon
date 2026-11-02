@@ -10,12 +10,14 @@ import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from "./guidebook.ts";
 import { hiddenNote, maskSecrets } from "./masking.ts";
 import { newMilestoneTurn, type ToolOutcome } from "./milestone-chat.ts";
+import { NAVIGATE360_ID } from "./navigate360-rules.ts";
 import { describeProfile, type Profile } from "./profile.ts";
 import type { StandardMilestone, StandardMilestones } from "./standard-milestones.ts";
 import {
   BUDDY_SYSTEM_PROMPT,
   CHECK_CALENDAR_TOOL,
   CHECK_CANVAS_TOOL,
+  CHECK_NAVIGATE360_TOOL,
   CRISIS_CARD_TOOL,
   FIND_CONTACTS_TOOL,
   MAKE_HANDOFF_TOOL,
@@ -410,6 +412,15 @@ export function createConversation(deps: ConversationDeps): Conversation {
         "Canvas couldn't be checked. Tell the Student, and don't guess at what's due or what their grades are.",
       );
     }
+    if (call.name === CHECK_NAVIGATE360_TOOL.name) {
+      return lookAtConnection(
+        call,
+        turn,
+        NAVIGATE360_ID,
+        "Navigate360",
+        "Navigate360 couldn't be checked. Tell the Student, and don't guess at who their advisor is or when their appointments are.",
+      );
+    }
     if (call.name === SEARCH_GUIDEBOOK_TOOL.name) return searchGuidebook(call, turn);
     if (call.name === FIND_CONTACTS_TOOL.name) return searchGuidebook(call, turn, "contact");
     if (call.name === CRISIS_CARD_TOOL.name) {
@@ -569,6 +580,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
                     const card = askForLoginIfNeeded(CANVAS_ID, suggestedThisTurn, studentMessageId!, now);
                     if (card) yield { type: "read_permission_card", connection: card };
                   }
+                  if (call.name === CHECK_NAVIGATE360_TOOL.name) {
+                    const card = askForLoginIfNeeded(NAVIGATE360_ID, suggestedThisTurn, studentMessageId!, now);
+                    if (card) yield { type: "read_permission_card", connection: card };
+                  }
                 }
               }
               toolRounds.push(reply, { role: "user", content: answers, createdAt: now });
@@ -698,6 +713,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       REMEMBER_TOOL,
       CHECK_CALENDAR_TOOL,
       CHECK_CANVAS_TOOL,
+      CHECK_NAVIGATE360_TOOL,
       SUGGEST_CONNECTION_TOOL,
       SEARCH_GUIDEBOOK_TOOL,
       FIND_CONTACTS_TOOL,

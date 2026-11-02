@@ -98,7 +98,9 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
         isOnSite(parsed.hostname, site) &&
         (site.blockedPages ?? []).some(
           (page) =>
-            (page.host === undefined || page.host === withoutFinalDot(parsed.hostname)) && page.path.test(pathToBlock(parsed)),
+            (page.host === undefined || page.host === withoutFinalDot(parsed.hostname)) &&
+            page.path.test(pathToBlock(parsed)) &&
+            (page.fragment === undefined || page.fragment.test(fragmentToBlock(parsed))),
         ),
     );
   }
@@ -203,6 +205,14 @@ function pathToBlock(url: URL): string {
   } catch {
     // It can't be read, so it can't be shown not to be a blocked page. The raw address has to do.
     return url.pathname.toLowerCase();
+  }
+}
+
+function fragmentToBlock(url: URL): string {
+  try {
+    return decodeURIComponent(url.hash).toLowerCase();
+  } catch {
+    return url.hash.toLowerCase();
   }
 }
 
