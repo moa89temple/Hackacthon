@@ -47,11 +47,15 @@ const GOAL_MILESTONE = {
   additionalProperties: false,
 };
 
+/**
+ * This and SUGGEST_CHANGE_TOOL aren't strict, unlike every other tool. With all of them strict, the API refuses
+ * every request in a conversation: "The compiled grammar is too large". They have the biggest schemas, and
+ * roadmap.ts checks all of their input before any card is shown, so strict adds least here.
+ */
 export const PROPOSE_ROADMAP_TOOL = {
   name: "propose_roadmap",
   description:
     "Shows the Student a card proposing their first Roadmap. You write only the Milestones for each Goal. Buddy adds the terms of the Suggested Academic Plan, the Standard Milestones and the unwritten-rules Milestones itself. Nothing changes unless the Student taps Accept.",
-  strict: true,
   input_schema: {
     type: "object" as const,
     properties: {
@@ -81,7 +85,6 @@ export const SUGGEST_CHANGE_TOOL = {
   name: "suggest_roadmap_change",
   description:
     "Shows the Student a card suggesting a change to the Roadmap they have, such as a new Milestone after a new Goal. Nothing changes unless the Student taps Accept.",
-  strict: true,
   input_schema: {
     type: "object" as const,
     properties: {

@@ -537,6 +537,55 @@ describe("proposing a Roadmap", () => {
   });
 });
 
+describe("input the API no longer checks, because these two tools aren't strict", () => {
+  const milestone = (goalId: number, more: object) => ({ goal_id: goalId, name: "Shadow a PA", detail: null, due_date: "2027-06-01", guidebook_item_id: null, ...more });
+
+  it.each<[string, (goalId: number) => object]>([
+    ["nothing at all", () => Object.fromEntries(Object.keys(proposal(null, 1)).map((key) => [key, undefined]))],
+    ["Milestones as a string", () => ({ goal_milestones: "shadow a PA" })],
+    ["a Milestone that's nothing", () => ({ goal_milestones: [null] })],
+    ["a Milestone that's a number", () => ({ goal_milestones: [5] })],
+    ["a name that's a number", (goalId) => ({ goal_milestones: [milestone(goalId, { name: 7 })] })],
+    ["a date that's a number", (goalId) => ({ goal_milestones: [milestone(goalId, { due_date: 20270601 })] })],
+    ["a date that's missing", (goalId) => ({ goal_milestones: [milestone(goalId, { due_date: undefined })] })],
+    ["a Guidebook item that's an object", (goalId) => ({ goal_milestones: [milestone(goalId, { guidebook_item_id: { id: 1 } })] })],
+    ["a plan that's an object", () => ({ plan_id: { id: 1 } })],
+    ["a year in words", () => ({ current_plan_year: "2" })],
+    ["a year fact that's a number", () => ({ year_fact: 2 })],
+  ])("shows no first Roadmap card for %s, and tells Claude", async (_name, input) => {
+    const goal = await aGoal();
+    await aStudentWithMajorAndYear();
+
+    const events = await turn("Please make me a Roadmap.", [PROPOSE, { ...proposal(null, goal.id), ...input(goal.id) }]);
+
+    expect(cardIn(events)).toBeUndefined();
+    expect(answersIn().at(-1)!.is_error).toBe(true);
+    expect((await backend.history()).filter((entry) => entry.type === "roadmap_card")).toEqual([]);
+    expect(events.at(-1).type).toBe("done");
+  });
+
+  it.each<[string, object]>([
+    ["nothing at all", {}],
+    ["Milestones as a string", { goal_milestones: "shadow a PA" }],
+    ["a Milestone that's nothing", { goal_milestones: [null] }],
+    ["removals as a string", { remove_milestone_ids: "all" }],
+    ["a removal that isn't there", { remove_milestone_ids: [{ id: 1 }] }],
+    ["Standard Milestones as words", { standard_milestone_ids: ["FAFSA"] }],
+    ["a plan that's an object", { plan_id: { id: 1 } }],
+  ])("shows no change card for %s, and tells Claude", async (_name, input) => {
+    const { card } = await aProposedRoadmap();
+    await calls.accept(card.id);
+    const before = (await backend.history()).filter((entry) => entry.type === "roadmap_card").length;
+
+    const events = await turn("Change my Roadmap.", [SUGGEST, input]);
+
+    expect(cardIn(events)).toBeUndefined();
+    expect(answersIn().at(-1)!.is_error).toBe(true);
+    expect((await backend.history()).filter((entry) => entry.type === "roadmap_card")).toHaveLength(before);
+    expect(events.at(-1).type).toBe("done");
+  });
+});
+
 describe("accepting a Roadmap", () => {
   it("takes one tap, and puts every Milestone on the Roadmap in order", async () => {
     const { card } = await aProposedRoadmap();
