@@ -324,7 +324,7 @@ describe("what's new since the last read", () => {
   it("makes an event for a new grade and a grade change, including the change to the total", async () => {
     await connectCanvas();
     changeSavedPage(backend.browser, coursePage("101", "grades"), (html) =>
-      html.replace(/18\.0/g, "12.0").replace("\n                      18\n", "\n                      12\n").replace(/91\.2%/g, "84%"),
+      html.replace(/18\.0/g, "12.0").replace(/(\n *)18(\r?\n)/, "$112$2").replace(/91\.2%/g, "84%"),
     );
     changeSavedPage(backend.browser, coursePage("101", "assignments"), (html) => html.replace("<b>18</b>", "<b>12</b>"));
 
@@ -378,7 +378,7 @@ describe("what's new since the last read", () => {
   it("forgets the events about a fact the Student deletes or rewrites, because the Profile is theirs", async () => {
     await connectCanvas();
     changeSavedPage(backend.browser, coursePage("101", "grades"), (html) =>
-      html.replace(/18\.0/g, "12.0").replace("\n                      18\n", "\n                      12\n").replace(/91\.2%/g, "84%"),
+      html.replace(/18\.0/g, "12.0").replace(/(\n *)18(\r?\n)/, "$112$2").replace(/91\.2%/g, "84%"),
     );
     changeSavedPage(backend.browser, coursePage("101", "assignments"), (html) => html.replace("<b>18</b>", "<b>12</b>"));
     await backend.readNow(CANVAS);
