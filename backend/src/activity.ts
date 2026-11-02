@@ -33,6 +33,19 @@ export function readPermissionRevoked(connectionName: string, hadAddress: boolea
   };
 }
 
+export function loginDeleted(connectionName: string, at: Date): NewActivityEntry {
+  return { kind: "login_deleted", title: `Buddy deleted your ${connectionName} login`, detail: "Buddy's Browser no longer holds it.", at };
+}
+
+export function loginNotDeletedYet(connectionName: string, at: Date): NewActivityEntry {
+  return {
+    kind: "login_not_deleted_yet",
+    title: `Buddy couldn't delete your ${connectionName} login yet`,
+    detail: "Buddy's Browser couldn't be reached. Buddy can't use the login, and keeps trying to delete it.",
+    at,
+  };
+}
+
 export function loginChecked(siteName: string, at: Date): NewActivityEntry {
   return { kind: "login_check", title: `Buddy opened ${siteName} to check your login`, at };
 }
@@ -181,17 +194,20 @@ export function discoveryFailed(at: Date): NewActivityEntry {
 }
 
 /** Why Buddy read a Connection. */
-export type ReadReason = "given" | "asked" | "schedule" | "conversation";
+export type ReadReason = "given" | "asked" | "schedule" | "conversation" | "logged_in";
 
 const READ_REASONS: Record<ReadReason, string> = {
   given: "You had just given its Read Permission.",
   asked: "You tapped Read now.",
   schedule: "It was one of Buddy's regular read times.",
   conversation: "Buddy looked again during your conversation.",
+  logged_in: "You had just logged in.",
 };
 
-export function connectionRead(connectionName: string, reason: ReadReason, at: Date): NewActivityEntry {
-  return { kind: "connection_read", title: `Buddy read ${connectionName}`, detail: READ_REASONS[reason], at };
+/** What's new says how many of what, never what they are, so that what's read doesn't outlive a revoke here. */
+export function connectionRead(connectionName: string, reason: ReadReason, at: Date, whatsNew?: string): NewActivityEntry {
+  const detail = whatsNew ? `${READ_REASONS[reason]} What's new: ${whatsNew}.` : READ_REASONS[reason];
+  return { kind: "connection_read", title: `Buddy read ${connectionName}`, detail, at };
 }
 
 /** The problem is in words from Buddy's own code, so it can't carry a secret address. */

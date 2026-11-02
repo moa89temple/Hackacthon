@@ -6,6 +6,7 @@ import type { Adapters } from "./adapters.ts";
 import {
   BrowserUnreachable,
   createBrowserAccess,
+  NoReadPermissionForLogin,
   NoTakeover,
   TakeoverInProgress,
   UnknownSite,
@@ -76,14 +77,6 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     clock: options.adapters.clock,
     connectionName: (id) => options.connectionTypes.find((type) => type.id === id)?.name ?? id,
   });
-  const connections = createConnections({
-    types: options.connectionTypes,
-    web: options.adapters.web,
-    clock: options.adapters.clock,
-    store,
-    profile,
-    logError: (error) => app.log.error(error),
-  });
   const guidebook = createGuidebook({ store, clock: options.adapters.clock });
   const drafts = createDrafts({ store, clock: options.adapters.clock, guidebook });
   const milestones = createStandardMilestones({ store, clock: options.adapters.clock });
@@ -107,6 +100,15 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     sites: options.sites,
     guards,
     onControlEnded: () => liveView.closeAll(),
+    logError: (error) => app.log.error(error),
+  });
+  const connections = createConnections({
+    types: options.connectionTypes,
+    web: options.adapters.web,
+    browserAccess,
+    clock: options.adapters.clock,
+    store,
+    profile,
     logError: (error) => app.log.error(error),
   });
   const actionCards = createActionCards({
@@ -202,7 +204,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
 
   addProfileRoutes(app, profile);
-  addBrowserRoutes(app, browserAccess);
+  addBrowserRoutes(app, browserAccess, connections);
   addConnectionRoutes(app, connections);
 
   addGuidebookRoutes(app, guidebook);
@@ -271,7 +273,7 @@ function addConnectionRoutes(app: FastifyInstance, connections: Connections): vo
   );
 
   app.delete<{ Params: { id: string } }>("/connections/:id/read-permission", async (request) => ({
-    connection: connections.revoke(request.params.id),
+    connection: await connections.revoke(request.params.id),
   }));
 
   app.post<{ Params: { id: string } }>("/connections/:id/read", async (request) => ({
@@ -279,16 +281,21 @@ function addConnectionRoutes(app: FastifyInstance, connections: Connections): vo
   }));
 }
 
-function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess): void {
+function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess, connections: Connections): void {
   app.get("/takeover", async () => ({ takeover: browserAccess.currentTakeover() }));
 
   app.post<{ Body: { site?: unknown } }>("/takeover", async (request, reply) => {
     const site = request.body?.site;
     if (typeof site !== "string") return reply.code(404).send({ error: "site must name a site" });
+    await connections.beforeLogin(site);
     return { takeover: await browserAccess.startTakeover(site) };
   });
 
-  app.post("/takeover/done", () => browserAccess.finishTakeover());
+  app.post("/takeover/done", async () => {
+    const finished = await browserAccess.finishTakeover();
+    await connections.afterLogin(finished.site, finished.signedIn);
+    return finished;
+  });
 
   app.delete<{ Params: { site: string } }>("/sites/:site/login", async (request, reply) => {
     await browserAccess.forgetLogin(request.params.site);
@@ -316,6 +323,7 @@ function connectionErrorStatus(error: unknown): number | undefined {
 
 function browserErrorStatus(error: unknown): number | undefined {
   if (error instanceof UnknownSite) return 404;
+  if (error instanceof NoReadPermissionForLogin) return 403;
   if (error instanceof TakeoverInProgress || error instanceof NoTakeover) return 409;
   if (error instanceof BrowserUnreachable) return 503;
   return undefined;

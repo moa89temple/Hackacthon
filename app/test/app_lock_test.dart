@@ -189,10 +189,12 @@ void main() {
 
   group('during a Takeover', () {
     Future<void> openTakeover(WidgetTester tester) async {
-      backend.takeoverToStart = canvasTakeover;
+      backend
+        ..takeoverToStart = canvasTakeover
+        ..connections = [canvasConnection(on: true)];
       await open(tester);
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await tester.pump();
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Log in to Canvas'));
       await tester.pumpAndSettle();
       expect(find.textContaining('live view of'), findsOneWidget);

@@ -1,13 +1,23 @@
 import {
   connectionRead,
   connectionReadFailed,
+  loginDeleted,
+  loginNotDeletedYet,
   readPermissionGiven,
   readPermissionRevoked,
   type ReadReason,
 } from "./activity.ts";
+import { BrowserUnreachable, TakeoverInProgress, type BrowserAccess } from "./browser-access.ts";
 import { describeInPhiladelphia, philadelphiaClock, type Clock } from "./clock.ts";
-import type { Profile } from "./profile.ts";
-import { THE_STUDENT, type ConnectionFactToStore, type Store, type StoredReadPermission } from "./store.ts";
+import type { FactFromConnection, Profile } from "./profile.ts";
+import {
+  THE_STUDENT,
+  type ConnectionEventToStore,
+  type ConnectionFactToStore,
+  type Store,
+  type StoredConnectionEvent,
+  type StoredReadPermission,
+} from "./store.ts";
 import type { Web } from "./web.ts";
 
 /** The Read Permission card. All of it comes from Buddy's code, never from the model. */
@@ -25,14 +35,22 @@ export interface ReadPermissionCard {
 export interface ReadContext {
   address: string | null;
   web: Web;
+  /** The only way a Connection reads a page in Buddy's Browser, which is what the guard watches. */
+  browser: Pick<BrowserAccess, "read">;
   now: Date;
+  /** What this Connection's facts were before this read. */
+  previous: FactFromConnection[];
+  /** Part of this read didn't work. What it returns is still saved, and the Student is told this. */
+  reportMissed(problem: string): void;
 }
 
 export interface ReadingForClaude {
-  facts: { text: string; data: unknown }[];
+  facts: FactFromConnection[];
+  events: StoredConnectionEvent[];
   now: Date;
   lastReadAt: Date | null;
   lastReadProblem: string | null;
+  needsLogin: boolean;
 }
 
 /** One kind of Connection. Everything the gate and the schedule need to know about it. */
@@ -44,8 +62,17 @@ export interface ConnectionType {
   whileOnTellClaude: string;
   /** Returns the address to keep, or throws BadAddress. Only Connections with card.address have one. */
   checkAddress?(pasted: unknown): string;
+  /**
+   * The Student logs in to this through a Takeover, and its login is held in Buddy's Browser under the
+   * site with this same id. The guard goes by that id, so they have to match.
+   */
+  logsIn?: boolean;
   /** Throws ReadProblem to tell the Student what went wrong. */
   read(context: ReadContext): Promise<ConnectionFactToStore[]>;
+  /** What changed between one read's facts and the next's. Never called for the first read. */
+  eventsBetween?(before: FactFromConnection[], after: ConnectionFactToStore[]): ConnectionEventToStore[];
+  /** How many of what, for Activity. It mustn't repeat what they are. */
+  countEvents?(events: ConnectionEventToStore[]): string;
   describeForClaude(reading: ReadingForClaude): string;
 }
 
@@ -55,6 +82,12 @@ export interface ConnectionStatus {
   on: boolean;
   lastReadAt: string | null;
   lastReadProblem: string | null;
+  /** The Student logs in to this through a Takeover. */
+  logsIn: boolean;
+  /** Buddy's Browser isn't logged in, so Buddy is asking the Student for a Takeover. */
+  needsLogin: boolean;
+  /** Revoked, but its login could only be deleted once Buddy's Browser could be reached. */
+  loginNotDeletedYet: boolean;
   card: ReadPermissionCard;
 }
 
@@ -82,6 +115,9 @@ export class BadAddress extends Error {}
 /** A read that didn't work. The message is for the Student, and never says the address. */
 export class ReadProblem extends Error {}
 
+/** Buddy's Browser isn't logged in, so the read needs a Takeover first. */
+export class LoginNeeded extends ReadProblem {}
+
 /**
  * The Read Permission gate: every read of every Connection goes through here, and nothing else
  * gets to the secret address or the web on a Connection's behalf.
@@ -90,10 +126,24 @@ export interface Connections {
   list(): ConnectionStatus[];
   /** The Student's tap on the card. It's reached only from the app, never from the model. */
   give(id: string, pastedAddress: unknown): Promise<ConnectionStatus>;
-  /** Deletes the Read Permission, its address and every Profile fact from this Connection. */
-  revoke(id: string): ConnectionStatus;
+  /**
+   * Deletes the Read Permission, its address, every Profile fact and event from this Connection, and
+   * its login. If the login can't go yet, it keeps being tried and the status says so.
+   */
+  revoke(id: string): Promise<ConnectionStatus>;
   /** Reads now. Throws NoReadPermission without one. A read that fails shows in the status. */
   read(id: string, reason: ReadReason): Promise<ConnectionStatus>;
+  /**
+   * Deletes a revoked Connection's login if that's still to do, so that it can't carry on under a new
+   * Read Permission. Throws BrowserUnreachable if it can't. Call it before a Takeover starts.
+   */
+  beforeLogin(site: string): Promise<void>;
+  /** Call it after the Student taps Done. A login that worked gets read straight away, in the background. */
+  afterLogin(site: string, signedIn: boolean): Promise<void>;
+  /** Everything that's changed in this Connection, oldest first. */
+  events(id: string): StoredConnectionEvent[];
+  /** Waits for any read of this Connection that's under way. */
+  readsFinished(id: string): Promise<void>;
   /** Reads each Connection that has come due, going by the times below. */
   readDue(): Promise<void>;
   /** Calls readDue from now on. The timer stops when the backend closes. */
@@ -112,6 +162,7 @@ const SCHEDULE_CHECK_EVERY_MS = 60_000;
 export interface ConnectionsDeps {
   types: ConnectionType[];
   web: Web;
+  browserAccess: Pick<BrowserAccess, "read" | "forgetLogin" | "currentTakeover">;
   clock: Clock;
   store: Store;
   profile: Profile;
@@ -119,8 +170,10 @@ export interface ConnectionsDeps {
 }
 
 export function createConnections(deps: ConnectionsDeps): Connections {
-  const { types, web, clock, store, profile, logError } = deps;
+  const { types, web, browserAccess, clock, store, profile, logError } = deps;
   const readsUnderWay = new Map<number, Promise<void>>();
+  /** One at a time, so that nothing is deleted twice or said twice in Activity. */
+  let loginDeletions: Promise<void> = Promise.resolve();
   let timer: NodeJS.Timeout | undefined;
 
   function typeWithId(id: string): ConnectionType {
@@ -137,16 +190,67 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       on: permission !== null,
       lastReadAt: permission?.lastReadAt?.toISOString() ?? null,
       lastReadProblem: permission?.lastReadProblem ?? null,
+      logsIn: type.logsIn === true,
+      needsLogin: permission?.needsLogin ?? false,
+      loginNotDeletedYet: store.loginsToDelete(THE_STUDENT).includes(type.id),
       card: type.card,
     };
+  }
+
+  function deleteWaitingLogins(): Promise<void> {
+    const work = async () => {
+      for (const site of store.loginsToDelete(THE_STUDENT)) {
+        const name = types.find((type) => type.id === site)?.name ?? site;
+        try {
+          await browserAccess.forgetLogin(site);
+          store.loginDeleted(THE_STUDENT, site, loginDeleted(name, clock.now()));
+        } catch (error) {
+          // The Student is using the browser, so this waits for Done and isn't a problem to report.
+          if (error instanceof TakeoverInProgress) continue;
+          logError(error);
+          if (!store.toldLoginNotDeleted(THE_STUDENT, site)) {
+            store.noteLoginNotDeleted(THE_STUDENT, site, loginNotDeletedYet(name, clock.now()));
+          }
+        }
+      }
+    };
+    loginDeletions = loginDeletions.then(work, work);
+    return loginDeletions;
+  }
+
+  /** A login from before a revoke mustn't be what a new Read Permission reads with. */
+  async function failIfOldLoginRemains(type: ConnectionType): Promise<void> {
+    if (!type.logsIn || !store.loginsToDelete(THE_STUDENT).includes(type.id)) return;
+    await deleteWaitingLogins();
+    if (store.loginsToDelete(THE_STUDENT).includes(type.id)) {
+      throw new ReadProblem(`Buddy couldn't delete your old ${type.name} login yet, so it can't read ${type.name}. Check that Buddy's Browser is running.`);
+    }
   }
 
   async function runRead(type: ConnectionType, permission: StoredReadPermission, reason: ReadReason): Promise<void> {
     const now = clock.now();
     try {
-      const facts = await type.read({ address: permission.address, web, now });
+      await failIfOldLoginRemains(type);
+      const previous = profile.factsFromConnection(type.id);
+      let missed: string | null = null;
+      const facts = await type.read({
+        address: permission.address,
+        web,
+        browser: browserAccess,
+        now,
+        previous,
+        reportMissed: (problem) => {
+          missed = problem;
+        },
+      });
+      // On the first read everything looks new, and none of it is news.
+      const events = permission.lastReadAt ? (type.eventsBetween?.(previous, facts) ?? []) : [];
+      const whatsNew = events.length > 0 ? type.countEvents?.(events) : undefined;
       // Saves only if this Read Permission still stands, so a revoke made meanwhile stays revoked.
-      profile.saveReading(permission.id, facts, now, connectionRead(type.name, reason, clock.now()));
+      profile.saveReading(permission.id, facts, now, connectionRead(type.name, reason, clock.now(), whatsNew), {
+        events,
+        problem: missed,
+      });
     } catch (error) {
       // Only words from Buddy's own code reach the log, so that the address can't get there in an error.
       const problem = problemFor(type, error);
@@ -157,6 +261,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
         problem,
         now,
         connectionReadFailed(type.name, reason, problem, clock.now()),
+        error instanceof LoginNeeded,
       );
     }
   }
@@ -181,6 +286,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
   }
 
   async function readDue(): Promise<void> {
+    await deleteWaitingLogins();
     const currentRound = readRound(clock.now());
     await Promise.all(
       types
@@ -204,13 +310,37 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       return read(id, "given");
     },
 
-    revoke(id) {
+    async revoke(id) {
       const type = typeWithId(id);
       if (store.readPermission(THE_STUDENT, id)) {
         const entry = readPermissionRevoked(type.name, type.card.address !== null, clock.now());
-        store.revokeReadPermission(THE_STUDENT, id, entry);
+        store.revokeReadPermission(THE_STUDENT, id, entry, type.logsIn ? id : undefined);
       }
+      await deleteWaitingLogins();
       return statusOf(type);
+    },
+
+    async beforeLogin(site) {
+      if (browserAccess.currentTakeover() || !store.loginsToDelete(THE_STUDENT).includes(site)) return;
+      await deleteWaitingLogins();
+      if (store.loginsToDelete(THE_STUDENT).includes(site)) throw new BrowserUnreachable(null);
+    },
+
+    async afterLogin(site, signedIn) {
+      await deleteWaitingLogins();
+      const type = types.find((candidate) => candidate.id === site && candidate.logsIn);
+      if (!signedIn || !type || !store.readPermission(THE_STUDENT, site)) return;
+      void readThroughGate(type, "logged_in").catch(logError);
+    },
+
+    events(id) {
+      typeWithId(id);
+      return store.listConnectionEvents(THE_STUDENT, id);
+    },
+
+    async readsFinished(id) {
+      const permission = store.readPermission(THE_STUDENT, id);
+      if (permission) await readsUnderWay.get(permission.id);
     },
 
     read,
@@ -233,9 +363,11 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       if (!permission) throw new NoReadPermission(type.name);
       return type.describeForClaude({
         facts: profile.factsFromConnection(id),
+        events: store.listConnectionEvents(THE_STUDENT, id),
         now: clock.now(),
         lastReadAt: permission.lastReadAt,
         lastReadProblem: permission.lastReadProblem,
+        needsLogin: permission.needsLogin,
       });
     },
 
@@ -247,7 +379,10 @@ export function createConnections(deps: ConnectionsDeps): Connections {
             const lastRead = permission.lastReadAt
               ? `last read ${describeInPhiladelphia(permission.lastReadAt)}`
               : "but Buddy hasn't managed to read it yet";
-            return `${type.name} is connected, ${lastRead}. ${type.whileOnTellClaude}`;
+            const login = permission.needsLogin
+              ? ` Buddy's Browser isn't logged in to it, so tell the Student to tap Log in to ${type.name} on the You tab. They log in themselves, and you never ask for a password.`
+              : "";
+            return `${type.name} is connected, ${lastRead}.${login} ${type.whileOnTellClaude}`;
           }
           return `${type.name} isn't connected, so don't use or mention anything you saw from it earlier in this conversation. Offer it only when reading it is actually needed to answer what they've just asked, or they ask for it. Having offered it before doesn't change that.`;
         })

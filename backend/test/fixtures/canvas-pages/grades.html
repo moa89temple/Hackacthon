@@ -1,0 +1,131 @@
+<!doctype html>
+<!-- Made up, as the page looks once its scripts have run. Modelled on app/views/gradebooks/grade_summary.html.erb
+     and app/presenters/grade_summary_assignment_presenter.rb in the open-source canvas-lms repository.
+     Nothing here came from a real account. -->
+<html lang="en">
+<head><title>Grades for Made Up Student: Made-Up Biology 1111</title></head>
+<body>
+  <div id="application" class="ic-app">
+    <div id="grade-summary-content">
+      <div id="student-grades-right-content">
+        <div id="student-grades-final" class="student_assignment final_grade">Total: <span class="grade">91.2%</span></div>
+      </div>
+      <h1 class="ic-Action-header__Heading">Grades for Made Up Student</h1>
+      <div id="assignments">
+        <table id="grades_summary" class="editable ic-Table ic-Table--hover-row">
+          <thead>
+            <tr>
+              <th scope="col">Name</th><th scope="col">Due</th><th scope="col">Submitted</th>
+              <th scope="col" class="status">Status</th><th scope="col" class="assignment_score">Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="student_assignment assignment_graded editable" data-muted="false" data-pending_quiz="false" id="submission_502">
+              <th class="title" scope="row">
+                <a href="/courses/101/assignments/502/submissions/56">Made-Up Lab Report 2</a>
+                <div class="context">Made-Up Labs</div>
+              </th>
+              <td class="due">Oct 26 by 11:59pm</td>
+              <td class="submitted">Oct 25 at 8:01pm</td>
+              <td class="status" scope="row"></td>
+              <td class="assignment_score" title="Click to test a different score">
+                <div class="score_holder">
+                  <span class="tooltip">
+                    <span class="grade" tabindex="0">
+                      <span class="tooltip_wrap right"><span class="tooltip_text score_teaser">Click to test a different score</span></span>
+                      <span class="screenreader-only" role="button">Click to test a different score</span>
+                      18
+                    </span>
+                    <span>/ 20</span>
+                  </span>
+                  <div style="display: none;">
+                    <span class="original_points">18.0</span>
+                    <span class="original_score">18.0</span>
+                    <span class="what_if_score">18.0</span>
+                    <span class="student_entered_score"></span>
+                    <span class="submission_status">graded</span>
+                    <span class="assignment_group_id">40</span>
+                    <span class="assignment_id">502</span>
+                  </div>
+                </div>
+              </td>
+              <td class="details"><a class="toggle_score_details_link tooltip" href="#"><span class="tooltip_wrap right"><span class="tooltip_text">See scoring details</span></span></a></td>
+            </tr>
+            <tr id="grade_info_502" class="comments grade_details assignment_graded" style="display: none;">
+              <td colspan="6">
+                <table id="score_details_502" class="ic-Table ic-Table--condensed score_details_table">
+                  <tbody>
+                    <tr>
+                      <td>Mean: 77.77</td>
+                      <td>High: 19.99</td>
+                      <td>Low: 11.11</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+            <tr class="student_assignment editable" data-muted="false" data-pending_quiz="false" id="submission_501">
+              <th class="title" scope="row">
+                <a href="/courses/101/assignments/501/submissions/56">Made-Up Lab Report 3</a>
+                <div class="context">Made-Up Labs</div>
+              </th>
+              <td class="due">Nov 5 by 11:59pm</td>
+              <td class="submitted"></td>
+              <td class="status" scope="row"></td>
+              <td class="assignment_score">
+                <div class="score_holder">
+                  <span class="tooltip"><span class="grade" tabindex="0"><span class="screenreader-only" role="button">Click to test a different score</span> - </span><span>/ 20</span></span>
+                  <div style="display: none;"><span class="original_score"></span><span class="submission_status">unsubmitted</span><span class="assignment_id">501</span></div>
+                </div>
+              </td>
+            </tr>
+            <tr class="student_assignment" data-muted="false" id="submission_505">
+              <th class="title" scope="row">
+                <a href="/courses/101/assignments/505/submissions/56">Made-Up Worksheet Only On Grades</a>
+                <div class="context">Made-Up Labs</div>
+              </th>
+              <td class="due">Oct 12 by 11:59pm</td>
+              <td class="submitted"></td>
+              <td class="status" scope="row"><span class="submission-missing-pill"></span></td>
+              <td class="assignment_score">
+                <div class="score_holder">
+                  <span class="tooltip"><span class="grade"> - </span><span>/ 10</span></span>
+                  <div style="display: none;"><span class="original_score"></span><span class="submission_status">unsubmitted</span><span class="assignment_id">505</span></div>
+                </div>
+              </td>
+            </tr>
+            <tr class="student_assignment assignment_graded" data-muted="true" id="submission_506">
+              <th class="title" scope="row">
+                <a href="/courses/101/assignments/506/submissions/56">Made-Up Essay Not Released Yet</a>
+              </th>
+              <td class="due">Oct 15 by 11:59pm</td>
+              <td class="submitted">Oct 15 at 9:00pm</td>
+              <td class="status" scope="row"></td>
+              <td class="assignment_score">
+                <div class="score_holder">
+                  <span class="tooltip"><span class="grade"><i class="icon-off" title="Instructor has not posted this grade"></i></span></span>
+                  <div style="display: none;"><span class="original_score"></span><span class="submission_status">submitted</span><span class="assignment_id">506</span></div>
+                </div>
+              </td>
+            </tr>
+            <tr class="student_assignment hard_coded group_total" id="submission_group-40">
+              <th class="title" scope="row">Made-Up Labs</th>
+              <td class="due"></td><td class="submitted"></td><td class="status"></td>
+              <td class="assignment_score"><div class="score_holder"><span class="tooltip"><span class="grade">90%</span></span></div></td>
+            </tr>
+            <tr class="student_assignment hard_coded final_grade" id="submission_final-grade">
+              <th class="title" scope="row">Total</th>
+              <td class="due"></td><td class="submitted"></td><td class="status"></td>
+              <td class="assignment_score">
+                <div class="score_holder">
+                  <span class="tooltip"><span class="grade"><span class="tooltip_wrap right"><span class="tooltip_text score_teaser">Total</span></span>91.2%</span></span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

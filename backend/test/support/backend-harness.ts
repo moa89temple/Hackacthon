@@ -281,6 +281,16 @@ export class BackendHarness {
     });
   }
 
+  /** What the rest of the backend sees of what's changed in a Connection. */
+  async connectionEvents(connection: string): Promise<any[]> {
+    return this.#backend.connections.events(connection);
+  }
+
+  /** Waits for a read that was started in the background, such as the one after a Takeover. */
+  untilReadsFinish(connection: string): Promise<void> {
+    return this.#backend.connections.readsFinished(connection);
+  }
+
   /** The Student tapping Read now. */
   readNow(connection: string): Promise<any> {
     return fetch(`${this.url}/connections/${connection}/read`, { method: "POST", headers: this.deviceHeaders });

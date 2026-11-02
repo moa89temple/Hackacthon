@@ -1,0 +1,104 @@
+<!doctype html>
+<!-- Made up. Modelled on app/views/courses/index.html.erb and shared/_current_enrollment.html.erb in the
+     open-source canvas-lms repository. Nothing here came from a real account. -->
+<html lang="en">
+<head>
+  <title>Courses</title>
+  <script>window.ENV = {current_user: {display_name: "Made Up Student"}};</script>
+</head>
+<body class="with-left-side course-menu-expanded">
+  <div id="application" class="ic-app">
+    <div class="header-bar"><h1>All Courses</h1></div>
+    <div class="ic-Action-header content--hasMarginTop"></div>
+    <div class="table-overflow-container">
+      <table id="my_courses_table" class="ic-Table ic-Table--bordered course-list-table">
+        <thead>
+          <tr>
+            <th class="course-list-star-column"><a href="/courses?cc_sort=favorite">Favorite</a></th>
+            <th class="course-list-course-title-column"><a href="/courses?cc_sort=course">Course</a></th>
+            <th class="course-list-nickname-column">Nickname</th>
+            <th class="course-list-term-column">Term</th>
+            <th class="course-list-enrolled-as-column">Enrolled as</th>
+            <th class="course-list-published-column">Published</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="course-list-table-row">
+            <td class="course-list-star-column">
+              <span class="course-list-favorite-course course-list-favoritable" data-tooltip="bottom"
+                title="Click to remove Made-Up Biology 1111 from the courses menu." role="button" tabindex="0"
+                data-course-name="Made-Up Biology 1111" data-course-id="101" data-favorite-url="/api/v1/users/self/favorites/courses/101">
+                <i class="course-list-favorite-icon icon-star"></i>
+                <span id="course_list_screenreader_message_101" class="screenreader-only">Click to remove Made-Up Biology 1111 from the courses menu.</span>
+              </span>
+            </td>
+            <td class="course-list-course-title-column course-list-no-left-border">
+              <a href="/courses/101" title="Made-Up Biology 1111"><span class="name">
+                Made-Up Biology 1111
+              </span></a>
+            </td>
+            <td class="course-list-no-left-border course-list-nickname-column">Bio</td>
+            <td class="course-list-no-left-border course-list-term-column">2026 Fall</td>
+            <td class="course-list-no-left-border course-list-enrolled-as-column">Student</td>
+            <td class="course-list-no-left-border course-list-published-column"><span data-tooltip title="This course has been published.">Yes</span></td>
+          </tr>
+          <tr class="course-list-table-row">
+            <td class="course-list-star-column"></td>
+            <td class="course-list-course-title-column course-list-no-left-border">
+              <a href="/courses/102" title="Made-Up Writing 0802"><span class="name">Made-Up Writing 0802</span></a>
+            </td>
+            <td class="course-list-no-left-border course-list-nickname-column"></td>
+            <td class="course-list-no-left-border course-list-term-column">2026 Fall</td>
+            <td class="course-list-no-left-border course-list-enrolled-as-column">Student</td>
+            <td class="course-list-no-left-border course-list-published-column"><span data-tooltip title="This course has been published.">Yes</span></td>
+          </tr>
+          <tr class="course-list-table-row">
+            <td class="course-list-star-column"></td>
+            <td class="course-list-course-title-column course-list-no-left-border">
+              <a href="/courses/103" title="Made-Up Peer Tutoring"><span class="name">Made-Up Peer Tutoring</span></a>
+            </td>
+            <td class="course-list-no-left-border course-list-nickname-column"></td>
+            <td class="course-list-no-left-border course-list-term-column">2026 Fall</td>
+            <td class="course-list-no-left-border course-list-enrolled-as-column">Teaching Assistant</td>
+            <td class="course-list-no-left-border course-list-published-column"><span data-tooltip title="This course has been published.">Yes</span></td>
+          </tr>
+          <tr class="course-list-table-row course-list-unpublished-course-row">
+            <td class="course-list-star-column"></td>
+            <td class="course-list-course-title-column course-list-no-left-border">
+              <span class="name">Made-Up Course With No Link Yet</span>
+            </td>
+            <td class="course-list-no-left-border course-list-nickname-column"></td>
+            <td class="course-list-no-left-border course-list-term-column">2026 Fall</td>
+            <td class="course-list-no-left-border course-list-enrolled-as-column">Student</td>
+            <td class="course-list-no-left-border course-list-published-column"><span class="course-list-unpublished-course" data-tooltip title="This course has not been published.">No</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="content--hasMarginTop"><h2>Past Enrollments</h2></div>
+    <div class="table-overflow-container">
+      <table id="past_enrollments_table" class="ic-Table ic-Table--bordered course-list-table">
+        <tbody>
+          <tr class="course-list-table-row">
+            <td class="course-list-course-title-column course-list-no-left-border">
+              <a href="/courses/90" title="Made-Up Old Course"><span class="name">Made-Up Old Course</span></a>
+            </td>
+            <td class="course-list-no-left-border course-list-term-column">2025 Fall</td>
+            <td class="course-list-no-left-border course-list-enrolled-as-column">Student</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="content--hasMarginTop"><h2>My Groups</h2></div>
+    <table id="my_groups_table" class="ic-Table ic-Table--bordered course-list-table">
+      <tbody>
+        <tr>
+          <td><a href="/groups/8"><span class="name" title="Made-Up Study Group">Made-Up Study Group</span></a></td>
+          <td class="course-list-no-left-border"><span class="name">Made-Up Biology 1111</span></td>
+          <td class="course-list-no-left-border">2026 Fall</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

@@ -43,6 +43,7 @@ FORM_PAGES = {
     "/form-page-to-error": form('action="/forms/error"'),
     "/form-page-redirects-post": form('action="/forms/307"'),
     "/form-page-to-quiz": form('action="/quizzes/1/submit"'),
+    "/form-page-to-graded-work": form('action="/courses/101/assignments/501/submissions"'),
     # Changes what's being sent at the last moment, after Buddy's checks.
     "/form-page-swaps-value": form()
     + "<script>document.getElementById('advising').addEventListener('submit', (event) => {"
@@ -110,8 +111,101 @@ PAGES = {
     "/secret": "<title>Secret</title><h1>Somewhere Buddy may not go</h1>",
 }
 
+# A made-up Canvas, modelled on the public canvas-lms templates. Nothing here came from a real account.
+# Every MARKER is something the Canvas check must never print, whichever way a page holds it.
+CANVAS_COURSES = """
+<title>MARKERPAGETITLE</title>
+<script>window.ENV = {current_user: {display_name: "MARKERSTUDENT"}};</script>
+<div class="header-bar"><h1>All Courses</h1></div><div class="ic-Action-header"></div>
+<table id="my_courses_table" class="ic-Table course-list-table"><tbody>
+  <tr class="course-list-table-row">
+    <td class="course-list-course-title-column"><a href="/courses/101" title="MARKERCOURSE"><span class="name">MARKERCOURSE Biology</span></a></td>
+    <td class="course-list-term-column">2026 Fall</td><td class="course-list-enrolled-as-column">Student</td>
+  </tr>
+  <tr class="course-list-table-row">
+    <td class="course-list-course-title-column"><a href="/courses/102" title="MARKERCOURSE"><span class="name">MARKERCOURSE Writing</span></a></td>
+    <td class="course-list-term-column">2026 Fall</td><td class="course-list-enrolled-as-column">Student</td>
+  </tr>
+</tbody></table>
+<script>
+  fetch('/api/graphql', {method: 'POST', body: '{"query":"MARKERQUERY"}'}).catch(() => {});
+  fetch('/courses/101/users?who=MARKERSTUDENT').catch(() => {});
+  fetch('/courses/101/quizzes/30?who=MARKERSTUDENT').catch(() => {});
+</script>
+"""
+
+# Fills itself in after it has loaded, as Canvas's list does, and with a frame that holds a quiz.
+CANVAS_ASSIGNMENTS = """
+<title>MARKERPAGETITLE</title><div id="ag-list"></div>
+<iframe src="/courses/101/quizzes/30/take"></iframe>
+<script>
+  window.addEventListener('load', () => setTimeout(async () => {
+    const answer = await fetch('/api/v1/courses/101/assignment_groups');
+    const assignments = await answer.json();
+    document.getElementById('ag-list').innerHTML = assignments.map((one) =>
+      '<li class="assignment" id="assignment_' + one.id + '"><a class="ig-title" href="/courses/101/assignments/' + one.id + '">' + one.name + '</a>' +
+      '<div class="assignment-date-due"><time datetime="' + one.due + '">soon</time></div></li>').join('');
+  }, 200));
+</script>
+"""
+
+CANVAS_GRADES = """
+<title>MARKERPAGETITLE</title>
+<table id="grades_summary"><tbody>
+  <tr class="student_assignment assignment_graded" id="submission_501" data-muted="false">
+    <th class="title"><a href="/courses/101/assignments/501/submissions/56">MARKERASSIGNMENT Lab</a></th>
+    <td class="due">Nov 5 by 11:59pm</td><td class="submitted">Nov 1 at 8pm</td>
+    <td class="assignment_score"><span class="grade">18</span><span>/ 20</span></td>
+  </tr>
+  <tr class="comments"><td><table class="score_details_table"><tr><td>Mean: MARKERCLASSMATE</td></tr></table></td></tr>
+  <tr class="student_assignment hard_coded final_grade" id="submission_final-grade">
+    <th class="title">Total</th><td class="assignment_score"><span class="grade">91.2%</span></td>
+  </tr>
+</tbody></table>
+"""
+
+CANVAS_ANNOUNCEMENTS = """
+<title>MARKERPAGETITLE</title>
+<div class="announcements-v2__wrapper">
+  <div class="ic-announcement-row">
+    <div class="ic-item-row__author-col"><span aria-label="MARKERCLASSMATE">X</span></div>
+    <a class="ic-item-row__content-link" href="/courses/101/discussion_topics/900"><h3>MARKERANNOUNCEMENT title</h3></a>
+    <div class="ic-announcement-row__content user_content"><p class="MARKERRICHCLASS">MARKERANNOUNCEMENT words</p></div>
+    <span class="ic-item-row__meta-content-timestamp">Nov 1, 2026 at 9:00am</span>
+  </div>
+</div>
+"""
+
+# A page that's changed in a way the reader doesn't know, full of what a page could hold.
+CANVAS_UNKNOWN = """
+<title>MARKERPAGETITLE</title>
+<div class="made-up-new-layout" role="region" data-course="MARKERCOURSE" title="MARKERCOURSE" aria-label="MARKERGRADE">
+  <h2 class="made-up-heading">MARKERGRADE</h2>
+  <a class="made-up-link" href="/courses/102/pages/markerslug?q=MARKERQUERY" data-id="MARKERATTRIBUTE">MARKERASSIGNMENT</a>
+  <div class="user_content"><p class="MARKERRICHCLASS">MARKERANNOUNCEMENT</p></div>
+</div>
+"""
+
+CANVAS_PAGES = {
+    "/courses": CANVAS_COURSES,
+    "/courses/101/assignments": CANVAS_ASSIGNMENTS,
+    "/courses/101/grades": CANVAS_GRADES,
+    "/courses/101/announcements": CANVAS_ANNOUNCEMENTS,
+    "/courses/102/assignments": CANVAS_UNKNOWN,
+    "/courses/102/announcements": '<div class="announcements-v2__wrapper"><h2>No Announcements</h2></div>',
+}
+CANVAS_ASSIGNMENT_LIST = json.dumps(
+    [
+        {"id": 501, "name": "MARKERASSIGNMENT Lab", "due": "2026-11-06T04:59:00Z"},
+        {"id": 502, "name": "MARKERASSIGNMENT Essay", "due": "2026-11-20T04:59:00Z"},
+    ]
+)
+
 REDIRECTS = {
     "/redirect-to-quiz": "/quizzes/1",
+    # What Canvas does when a teacher has hidden a course's Grades page.
+    "/courses/102/grades": "/courses/102",
+    "/courses/101/grades-redirects-to-quiz": "/courses/101/quizzes/30",
     "/redirect-away": "http://127.0.0.3:8000/secret",
     "/redirect-to-public": "http://127.0.0.2:8000/public",
 }
@@ -168,6 +262,21 @@ class Pages(BaseHTTPRequestHandler):
         elif self.path == "/login-required":
             self.send_response(200)
             self.page("Please log in", "<h1>Please log in</h1>")
+        elif self.path == "/made-up-canvas-login":
+            self.send_response(200)
+            self.send_header("set-cookie", "canvas_session=signed-in; Path=/; HttpOnly")
+            self.page("Signed in", "<h1>Signed in</h1>")
+        elif self.path == "/login/made-up-saml":
+            self.send_response(200)
+            self.page("MARKERPAGETITLE", "<h1>MARKERSTUDENT, log in</h1>")
+        elif self.path in CANVAS_PAGES and "canvas_session" not in cookies:
+            self.redirect("/login/made-up-saml")
+        elif self.path in CANVAS_PAGES:
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{CANVAS_PAGES[self.path]}".encode())
+        elif self.path == "/api/v1/courses/101/assignment_groups":
+            self.send_response(200)
+            self.page_with_type("application/json", CANVAS_ASSIGNMENT_LIST.encode())
         elif self.path in FORM_PAGES:
             self.send_response(200)
             self.page("A form", FORM_PAGES[self.path])

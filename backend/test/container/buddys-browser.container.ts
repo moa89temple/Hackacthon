@@ -8,9 +8,13 @@ import { chromium, type Page } from "playwright-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { TakeoverInProgress, type Site } from "../../src/browser-access.ts";
 import { PageBlocked, type FormToSubmit } from "../../src/buddys-browser.ts";
+import { canvasAt } from "../../src/canvas.ts";
+import { runCanvasCheck } from "../../src/canvas-check.ts";
+import { CANVAS_BLOCKED_PAGES, canvasReadablePages } from "../../src/canvas-rules.ts";
 import type { ConnectionType } from "../../src/connections.ts";
 import { containerBrowser } from "../../src/container-browser.ts";
 import { createGuardPolicy } from "../../src/network-guard.ts";
+import { keepToReadablePages } from "../../src/readable-pages.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
 import { systemClock } from "../../src/clock.ts";
 
@@ -868,6 +872,168 @@ describe("logins", () => {
     await restartContainer();
 
     expect((await read(SITE.homeUrl)).title).toBe("Please log in");
+  });
+});
+
+describe("the Canvas reader, against made-up pages in the real browser", () => {
+  const HOST = "127.0.0.4";
+  const HOME = `http://${HOST}:8000/`;
+  const CANVAS_SITE: Site = {
+    name: "Canvas",
+    homeUrl: HOME,
+    loginHosts: [HOST],
+    isConnection: true,
+    readablePages: canvasReadablePages(HOST),
+    blockedPages: CANVAS_BLOCKED_PAGES,
+    formPages: [{ path: /^\/form-page/ }],
+  };
+  const sites = { canvas: CANVAS_SITE };
+  const canvasGuards = createGuardPolicy({ sites, publicHosts: [], hasReadPermission: () => true });
+  const readCanvas = (path: string) => browser.read(new URL(path, HOME).href, keepToReadablePages(canvasGuards.forReading(), sites));
+  const logInToCanvas = async () => {
+    await browser.show(`${HOME}made-up-canvas-login`);
+    await settle(300);
+  };
+  const visited = () => ledger().filter((entry) => entry.host.startsWith(HOST)).map((entry) => `${entry.method} ${entry.path}`);
+
+  async function runCheck() {
+    const lines: string[] = [];
+    const exitCode = await runCanvasCheck({
+      browser,
+      connection: canvasAt(HOME),
+      sites,
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: false }),
+      print: (line) => lines.push(line),
+    });
+    return { exitCode, output: lines.join("\n") };
+  }
+
+  beforeEach(async () => {
+    await browser.forgetLogin([HOST]);
+    clearLedger();
+  });
+
+  it("reads through the real guard, and what a page fetches for itself after it loads is there to read", async () => {
+    await logInToCanvas();
+
+    const { exitCode, output } = await runCheck();
+
+    expect(exitCode).toBe(0);
+    expect(output).toMatch(/courses: 2\b/);
+    expect(output).toMatch(/assignments: 2\b/);
+    expect(output).toMatch(/due dates: 2\b/);
+    expect(output).toMatch(/grades: 2\b/);
+    expect(output).toMatch(/announcements: 1\b/);
+  });
+
+  it("opens only the allowed pages, and nothing a page tries to load that's blocked gets out", async () => {
+    await logInToCanvas();
+    clearLedger();
+
+    await runCheck();
+    await settle();
+
+    const requests = visited();
+    expect(requests).toEqual(
+      expect.arrayContaining([
+        "GET /courses",
+        "GET /courses/101/assignments",
+        "GET /courses/101/grades",
+        "GET /courses/101/announcements",
+        "GET /courses/102/assignments",
+        "GET /courses/102/announcements",
+        "GET /api/v1/courses/101/assignment_groups",
+      ]),
+    );
+    expect(requests.filter((request) => /quizzes|\/users|discussion_topics|submissions/.test(request))).toEqual([]);
+    expect(requests.filter((request) => !request.startsWith("GET "))).toEqual([]);
+    // Redirected there by the grades page, which the guard refused to follow.
+    expect(requests).not.toContain("GET /courses/102");
+  });
+
+  it("prints what the guard refused, and no marker, whatever the real page held", async () => {
+    await logInToCanvas();
+
+    const { output } = await runCheck();
+
+    expect(output).toContain(`POST ${HOST} /api/graphql`);
+    expect(output).toContain(`GET ${HOST} /courses/:id/users`);
+    expect(output).toContain(`GET ${HOST} /courses/:id/quizzes/:id`);
+    expect(output).toContain("/courses/:id/assignments");
+    // The page the reader didn't recognize, as the real browser left it.
+    expect(output).toContain("div.made-up-new-layout role=region [data-course]");
+    expect(output).toContain("h2.made-up-heading");
+    expect(output).toContain("div.user_content (not looked inside)");
+    expect(output).not.toMatch(/marker/i);
+    expect(output).not.toContain("18");
+    expect(output).not.toContain("91.2");
+  });
+
+  it("says the login has expired, and goes no further", async () => {
+    const { exitCode, output } = await runCheck();
+    await settle();
+
+    expect(exitCode).toBe(4);
+    expect(output).toMatch(/Login: not logged in/);
+    expect(output).not.toMatch(/marker/i);
+    expect(visited().filter((request) => request.includes("/courses/101"))).toEqual([]);
+  });
+
+  it.each([
+    "/courses/101/quizzes/30",
+    "/courses/101/users",
+    "/courses/101/discussion_topics/900",
+    "/groups/8",
+    "/courses/101/assignments/501",
+    "/courses/101/assignments/501/submissions",
+    "/courses/101",
+    "/profile",
+  ])("refuses %s, and nothing reaches the site", async (path) => {
+    await logInToCanvas();
+    clearLedger();
+
+    await expect(readCanvas(path)).rejects.toThrow(PageBlocked);
+
+    expect(visited()).toEqual([]);
+  });
+
+  it("refuses a redirect to a quiz, and nothing reaches the quiz", async () => {
+    await logInToCanvas();
+    await expect(
+      browser.read(`${HOME}courses/101/grades-redirects-to-quiz`, canvasGuards.forReading()),
+    ).rejects.toThrow(PageBlocked);
+
+    expect(visited().filter((request) => request.includes("quizzes"))).toEqual([]);
+  });
+
+  it("refuses to send graded work, even with the guard armed for exactly that request", async () => {
+    await logInToCanvas();
+    clearLedger();
+    const form: FormToSubmit = {
+      ...FORM,
+      pageUrl: `${HOME}form-page-to-graded-work`,
+      actionUrl: `${HOME}courses/101/assignments/501/submissions`,
+    };
+
+    const outcome = await browser.submitForm(form, canvasGuards.forApprovedStep());
+    await settle();
+
+    expect(outcome.outcome).not.toBe("submitted");
+    expect(visited().filter((request) => request.startsWith("POST"))).toEqual([]);
+  });
+
+  it("refuses the page of a piece of graded work, even with a guard for an approved step", async () => {
+    await logInToCanvas();
+    clearLedger();
+    const form: FormToSubmit = {
+      ...FORM,
+      pageUrl: `${HOME}courses/101/assignments/501/submit`,
+      actionUrl: `${HOME}courses/101/assignments/501/submissions`,
+    };
+
+    await expect(browser.submitForm(form, canvasGuards.forApprovedStep())).rejects.toThrow(PageBlocked);
+
+    expect(visited()).toEqual([]);
   });
 });
 

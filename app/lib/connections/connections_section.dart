@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
 import 'connections_controller.dart';
+import 'login_request.dart';
 import 'read_permission_card.dart';
 
 /// The You tab's list of what Buddy can read for the Student, and their controls over each one.
@@ -79,6 +80,13 @@ class _ConnectionRow extends StatelessWidget {
     );
   }
 
+  /// Exactly what goes, which depends on what this Connection holds.
+  String get _whatRevokingDeletes {
+    if (connection.logsIn) return "every fact from it and your login in Buddy's Browser";
+    if (connection.card.address != null) return 'the address and every fact from it';
+    return 'every fact from it';
+  }
+
   Future<void> _revoke(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -86,7 +94,7 @@ class _ConnectionRow extends StatelessWidget {
         scrollable: true,
         title: Text('Revoke the Read Permission for ${connection.name}?'),
         content: Text(
-          "Buddy stops reading ${connection.name}. This deletes the address and every fact from it. Whatever it already showed the AI stays in your conversation's history and in Activity until those are deleted, and Buddy is told not to use it.",
+          "Buddy stops reading ${connection.name}. This deletes $_whatRevokingDeletes. Whatever it already showed the AI stays in your conversation's history and in Activity until those are deleted, and Buddy is told not to use it.",
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
@@ -118,6 +126,11 @@ class _ConnectionRow extends StatelessWidget {
                 Text(_status(context)),
                 if (connection.lastReadProblem case final problem?)
                   Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+                if (connection.loginNotDeletedYet)
+                  Text(
+                    "Buddy couldn't delete your login yet, because Buddy's Browser couldn't be reached. Buddy can't use it, and keeps trying to delete it.",
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
               ],
             ),
           ),
@@ -128,6 +141,8 @@ class _ConnectionRow extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: connection.on
                 ? [
+                    if (connection.logsIn)
+                      LogInButton(connection: connection, connections: connections, prominent: connection.needsLogin),
                     OutlinedButton(
                       onPressed: reading ? null : () => connections.read(connection),
                       child: reading
@@ -144,6 +159,9 @@ class _ConnectionRow extends StatelessWidget {
                       onPressed: () => _openCard(context),
                       child: Text('Connect', semanticsLabel: 'Connect ${connection.name}'),
                     ),
+                    // Buddy stays out until the Student taps Done, even if the Read Permission has gone since.
+                    if (connections.takeoverSite == connection.id)
+                      LogInButton(connection: connection, connections: connections),
                   ],
           ),
         ],

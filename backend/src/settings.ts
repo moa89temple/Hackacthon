@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
+import { canvas } from "./canvas.ts";
+import { CANVAS_BLOCKED_PAGES, CANVAS_HOME, CANVAS_ID, CANVAS_READABLE_PAGES } from "./canvas-rules.ts";
 import { googleCalendar } from "./google-calendar.ts";
 import { MILESTONE_OFFICES } from "./milestone-pages.ts";
 import { OFFICES } from "./office-pages.ts";
@@ -33,7 +35,7 @@ export const settings = {
     liveView: { host: "127.0.0.1", port: 6080 },
   },
   /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
-  connectionTypes: [googleCalendar],
+  connectionTypes: [googleCalendar, canvas],
   /**
    * Public pages Buddy's Browser may open, each as this exact host. A whole domain would be wrong:
    * Temple's single sign-on could log it in to a Connection that has no Read Permission.
@@ -56,12 +58,15 @@ export const settings = {
    * submit anything in real use.
    */
   sites: {
-    canvas: {
+    [CANVAS_ID]: {
       name: "Canvas",
-      homeUrl: "https://templeu.instructure.com/",
+      homeUrl: CANVAS_HOME,
       // Temple's single sign-on and Duo are listed too. Otherwise a forgotten Canvas login
       // would quietly come back the next time Canvas sent the browser to the sign-on page.
       loginHosts: ["instructure.com", "fim.temple.edu", "duosecurity.com"],
+      isConnection: true,
+      readablePages: CANVAS_READABLE_PAGES,
+      blockedPages: CANVAS_BLOCKED_PAGES,
     },
   },
 };

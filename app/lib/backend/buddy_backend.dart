@@ -367,6 +367,9 @@ class Connection {
     required this.on,
     this.lastReadAt,
     this.lastReadProblem,
+    this.logsIn = false,
+    this.needsLogin = false,
+    this.loginNotDeletedYet = false,
     required this.card,
   });
 
@@ -379,6 +382,9 @@ class Connection {
           _ => null,
         },
         lastReadProblem: json['lastReadProblem'] as String?,
+        logsIn: json['logsIn'] as bool? ?? false,
+        needsLogin: json['needsLogin'] as bool? ?? false,
+        loginNotDeletedYet: json['loginNotDeletedYet'] as bool? ?? false,
         card: ReadPermissionCardContent.fromJson(json['card'] as Map<String, dynamic>),
       );
 
@@ -389,6 +395,15 @@ class Connection {
 
   /// What went wrong the last time Buddy tried to read it, for the Student to read.
   final String? lastReadProblem;
+
+  /// The Student logs in to this through a Takeover.
+  final bool logsIn;
+
+  /// Buddy's Browser isn't logged in to it, so Buddy is asking for a Takeover.
+  final bool needsLogin;
+
+  /// Its Read Permission was revoked, but its login couldn't be deleted yet. Buddy keeps trying.
+  final bool loginNotDeletedYet;
   final ReadPermissionCardContent card;
 }
 

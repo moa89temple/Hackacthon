@@ -52,6 +52,8 @@ export interface StoredProfileFact {
   originMessageId: number | null;
   /** The Connection it came from, for a fact from a Connection. */
   originConnection: string | null;
+  /** The same fact from one read to the next, for a fact from a Connection. */
+  originKey: string | null;
   /** Written by the backend and shown below the text, such as an event's times. */
   detail: string | null;
   /** What the Connection's own code keeps with the fact. Never shown to the Student or Claude as is. */
@@ -68,6 +70,30 @@ export interface ConnectionFactToStore {
   data: unknown;
 }
 
+/** Something that changed between two reads of a Connection, such as a new assignment or a changed grade. */
+export interface ConnectionEventToStore {
+  kind: string;
+  /** The fact it's about. A fact the Student deleted makes no more events. */
+  factKey: string;
+  text: string;
+  /** What the Connection's own code keeps with the event. Never shown to the Student or Claude as is. */
+  data: unknown;
+}
+
+export interface StoredConnectionEvent extends ConnectionEventToStore {
+  id: number;
+  /** Which Connection it came from. */
+  connection: string;
+  at: Date;
+}
+
+/** What a read found besides its facts. */
+export interface ReadingNews {
+  events?: ConnectionEventToStore[];
+  /** Part of the read didn't work, for the Student to read. */
+  problem?: string | null;
+}
+
 /** A Read Permission the Student gave. It lasts until they revoke it. */
 export interface StoredReadPermission {
   id: number;
@@ -80,6 +106,8 @@ export interface StoredReadPermission {
   lastTriedAt: Date | null;
   /** What went wrong the last time, for the Student to read. Null once a read works. */
   lastReadProblem: string | null;
+  /** The last read found Buddy's Browser isn't logged in, so this needs a Takeover. Cleared once a read works. */
+  needsLogin: boolean;
 }
 
 /** A Read Permission card that was shown in the conversation. Its content comes from the code. */
@@ -275,10 +303,18 @@ export interface Store {
     entry: NewActivityEntry,
   ): void;
   /**
-   * Deletes the Read Permission, its address and every fact from this Connection, on disk too.
-   * Activity's records of replies that had those facts keep their own copies.
+   * Deletes the Read Permission, its address, its events and every fact from this Connection, on disk
+   * too. Activity's records of replies that had those facts keep their own copies. A login held in
+   * Buddy's Browser can't go in the same step, so its site is noted here until it has: see loginsToDelete.
    */
-  revokeReadPermission(studentId: string, connection: string, entry: NewActivityEntry): void;
+  revokeReadPermission(studentId: string, connection: string, entry: NewActivityEntry, loginSite?: string): void;
+  /** The sites whose login must go from Buddy's Browser, because their Read Permission was revoked. */
+  loginsToDelete(studentId: string): string[];
+  /** Whether the Student has already been told this one couldn't be deleted yet. */
+  toldLoginNotDeleted(studentId: string, site: string): boolean;
+  noteLoginNotDeleted(studentId: string, site: string, entry: NewActivityEntry): void;
+  loginDeleted(studentId: string, site: string, entry: NewActivityEntry): void;
+  listConnectionEvents(studentId: string, connection: string): StoredConnectionEvent[];
   /**
    * Brings this Connection's facts into line with a read, all together, and keeps the Student's
    * edits and deletions. If this Read Permission no longer stands, only the Activity entry is
@@ -290,8 +326,17 @@ export interface Store {
     facts: ConnectionFactToStore[],
     readAt: Date,
     entry: NewActivityEntry,
+    news?: ReadingNews,
   ): void;
-  recordReadProblem(studentId: string, permissionId: number, problem: string, triedAt: Date, entry: NewActivityEntry): void;
+  /** A read that failed for another reason says nothing about the login, so needsLogin only ever turns on here. */
+  recordReadProblem(
+    studentId: string,
+    permissionId: number,
+    problem: string,
+    triedAt: Date,
+    entry: NewActivityEntry,
+    needsLogin?: boolean,
+  ): void;
   addReadPermissionCard(studentId: string, card: StoredReadPermissionCard): void;
   listReadPermissionCards(studentId: string): StoredReadPermissionCard[];
   /** Changes when the page's words do, so that an unchanged page needn't go to the model again. */
@@ -559,6 +604,24 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX milestone_cards_by_student ON milestone_cards (student_id, id);`,
+  `ALTER TABLE read_permissions ADD COLUMN needs_login INTEGER NOT NULL DEFAULT 0;
+   CREATE TABLE connection_events (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     connection TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     fact_key TEXT NOT NULL,
+     text TEXT NOT NULL,
+     data TEXT,
+     at TEXT NOT NULL
+   );
+   CREATE INDEX connection_events_by_student ON connection_events (student_id, connection, id);
+   CREATE TABLE logins_to_delete (
+     student_id TEXT NOT NULL,
+     site TEXT NOT NULL,
+     told_student INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (student_id, site)
+   );`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -604,7 +667,7 @@ export function openStore(databasePath: string): Store {
     `INSERT INTO profile_facts (student_id, text, origin_type, origin_message_id, saved_at) VALUES (?, ?, 'conversation', ?, ?)`,
   );
   const selectFacts = db.prepare(
-    `SELECT id, text, origin_message_id, origin_connection, detail, data, saved_at, edited_at
+    `SELECT id, text, origin_message_id, origin_connection, origin_key, detail, data, saved_at, edited_at
      FROM profile_facts WHERE student_id = ? ORDER BY id`,
   );
   const updateFact = db.prepare(`UPDATE profile_facts SET text = ?, edited_at = ? WHERE student_id = ? AND id = ?`);
@@ -635,9 +698,22 @@ export function openStore(databasePath: string): Store {
   const updateEditedConnectionFact = db.prepare(`UPDATE profile_facts SET detail = ?, data = ?, saved_at = ? WHERE id = ?`);
   const deleteFactById = db.prepare(`DELETE FROM profile_facts WHERE id = ?`);
   const recordRead = db.prepare(
-    `UPDATE read_permissions SET last_read_at = ?, last_tried_at = ?, last_read_problem = NULL WHERE id = ?`,
+    `UPDATE read_permissions SET last_read_at = ?, last_tried_at = ?, last_read_problem = ?, needs_login = 0 WHERE id = ?`,
   );
-  const recordProblem = db.prepare(`UPDATE read_permissions SET last_tried_at = ?, last_read_problem = ? WHERE id = ?`);
+  const recordProblem = db.prepare(
+    `UPDATE read_permissions SET last_tried_at = ?, last_read_problem = ?, needs_login = MAX(needs_login, ?) WHERE id = ?`,
+  );
+  const insertConnectionEvent = db.prepare(
+    `INSERT INTO connection_events (student_id, connection, kind, fact_key, text, data, at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const selectConnectionEvents = db.prepare(
+    `SELECT id, connection, kind, fact_key, text, data, at FROM connection_events WHERE student_id = ? AND connection = ? ORDER BY id`,
+  );
+  const deleteConnectionEvents = db.prepare(`DELETE FROM connection_events WHERE student_id = ? AND connection = ?`);
+  const insertLoginToDelete = db.prepare(`INSERT OR IGNORE INTO logins_to_delete (student_id, site) VALUES (?, ?)`);
+  const selectLoginsToDelete = db.prepare(`SELECT site, told_student FROM logins_to_delete WHERE student_id = ? ORDER BY site`);
+  const markLoginToldStudent = db.prepare(`UPDATE logins_to_delete SET told_student = 1 WHERE student_id = ? AND site = ?`);
+  const deleteLoginToDelete = db.prepare(`DELETE FROM logins_to_delete WHERE student_id = ? AND site = ?`);
   const insertPermissionCard = db.prepare(
     `INSERT INTO read_permission_cards (student_id, connection, after_message_id, created_at) VALUES (?, ?, ?, ?)`,
   );
@@ -814,6 +890,7 @@ export function openStore(databasePath: string): Store {
       text: row.text,
       originMessageId: row.origin_message_id,
       originConnection: row.origin_connection,
+      originKey: row.origin_key,
       detail: row.detail,
       data: row.data ? JSON.parse(row.data) : null,
       savedAt: new Date(row.saved_at),
@@ -908,7 +985,7 @@ export function openStore(databasePath: string): Store {
 
     addProfileFact(studentId, fact) {
       const { lastInsertRowid } = insertFact.run(studentId, fact.text, fact.originMessageId, fact.savedAt.toISOString());
-      return { ...fact, id: Number(lastInsertRowid), originConnection: null, detail: null, data: null, editedAt: null };
+      return { ...fact, id: Number(lastInsertRowid), originConnection: null, originKey: null, detail: null, data: null, editedAt: null };
     },
 
     listProfileFacts: listFacts,
@@ -937,6 +1014,7 @@ export function openStore(databasePath: string): Store {
         lastReadAt: row.last_read_at ? new Date(row.last_read_at) : null,
         lastTriedAt: row.last_tried_at ? new Date(row.last_tried_at) : null,
         lastReadProblem: row.last_read_problem,
+        needsLogin: row.needs_login !== 0,
       };
     },
 
@@ -947,18 +1025,54 @@ export function openStore(databasePath: string): Store {
       });
     },
 
-    revokeReadPermission(studentId, connection, entry) {
+    revokeReadPermission(studentId, connection, entry, loginSite) {
       inTransaction(db, () => {
         addActivity(studentId, entry);
         deleteConnectionFacts.run(studentId, connection);
         deleteDeletedFacts.run(studentId, connection);
+        deleteConnectionEvents.run(studentId, connection);
         deletePermission.run(studentId, connection);
+        if (loginSite) insertLoginToDelete.run(studentId, loginSite);
       });
       // secure_delete covers the database file, and this empties the log of recent changes.
       db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     },
 
-    saveConnectionReading(studentId, permissionId, facts, readAt, entry) {
+    loginsToDelete(studentId) {
+      return selectLoginsToDelete.all(studentId).map((row: any) => row.site);
+    },
+
+    toldLoginNotDeleted(studentId, site) {
+      return selectLoginsToDelete.all(studentId).some((row: any) => row.site === site && row.told_student !== 0);
+    },
+
+    noteLoginNotDeleted(studentId, site, entry) {
+      inTransaction(db, () => {
+        addActivity(studentId, entry);
+        markLoginToldStudent.run(studentId, site);
+      });
+    },
+
+    loginDeleted(studentId, site, entry) {
+      inTransaction(db, () => {
+        addActivity(studentId, entry);
+        deleteLoginToDelete.run(studentId, site);
+      });
+    },
+
+    listConnectionEvents(studentId, connection) {
+      return selectConnectionEvents.all(studentId, connection).map((row: any) => ({
+        id: row.id,
+        connection: row.connection,
+        kind: row.kind,
+        factKey: row.fact_key,
+        text: row.text,
+        data: row.data ? JSON.parse(row.data) : null,
+        at: new Date(row.at),
+      }));
+    },
+
+    saveConnectionReading(studentId, permissionId, facts, readAt, entry, news = {}) {
       inTransaction(db, () => {
         addActivity(studentId, entry);
         const permission = selectPermissionById.get(studentId, permissionId) as any;
@@ -988,14 +1102,18 @@ export function openStore(databasePath: string): Store {
           if (row.edited_at) updateEditedConnectionFact.run(null, null, at, row.id);
           else deleteFactById.run(row.id);
         }
-        recordRead.run(at, at, permissionId);
+        for (const event of news.events ?? []) {
+          if (deletedKeys.has(event.factKey)) continue;
+          insertConnectionEvent.run(studentId, permission.connection, event.kind, event.factKey, event.text, JSON.stringify(event.data), at);
+        }
+        recordRead.run(at, at, news.problem ?? null, permissionId);
       });
     },
 
-    recordReadProblem(studentId, permissionId, problem, triedAt, entry) {
+    recordReadProblem(studentId, permissionId, problem, triedAt, entry, needsLogin = false) {
       inTransaction(db, () => {
         addActivity(studentId, entry);
-        recordProblem.run(triedAt.toISOString(), problem, permissionId);
+        recordProblem.run(triedAt.toISOString(), problem, needsLogin ? 1 : 0, permissionId);
       });
     },
 

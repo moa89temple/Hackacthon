@@ -4,6 +4,7 @@ import {
   THE_STUDENT,
   type ConnectionFactToStore,
   type NewActivityEntry,
+  type ReadingNews,
   type Store,
   type StoredProfileFact,
 } from "./store.ts";
@@ -23,6 +24,14 @@ export interface ProfileFact {
   editedAt: string | null;
 }
 
+/** One fact as a Connection's own code sees it. */
+export interface FactFromConnection {
+  key: string;
+  text: string;
+  detail: string | null;
+  data: unknown;
+}
+
 /**
  * What Buddy knows about the Student. Whoever writes a fact, the Student or Claude, its text is
  * masked here, so a secret can't get into the Profile by any route.
@@ -35,8 +44,8 @@ export interface Profile {
   /** Returns whether there was such a fact. */
   remove(id: number): boolean;
   /** Saves what a read found, if this Read Permission still stands, and the read's Activity entry. */
-  saveReading(permissionId: number, facts: ConnectionFactToStore[], readAt: Date, entry: NewActivityEntry): void;
-  factsFromConnection(connection: string): { text: string; data: unknown }[];
+  saveReading(permissionId: number, facts: ConnectionFactToStore[], readAt: Date, entry: NewActivityEntry, news?: ReadingNews): void;
+  factsFromConnection(connection: string): FactFromConnection[];
 }
 
 export interface ProfileDeps {
@@ -81,16 +90,17 @@ export function createProfile({ store, clock, connectionName }: ProfileDeps): Pr
       return store.deleteProfileFact(THE_STUDENT, id);
     },
 
-    saveReading(permissionId, facts, readAt, entry) {
-      const masked = facts.map((fact) => ({ ...fact, text: maskSecrets(fact.text.trim()) }));
-      store.saveConnectionReading(THE_STUDENT, permissionId, masked, readAt, entry);
+    saveReading(permissionId, facts, readAt, entry, news = {}) {
+      const masked = facts.map((fact) => ({ ...fact, text: maskSecrets(fact.text.trim()), detail: maskSecrets(fact.detail) }));
+      const events = news.events?.map((event) => ({ ...event, text: maskSecrets(event.text) }));
+      store.saveConnectionReading(THE_STUDENT, permissionId, masked, readAt, entry, { ...news, ...(events ? { events } : {}) });
     },
 
     factsFromConnection(connection) {
       return store
         .listProfileFacts(THE_STUDENT)
         .filter((fact) => fact.originConnection === connection)
-        .map((fact) => ({ text: fact.text, data: fact.data }));
+        .map((fact) => ({ key: fact.originKey!, text: fact.text, detail: fact.detail, data: fact.data }));
     },
   };
 }

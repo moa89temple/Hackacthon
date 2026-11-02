@@ -18,6 +18,7 @@
     "smoke:milestones": "node scripts/smoke-milestones.ts",
     "check-login": "node scripts/check-login.ts",
     "forget-login": "node scripts/forget-login.ts",
+    "check-canvas": "node --disable-warning=ExperimentalWarning scripts/check-canvas.ts",
     "pair": "node --disable-warning=ExperimentalWarning scripts/pair.ts"
   },
   "dependencies": {

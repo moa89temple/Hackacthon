@@ -12,6 +12,7 @@ import {
 } from "./buddys-browser.ts";
 import type { Clock } from "./clock.ts";
 import type { GuardPolicy, RequestGuard } from "./network-guard.ts";
+import { keepToReadablePages } from "./readable-pages.ts";
 import { THE_STUDENT, type Store, type StoredTakeover } from "./store.ts";
 
 /** Some pages of a site. */
@@ -43,6 +44,16 @@ export interface Site {
    * The path is tested decoded and in lower case, so write it in lower case.
    */
   blockedPages?: PagePattern[];
+  /**
+   * The only pages Buddy opens to read, with each one's exact host. Any page on any of the site's hosts
+   * that isn't here is refused. Left out, the site's pages aren't limited this way. See readable-pages.ts.
+   */
+  readablePages?: PagePattern[];
+  /**
+   * This site is a Connection with the same id, so a Takeover and a login check both need its Read
+   * Permission first (ADR 0001). A site without this stays as it was.
+   */
+  isConnection?: boolean;
   /** The only pages where Buddy may ask to submit a form. With none, it can't ask to on this site. */
   formPages?: PagePattern[];
 }
@@ -71,6 +82,13 @@ export class TakeoverInProgress extends Error {
 export class NoTakeover extends Error {
   constructor() {
     super("There is no Takeover to finish");
+  }
+}
+
+/** The Read Permission comes before the login, because a login is for reading. See ADR 0001. */
+export class NoReadPermissionForLogin extends Error {
+  constructor(siteName: string) {
+    super(`Give the Read Permission for ${siteName} before logging in to it`);
   }
 }
 
@@ -109,9 +127,10 @@ export interface BrowserAccess {
    */
   read(url: string): Promise<PageReading>;
   /**
-   * Reads a site's home page to see whether the login works, and for nothing else. It's the one read
-   * that needs no Read Permission. It's for the moments right after the Student logs in, so the
-   * Student can be told it worked. Nothing from the page should be kept beyond its title and address.
+   * Reads a site's home page to see whether the login works, and for nothing else. Throws PageBlocked
+   * for a site that's a Connection with no Read Permission. For any other site it's the one read that
+   * needs none. It's for the moments right after the Student logs in, so the Student can be told it
+   * worked. Nothing from the page should be kept beyond its title and address.
    */
   readToCheckLogin(site: string): Promise<PageReading>;
   /**
@@ -127,7 +146,10 @@ export interface BrowserAccess {
    */
   submitApprovedForm(cardId: number): Promise<FormSubmission>;
   currentTakeover(): Takeover | null;
-  /** Gives the Student control. Asking again for the same site returns the Takeover under way. */
+  /**
+   * Gives the Student control. Asking again for the same site returns the Takeover under way. Throws
+   * NoReadPermissionForLogin for a site that's a Connection with no Read Permission.
+   */
   startTakeover(site: string): Promise<Takeover>;
   /** Hands control back to Buddy, then checks the login by reading the site. */
   finishTakeover(): Promise<FinishedTakeover>;
@@ -186,10 +208,21 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
     });
   }
 
-  const read = (url: string) => readUnderGuard(url, guards.forReading());
+  const read = (url: string) => readUnderGuard(url, keepToReadablePages(guards.forReading(), sites));
 
-  /** The way in that has no Read Permission behind it, so it's named for the one thing it's for. */
-  const readToCheckLogin = async (id: string) => readUnderGuard(siteWithId(id).homeUrl, guards.forLoginCheck(id));
+  function lacksReadPermission(id: string, site: Site): boolean {
+    return site.isConnection === true && store.readPermission(THE_STUDENT, id) === null;
+  }
+
+  /**
+   * For a site that's a Connection, this needs the Read Permission like any other read. For any other
+   * site it's the way in that has no Read Permission behind it, so it's named for the one thing it's for.
+   */
+  const readToCheckLogin = async (id: string) => {
+    const site = siteWithId(id);
+    if (lacksReadPermission(id, site)) throw new PageBlocked(`There's no Read Permission for ${site.name}`);
+    return readUnderGuard(site.homeUrl, keepToReadablePages(guards.forLoginCheck(id), sites));
+  };
 
   /**
    * The form on a card that's just had its Approve tap, and only once for that card. Throws
@@ -260,6 +293,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
       const underWay = currentTakeover();
       if (underWay?.site === id) return underWay;
       if (underWay) throw new TakeoverInProgress();
+      if (lacksReadPermission(id, site)) throw new NoReadPermissionForLogin(site.name);
 
       // Buddy is locked out from this line on, even if the backend restarts. Anything
       // already in the browser finishes before the Student gets the screen.

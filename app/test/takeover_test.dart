@@ -6,6 +6,8 @@ import 'support/fake_backend.dart';
 import 'support/test_app.dart';
 
 Future<void> openYouTab(WidgetTester tester, FakeBackend backend) async {
+  // The Read Permission comes first, so that's the only way to the button.
+  backend.connections = [canvasConnection(on: true)];
   await openUnlockedApp(tester, backend);
   await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
   await tester.pump();
@@ -14,6 +16,8 @@ Future<void> openYouTab(WidgetTester tester, FakeBackend backend) async {
 Future<void> openLiveView(WidgetTester tester) async {
   // Logins come after the Profile on the You tab, so with large text they may need scrolling to.
   await tester.scrollUntilVisible(find.text('Log in to Canvas'), 100);
+  await tester.ensureVisible(find.text('Log in to Canvas'));
+  await tester.pumpAndSettle();
   await tester.tap(find.text('Log in to Canvas'));
   await tester.pumpAndSettle();
 }
@@ -23,6 +27,7 @@ void main() {
     testWidgets('opens the live view with the headers the backend client gave', (tester) async {
       final seen = <Map<String, String>>[];
       final backend = FakeBackend()
+        ..connections = [canvasConnection(on: true)]
         ..takeoverToStart = Takeover(
           site: 'canvas',
           siteName: 'Canvas',
