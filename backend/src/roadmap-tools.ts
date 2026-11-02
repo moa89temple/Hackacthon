@@ -59,13 +59,22 @@ export const PROPOSE_ROADMAP_TOOL = {
       plan_id: { type: ["integer", "null"], description: `The plan_id that ${READ_PLAN_TOOL.name} gave you. Null only if the Student has no major yet.` },
       plan_option: { type: ["integer", "null"], description: "Which of the page's plans fits the Student, by its option number. Null if plan_id is null." },
       plan_goal_id: { type: ["integer", "null"], description: "The id of the one Goal that following the plan serves best. Null if plan_id is null." },
-      current_plan_year: { type: "integer", description: "Which year of study the Student is in now: 1 for a first-year student, 2 for a sophomore, and so on." },
+      current_plan_year: { type: "integer", description: "Which year of study the Student is in now, or in the summer the one they're about to start: 1 for a first-year student, 2 for a sophomore, and so on." },
       year_fact: { type: "string", description: "The fact from the Student's Profile that says their year, copied word for word." },
       goal_milestones: { type: "array", items: GOAL_MILESTONE, description: "Two to four Milestones for each Goal, each belonging to exactly one Goal." },
     },
     required: ["why", "plan_id", "plan_option", "plan_goal_id", "current_plan_year", "year_fact", "goal_milestones"],
     additionalProperties: false,
   },
+};
+
+/** The same for both, but a change's are all null unless it adds a plan. */
+const PLAN_FOR_A_CHANGE = {
+  plan_id: { type: ["integer", "null"], description: `The plan_id that ${READ_PLAN_TOOL.name} gave you, to add the plan's terms, such as once the Student has chosen a major. Otherwise null.` },
+  plan_option: { type: ["integer", "null"], description: "Which of the page's plans fits the Student, by its option number. Null if plan_id is null." },
+  plan_goal_id: { type: ["integer", "null"], description: "The id of the one Goal that following the plan serves best. Null if plan_id is null." },
+  current_plan_year: { type: ["integer", "null"], description: "Which year of study the Student is in now, or in the summer the one they're about to start. Null if plan_id is null." },
+  year_fact: { type: ["string", "null"], description: "The fact from the Student's Profile that says their year, copied word for word. Null if plan_id is null." },
 };
 
 export const SUGGEST_CHANGE_TOOL = {
@@ -77,11 +86,12 @@ export const SUGGEST_CHANGE_TOOL = {
     type: "object" as const,
     properties: {
       why: { type: "string", description: "One short sentence to the Student on why, in the language they write in." },
+      ...PLAN_FOR_A_CHANGE,
       goal_milestones: { type: "array", items: GOAL_MILESTONE, description: "New Milestones that each belong to one Goal." },
       standard_milestone_ids: { type: "array", items: { type: "integer" }, description: "Standard Milestones to add, by the ids the search gave you." },
       remove_milestone_ids: { type: "array", items: { type: "integer" }, description: "Milestones to take off the Roadmap, by the ids in the note with this turn." },
     },
-    required: ["why", "goal_milestones", "standard_milestone_ids", "remove_milestone_ids"],
+    required: ["why", ...Object.keys(PLAN_FOR_A_CHANGE), "goal_milestones", "standard_milestone_ids", "remove_milestone_ids"],
     additionalProperties: false,
   },
 };
@@ -93,6 +103,6 @@ export const ROADMAP_PROMPT = `A Goal is something the Student wants to achieve,
 
 A Roadmap is the Student's own ordered list of Milestones, on the Roadmap tab. Once they have a Goal, offer to make them one, and go ahead when they say yes or ask. You need their major and their year: if the Profile doesn't say, ask, say it's so that you can read the right plan, and save the answers with remember. They can skip those questions, but tell them the Roadmap has to wait for their year. If they haven't chosen a major yet, you can go without a plan. Otherwise call ${READ_PLAN_TOOL.name} first. If it says more than one degree fits, or a degree has more than one plan, ask them which one. If it can't find their major, say plainly that you couldn't find a Source for it, and offer a Handoff. Then call ${PROPOSE_ROADMAP_TOOL.name} once.
 
-For ${PROPOSE_ROADMAP_TOOL.name}, write two to four Milestones for each Goal: real decisions or steps toward it, with target dates that fit where they are now. Buddy adds the plan's terms, the Standard Milestones and the unwritten-rules Milestones itself, so don't write those. Anything specific to Temple needs a Guidebook item behind it, and never name a course unless it's in the plan.
+For ${PROPOSE_ROADMAP_TOOL.name}, write two to four Milestones for each Goal: real decisions or things to get done for it, with target dates that fit where they are now. Buddy adds the plan's terms, the Standard Milestones and the unwritten-rules Milestones itself, so don't write those. Anything specific to Temple needs a Guidebook item behind it, and never name a course unless it's in the plan.
 
-The card is on the Student's screen with everything on it, so don't recite it. Reply in a sentence or two, and say that nothing changes until they tap Accept, which takes one tap and which they can change afterward on the Roadmap tab. It isn't a Permission, so never call it one. Only that tap accepts it: if they type yes, tell them to tap Accept on the card. You can't add, remove or mark anything on the Roadmap yourself. To suggest a change later, such as Milestones for a new Goal, use ${SUGGEST_CHANGE_TOOL.name}, which also shows a card. Say only what the note with each turn says became of a card. The Add to Google Calendar link on each Milestone is for the Student to tap: you can't put anything on their calendar yourself.`;
+The card is on the Student's screen with everything on it, so don't recite it. Reply in a sentence or two, and say that nothing changes until they tap Accept, which takes one tap and which they can change afterward on the Roadmap tab. It isn't a Permission, so never call it one. Only that tap accepts it: if they type yes, tell them to tap Accept on the card. You can't add, remove or mark anything on the Roadmap yourself. To suggest a change later, such as Milestones for a new Goal, or the plan's terms once they've chosen a major, use ${SUGGEST_CHANGE_TOOL.name}, which also shows a card. Say only what the note with each turn says became of a card. The Add to Google Calendar link on each Milestone is for the Student to tap: you can't put anything on their calendar yourself.`;

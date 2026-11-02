@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { GuidebookSource } from "./guidebook.ts";
 import type { NewActivityEntry } from "./store.ts";
 
 /** Goal and Roadmap storage, in its own file. Store.roadmap is how the rest of the backend reaches it. */
@@ -59,12 +60,6 @@ export interface StoredPlanPage {
 
 export type MilestoneKind = "standard_date" | "plan" | "goal" | "unwritten_rule" | "added";
 
-export interface StoredSource {
-  url: string;
-  title: string;
-  lastSeenAt: string;
-}
-
 /** One Milestone on a card or on the Roadmap. A Goal of null means it's a Standard Milestone. */
 export interface MilestoneFields {
   kind: MilestoneKind;
@@ -73,10 +68,13 @@ export interface MilestoneFields {
   goalText: string | null;
   name: string;
   detail: string | null;
+  /** Its last day. */
   dueDate: string;
+  /** A range's first day, otherwise null. */
+  startDate: string | null;
   when: string;
   standardMilestoneId: number | null;
-  sources: StoredSource[];
+  sources: GuidebookSource[];
   sourceNote: string | null;
 }
 
@@ -120,7 +118,6 @@ export interface RoadmapStore {
   /** Saves the card and its Activity entry together, and any earlier waiting card stops working. */
   addCard(studentId: string, content: RoadmapCardContent, afterMessageId: number, at: Date, entry: NewActivityEntry): StoredRoadmapCard;
   listCards(studentId: string): StoredRoadmapCard[];
-  card(studentId: string, id: number): StoredRoadmapCard | null;
   /**
    * Only a waiting card can be decided, however many times it's tapped. Accepting puts its Milestones on the
    * Roadmap and takes off what it removes, all at once, with its Activity entry.
@@ -263,8 +260,6 @@ export function createRoadmapStore(
     },
 
     listCards,
-
-    card: findCard,
 
     decideCard(studentId, id, status, at, entry) {
       return inTransaction(() => {

@@ -146,7 +146,15 @@ class ChatController extends ChangeNotifier {
             _changed();
           case ReplyRoadmapCard():
             final card = RoadmapCardItem(event.card);
-            items = [...items, card];
+            // The backend has already stopped any earlier waiting card working.
+            items = [
+              for (final existing in items)
+                if (existing is RoadmapCardItem && existing.card.status == RoadmapCardStatus.waiting)
+                  RoadmapCardItem(existing.card.withStatus(RoadmapCardStatus.replaced))
+                else
+                  existing,
+              card,
+            ];
             newestRoadmapCards = [...newestRoadmapCards, card];
             _changed();
           case ReplyDone():
@@ -232,7 +240,7 @@ class ChatController extends ChangeNotifier {
     return edited.hiddenNote;
   }
 
-  /// A Roadmap card as the backend says it stands, after a tap on it or a later one.
+  /// A Roadmap card as the backend says it stands, after a tap on it.
   void showRoadmapCard(RoadmapCard card) {
     items = [
       for (final existing in items)

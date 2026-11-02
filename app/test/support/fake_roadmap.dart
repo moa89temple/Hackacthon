@@ -24,7 +24,17 @@ mixin FakeRoadmapCalls implements RoadmapBackend {
   /// Set to hold a tap on a card open until a test completes it.
   Completer<void>? holdCardTap;
 
-  void _orThrow() {
+  /// Set to hold the next change's answer until a test completes it.
+  Completer<void>? holdChange;
+
+  /// Set to hold the next load's answer of the Roadmap until a test completes it.
+  Completer<void>? holdRoadmapLoad;
+
+  Future<void> _orThrow() async {
+    if (holdChange case final hold?) {
+      holdChange = null;
+      await hold.future;
+    }
     if (roadmapChangeError case final error?) throw error;
   }
 
@@ -36,7 +46,7 @@ mixin FakeRoadmapCalls implements RoadmapBackend {
 
   @override
   Future<Goal> addGoal(String text) async {
-    _orThrow();
+    await _orThrow();
     final goal = Goal(id: goals.length + 100, text: text);
     goals = [...goals, goal];
     return goal;
@@ -44,7 +54,7 @@ mixin FakeRoadmapCalls implements RoadmapBackend {
 
   @override
   Future<Goal> editGoal(int id, String text) async {
-    _orThrow();
+    await _orThrow();
     final goal = Goal(id: id, text: text);
     goals = [for (final old in goals) old.id == id ? goal : old];
     return goal;
@@ -52,7 +62,7 @@ mixin FakeRoadmapCalls implements RoadmapBackend {
 
   @override
   Future<List<RoadmapMilestone>> removeGoal(int id) async {
-    _orThrow();
+    await _orThrow();
     goals = goals.where((goal) => goal.id != id).toList();
     milestones = milestones.where((milestone) => milestone.goal?.id != id).toList();
     return milestones;
@@ -62,14 +72,19 @@ mixin FakeRoadmapCalls implements RoadmapBackend {
   Future<List<RoadmapMilestone>> loadRoadmap() async {
     roadmapLoads++;
     if (roadmapError case final error?) throw error;
-    return milestones;
+    final asItWas = milestones;
+    if (holdRoadmapLoad case final hold?) {
+      holdRoadmapLoad = null;
+      await hold.future;
+    }
+    return asItWas;
   }
 
   @override
   Future<RoadmapCardAnswer> acceptRoadmapCard(int id) async {
     accepted.add(id);
     if (holdCardTap case final hold?) await hold.future;
-    _orThrow();
+    await _orThrow();
     milestones = answerToAccept!.milestones;
     return answerToAccept!;
   }
@@ -77,13 +92,13 @@ mixin FakeRoadmapCalls implements RoadmapBackend {
   @override
   Future<RoadmapCardAnswer> sayNotNowToRoadmapCard(int id) async {
     saidNotNow.add(id);
-    _orThrow();
+    await _orThrow();
     return answerToNotNow!;
   }
 
   @override
   Future<List<RoadmapMilestone>> addMilestone({required String name, required String dueDate, int? goalId}) async {
-    _orThrow();
+    await _orThrow();
     added.add((name: name, dueDate: dueDate, goalId: goalId));
     milestones = [
       ...milestones,
@@ -103,7 +118,7 @@ mixin FakeRoadmapCalls implements RoadmapBackend {
 
   @override
   Future<List<RoadmapMilestone>> setMilestoneDone(int id, {required bool done}) async {
-    _orThrow();
+    await _orThrow();
     milestones = [
       for (final old in milestones)
         old.id == id
@@ -125,14 +140,14 @@ mixin FakeRoadmapCalls implements RoadmapBackend {
 
   @override
   Future<List<RoadmapMilestone>> removeMilestone(int id) async {
-    _orThrow();
+    await _orThrow();
     milestones = milestones.where((milestone) => milestone.id != id).toList();
     return milestones;
   }
 
   @override
   Future<List<RoadmapMilestone>> reorderMilestones(List<int> ids) async {
-    _orThrow();
+    await _orThrow();
     orders.add(ids);
     milestones = [for (final id in ids) milestones.firstWhere((milestone) => milestone.id == id)];
     return milestones;

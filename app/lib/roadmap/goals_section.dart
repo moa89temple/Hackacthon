@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'roadmap_backend.dart';
 import 'roadmap_controller.dart';
-import 'source_link.dart';
+import 'roadmap_parts.dart';
 
 /// The You tab's list of what the Student wants to achieve, with their controls over each one.
 class GoalsSection extends StatelessWidget {
@@ -107,11 +107,11 @@ class _GoalDialog extends StatefulWidget {
 }
 
 class _GoalDialogState extends State<_GoalDialog> {
-  late final _draft = TextEditingController(text: widget.text);
+  late final _words = TextEditingController(text: widget.text);
 
   @override
   void dispose() {
-    _draft.dispose();
+    _words.dispose();
     super.dispose();
   }
 
@@ -121,7 +121,7 @@ class _GoalDialogState extends State<_GoalDialog> {
       scrollable: true,
       title: Text(widget.title),
       content: TextField(
-        controller: _draft,
+        controller: _words,
         autofocus: true,
         minLines: 1,
         maxLines: 3,
@@ -131,9 +131,9 @@ class _GoalDialogState extends State<_GoalDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
         ValueListenableBuilder(
-          valueListenable: _draft,
+          valueListenable: _words,
           builder: (context, value, _) => TextButton(
-            onPressed: value.text.trim().isEmpty ? null : () => Navigator.of(context).pop(_draft.text.trim()),
+            onPressed: value.text.trim().isEmpty ? null : () => Navigator.of(context).pop(_words.text.trim()),
             child: const Text('Save'),
           ),
         ),

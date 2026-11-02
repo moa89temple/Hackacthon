@@ -1,7 +1,7 @@
 import type { Season } from "./bulletin-plan.ts";
 
 /**
- * What nobody tells a first-generation Student. Written here rather than by Claude, so that a quick reply
+ * What college expects a Student to know and nobody says. Written here rather than by Claude, so that a quick reply
  * can't leave one out. These are about college in general, so nothing here is a Temple fact needing a Source.
  */
 export interface UnwrittenRule {

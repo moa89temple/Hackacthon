@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
 
-const couldNotOpenLink = "Your phone couldn't open that.";
+const couldNotOpen = "Your phone couldn't open that.";
+const nothingChanged = "The app couldn't reach Buddy, so nothing changed. Check that the backend is running, then try again.";
 
 /// A Milestone's Source, which the Student can tap to read the page itself.
-class SourceLink extends StatelessWidget {
-  const SourceLink({super.key, required this.source, required this.open});
+class SourceButton extends StatelessWidget {
+  const SourceButton({super.key, required this.source, required this.open});
 
   final GuidebookSource source;
   final void Function(Uri address) open;
@@ -15,13 +16,16 @@ class SourceLink extends StatelessWidget {
   Widget build(BuildContext context) {
     final address = Uri.tryParse(source.url);
     final lastSeen = MaterialLocalizations.of(context).formatFullDate(source.lastSeenAt.toLocal());
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: TextButton(
-        style: TextButton.styleFrom(alignment: AlignmentDirectional.centerStart),
-        onPressed: address?.scheme == 'https' ? () => open(address!) : null,
-        child: Text('Source: ${source.title}', semanticsLabel: 'Open Source: ${source.title}, last seen $lastSeen'),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextButton(
+          style: TextButton.styleFrom(alignment: AlignmentDirectional.centerStart),
+          onPressed: address?.scheme == 'https' ? () => open(address!) : null,
+          child: Text('Source: ${source.title}', semanticsLabel: 'Open Source: ${source.title}, last seen $lastSeen'),
+        ),
+        ExcludeSemantics(child: Text('Last seen $lastSeen', style: Theme.of(context).textTheme.bodySmall)),
+      ],
     );
   }
 }

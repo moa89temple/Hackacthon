@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/chat/crisis_card.dart';
 import 'package:buddy/roadmap/roadmap_backend.dart';
+import 'package:buddy/roadmap/roadmap_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -256,6 +257,20 @@ void main() {
         expect(find.text('Not now'), findsNothing);
       });
     }
+
+    testWidgets('stops offering Accept on an earlier card as soon as a newer one arrives', (tester) async {
+      final backend = FakeBackend(history: [student('Make me a Roadmap'), RoadmapCardItem(firstCard())]);
+      await openChatWithCard(tester, backend);
+      await sendMessage(tester, 'Try again');
+
+      backend.reply.add(ReplyRoadmapCard(firstCard(id: 7)));
+      await tester.pump();
+      await tester.pump();
+
+      expect(acceptButton, findsOneWidget);
+      await tester.dragUntilVisible(find.textContaining('newer card'), find.byType(ListView).first, const Offset(0, 200));
+      expect(find.textContaining('newer card'), findsOneWidget);
+    });
 
     testWidgets('shows what a later change adds and removes', (tester) async {
       final backend = FakeBackend(history: [student('Add something'), RoadmapCardItem(changeCard())]);
@@ -567,6 +582,22 @@ void main() {
       expect(find.text('Done'), findsNothing);
     });
 
+    testWidgets('shows a problem even when the Student has scrolled far down the list', (tester) async {
+      useSmallPhoneWithLargeText(tester);
+      final backend = FakeBackend()
+        ..milestones = [for (var id = 1; id <= 8; id++) planTerm(id: id, name: 'Milestone number $id')]
+        ..roadmapChangeError = Exception('no connection');
+      await openTab(tester, backend, 'Roadmap');
+
+      await tester.scrollUntilVisible(find.byTooltip('Remove: Milestone number 5'), 300);
+      await tapThrough(tester, find.bySemanticsLabel('Done: Milestone number 5'));
+
+      final problem = find.textContaining('so nothing changed');
+      expect(problem, findsOneWidget);
+      expect(tester.getTopLeft(problem).dy, lessThan(tester.getTopLeft(find.byType(ListView).first).dy));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('picks up what changed in a turn when the Student comes to the tab', (tester) async {
       final backend = FakeBackend();
       await openUnlockedApp(tester, backend);
@@ -662,6 +693,73 @@ void main() {
 
         expect(tester.takeException(), isNull);
       });
+    });
+  });
+
+  group('changes that overlap', () {
+    test('each one goes through, in order, rather than the later one being dropped', () async {
+      final backend = FakeBackend()..holdChange = Completer<void>();
+      final hold = backend.holdChange!;
+      final roadmap = RoadmapController(backend);
+      await roadmap.load();
+
+      final first = roadmap.addGoal('First');
+      final second = roadmap.addGoal('Second');
+      hold.complete();
+      await Future.wait([first, second]);
+
+      expect(roadmap.goals!.map((goal) => goal.text), ['First', 'Second']);
+      expect(roadmap.isChanging, isFalse);
+    });
+
+    test('a move works from the list as it is by then', () async {
+      final backend = FakeBackend()
+        ..milestones = [planTerm(id: 1, name: 'A'), planTerm(id: 2, name: 'B'), planTerm(id: 3, name: 'C')];
+      final roadmap = RoadmapController(backend);
+      await roadmap.load();
+      backend.holdChange = Completer<void>();
+      final hold = backend.holdChange!;
+
+      final first = roadmap.move(roadmap.milestones![0], by: 1);
+      final second = roadmap.move(roadmap.milestones![0], by: 1);
+      hold.complete();
+      await Future.wait([first, second]);
+
+      expect(roadmap.milestones!.map((milestone) => milestone.name), ['B', 'C', 'A']);
+    });
+
+    test('a load that started during a change can\'t bring back the old list', () async {
+      final backend = FakeBackend()..milestones = [planTerm(id: 1, name: 'A'), planTerm(id: 2, name: 'B')];
+      final roadmap = RoadmapController(backend);
+      await roadmap.load();
+      final changeHeld = Completer<void>();
+      final loadHeld = Completer<void>();
+      backend.holdChange = changeHeld;
+
+      final removing = roadmap.remove(roadmap.milestones![0]);
+      backend.holdRoadmapLoad = loadHeld;
+      final loading = roadmap.load();
+      await Future<void>.delayed(Duration.zero);
+      changeHeld.complete();
+      await removing;
+      loadHeld.complete();
+      await loading;
+
+      expect(roadmap.milestones!.map((milestone) => milestone.name), ['B']);
+    });
+
+    test('a change that fails says so and lets the next one through', () async {
+      final backend = FakeBackend()..roadmapChangeError = Exception('no connection');
+      final roadmap = RoadmapController(backend);
+      await roadmap.load();
+
+      await roadmap.addGoal('First');
+      expect(roadmap.problem, contains('so nothing changed'));
+
+      backend.roadmapChangeError = null;
+      await roadmap.addGoal('Second');
+      expect(roadmap.problem, isNull);
+      expect(roadmap.goals!.map((goal) => goal.text), ['Second']);
     });
   });
 

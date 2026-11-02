@@ -60,7 +60,7 @@ const tidy = (text: string) => text.replace(/\s+/g, " ").trim();
 const NOT_DEGREES = /minor|cert|conc\.|japan/i;
 
 /** The undergraduate degrees in the Bulletin's list of programs, each with its page. */
-export function readBulletinPrograms(html: string, pageUrl = BULLETIN_PROGRAMS_PAGE): BulletinProgram[] {
+export function readBulletinPrograms(html: string): BulletinProgram[] {
   const rows = elementsIn(parse(html), (element) => element.tagName === "tr");
   return rows.flatMap((row) => {
     const name = elementsIn(row, (element) => hasClass(element, "column0"))[0];
@@ -69,7 +69,7 @@ export function readBulletinPrograms(html: string, pageUrl = BULLETIN_PROGRAMS_P
     return elementsIn(undergraduate, (element) => element.tagName === "a")
       .filter((link) => !NOT_DEGREES.test(textIn(link)))
       // Some say more after the degree, such as that it isn't taking new applications.
-      .map((link) => ({ name: tidy(`${textIn(name)} ${textIn(link).replace(/\(.*\)/, "")}`), url: new URL(attribute(link, "href"), pageUrl).href }));
+      .map((link) => ({ name: tidy(`${textIn(name)} ${textIn(link).replace(/\(.*\)/, "")}`), url: new URL(attribute(link, "href"), BULLETIN_PROGRAMS_PAGE).href }));
   });
 }
 
@@ -115,7 +115,8 @@ export function programsMatching(programs: BulletinProgram[], major: string): { 
   const askedStems = nameStems(asked.filter((word) => !degrees.has(word)));
   if (askedStems.size === 0) return { programs: [], sure: false };
 
-  const ofDegree = parts.filter((part) => !degreeAsked || part.degree === degreeAsked);
+  // By its start, because "Bachelor of Science" is also a BSN or a BSME.
+  const ofDegree = parts.filter((part) => !degreeAsked || part.degree.startsWith(degreeAsked));
   for (const named of [
     ofDegree.filter((part) => sameSet(part.stems, askedStems)),
     ofDegree.filter((part) => sameSet(part.withoutConcentration, askedStems)),
@@ -130,13 +131,18 @@ function seasonOf(text: string): Season | null {
   return (/^(Fall|Spring|Summer)\b/i.exec(text)?.[1]?.replace(/^./, (first) => first.toUpperCase()) as Season | undefined) ?? null;
 }
 
+/** After a title's first line come the same course's alternatives, such as its Honors version. */
+function firstLineOf(title: Html.Element): string {
+  const isLineBreak = (child: Html.ChildNode) => isElement(child) && (child.tagName === "br" || child.tagName === "div");
+  const ends = title.childNodes.findIndex(isLineBreak);
+  return (ends === -1 ? title.childNodes : title.childNodes.slice(0, ends)).map(textIn).join("");
+}
+
 /** What one row of a plan says, such as "CIS 1166 or CIS 1966 Mathematical Concepts in Computing I". */
 function courseOnRow(row: Html.Element): string | null {
   const code = elementsIn(row, (element) => hasClass(element, "codecol"))[0];
   const title = elementsIn(row, (element) => hasClass(element, "titlecol"))[0];
-  // After the first line of a title come the same course's alternatives, such as its Honors version.
-  const firstTitle = title?.childNodes.find((child) => tidy(textIn(child)) !== "");
-  const words = tidy(`${code ? textIn(code) : ""} ${firstTitle ? textIn(firstTitle) : ""}`);
+  const words = tidy(`${code ? textIn(code) : ""} ${title ? firstLineOf(title) : ""}`);
   return words === "" ? null : words;
 }
 

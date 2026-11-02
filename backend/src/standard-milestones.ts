@@ -58,7 +58,7 @@ function theRightYears(milestones: StandardMilestone[], reply: string): Standard
   });
 }
 
-function dayInWords(iso: string): string {
+export function dayInWords(iso: string): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", dateStyle: "full" }).format(new Date(`${iso}T12:00:00Z`));
 }
 

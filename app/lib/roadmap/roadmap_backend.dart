@@ -148,6 +148,9 @@ class RoadmapCard {
   final String? note;
   final List<ProposedMilestone> milestones;
   final List<RemovedMilestone> removes;
+
+  RoadmapCard withStatus(RoadmapCardStatus newStatus) =>
+      RoadmapCard(id: id, isFirst: isFirst, status: newStatus, why: why, note: note, milestones: milestones, removes: removes);
 }
 
 /// What a tap on a card comes back as.

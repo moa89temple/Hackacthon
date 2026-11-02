@@ -207,6 +207,22 @@ describe("reading the Suggested Academic Plan", () => {
     expect(answersIn().at(-1)!.content).toContain("Bachelor of Science in Computer Science");
   });
 
+  it("finds a degree whose name is longer than BS when the Student spells it out", async () => {
+    await turn("I'm in Nursing.", [REMEMBER, { fact: "Majoring in Nursing." }]);
+
+    await turn("My plan please", [READ_PLAN, { major: "Bachelor of Science in Nursing", major_fact: "Majoring in Nursing." }]);
+
+    expect(backend.web.requests.some((url) => /nursing/.test(url))).toBe(true);
+  });
+
+  it("keeps the whole of a course's title, even with a note inside it", async () => {
+    await turn("I'm in Geology.", [REMEMBER, { fact: "Majoring in Geology." }]);
+
+    await turn("My plan please", [READ_PLAN, { major: "Geology BS", major_fact: "Majoring in Geology." }]);
+
+    expect(answersIn().at(-1)!.content).toContain("EES 2011 Mineralogy I (F)");
+  });
+
   it("says there's no Source for a major the Bulletin doesn't list", async () => {
     await turn("I'm a Wizardry major.", [REMEMBER, { fact: "Majoring in Wizardry." }]);
 
@@ -322,6 +338,43 @@ describe("proposing a Roadmap", () => {
     expect(plan[0].detail).toMatch(/\d+ credit hours/);
     expect(plan[0].detail).toMatch(/[A-Z]{2,5} \d{4}/);
     expect(plan[0].detail).not.toMatch(/\dor /);
+  });
+
+  describe("at other times of year", () => {
+    const DAY = 24 * 3_600_000;
+
+    async function planTermsOn(daysFromNow: number, year: number, yearFact: string): Promise<any[]> {
+      const goal = await aGoal();
+      await turn("I'm a Biology major.", [REMEMBER, { fact: MAJOR_FACT }], [REMEMBER, { fact: yearFact }]);
+      const planId = await readBiologyPlan();
+      backend.clock.moveForward(daysFromNow * DAY);
+      const events = await turn("Roadmap please", [
+        PROPOSE,
+        proposal(planId, goal.id, { current_plan_year: year, year_fact: yearFact, goal_milestones: [] }),
+      ]);
+      return cardIn(events).milestones.filter((milestone: any) => milestone.kind === "plan");
+    }
+
+    it("takes a first-year Student in March to the rest of that spring", async () => {
+      // March 1, 2027.
+      const plan = await planTermsOn(119, 1, "In their first year at Temple.");
+
+      expect(plan[0]).toMatchObject({ name: "Finish your Year 1 Spring courses", when: "By the end of Spring 2027", dueDate: "2027-05-15" });
+    });
+
+    it("takes the year a Student gives in the summer as the one they're about to start", async () => {
+      // June 15, 2027.
+      const plan = await planTermsOn(225, 1, "Starting their first year at Temple.");
+
+      expect(plan[0]).toMatchObject({ name: "Finish your Year 1 Fall courses", when: "By the end of Fall 2027", dueDate: "2027-12-15" });
+    });
+
+    it("leaves out a term whose end has just passed", async () => {
+      // December 20, 2026.
+      const plan = await planTermsOn(48, 2, YEAR_FACT);
+
+      expect(plan[0]).toMatchObject({ name: "Finish your Year 2 Spring courses", when: "By the end of Spring 2027" });
+    });
   });
 
   it("includes going to office hours early and starting the internship search, saying they're Buddy's own advice", async () => {
@@ -636,6 +689,20 @@ describe("editing a Roadmap", () => {
     expect(milestones.every((milestone) => milestone.goal === null)).toBe(true);
   });
 
+  it("tells Claude the truth about a Roadmap whose last Goal has gone", async () => {
+    const { goal } = await accepted();
+    await calls.removeGoal(goal.id);
+    const left = await calls.roadmap();
+    backend.claude.willReply({ chunks: ["Okay."] });
+
+    await backend.sendAndCollect("Hi");
+
+    const note = backend.claude.requests.at(-1)!.messages.at(-1)!.content as string;
+    expect(note).toMatch(/no Goal right now/);
+    expect(note).not.toMatch(/no Roadmap/);
+    expect(note).toContain(left[0].name);
+  });
+
   it("shows a new name for a Goal on its Milestones", async () => {
     const { goal } = await accepted();
 
@@ -665,6 +732,24 @@ describe("the Add to Google Calendar link", () => {
     expect(link.searchParams.get("dates")).toBe("20261207/20261208");
     expect(link.searchParams.get("details")).toContain(CALENDAR_PAGE);
     expect(backend.web.requests.length).toBe(requestsBefore);
+  });
+
+  it("covers every day of a date range, and doesn't call a Temple date a target", async () => {
+    const { card } = await aProposedRoadmap();
+
+    const finals = card.milestones.find((milestone: any) => milestone.name === FINALS_FIRST_DAYS.name);
+
+    const link = new URL(finals.calendarUrl);
+    expect(link.searchParams.get("dates")).toBe("20261209/20261212");
+    expect(link.searchParams.get("details")).not.toContain("target");
+  });
+
+  it("says a term's date is only Buddy's target", async () => {
+    const { card } = await aProposedRoadmap();
+
+    const term = card.milestones.find((milestone: any) => milestone.kind === "plan");
+
+    expect(new URL(term.calendarUrl).searchParams.get("details")).toContain("target");
   });
 
   it("gets past the end of a month and a year", async () => {
@@ -744,6 +829,38 @@ describe("changes Buddy suggests later", () => {
 
     const after = (await calls.roadmap()).filter((milestone) => milestone.name !== "Email a PA about shadowing");
     expect(after.map((milestone) => milestone.id)).toEqual(reversed);
+  });
+
+  it("can add the Plan's terms to a Roadmap made before the Student chose a major", async () => {
+    const goal = await aGoal();
+    await turn("I haven't picked a major, but I'm in my second year.", [REMEMBER, { fact: YEAR_FACT }]);
+    const first = cardIn(await turn("Roadmap please", [PROPOSE, proposal(null, goal.id)]));
+    await calls.accept(first.id);
+    await turn("I picked Biology.", [REMEMBER, { fact: MAJOR_FACT }]);
+    const planId = await readBiologyPlan();
+
+    const card = cardIn(
+      await turn("Add my plan", [
+        SUGGEST,
+        { why: "You've chosen a major.", plan_id: planId, plan_option: 1, plan_goal_id: goal.id, current_plan_year: 2, year_fact: YEAR_FACT, goal_milestones: [], standard_milestone_ids: [], remove_milestone_ids: [] },
+      ]),
+    );
+
+    expect(card.milestones.filter((milestone: any) => milestone.kind === "plan")).toHaveLength(6);
+    expect(card.note).toContain("Bachelor of Science in Biology");
+  });
+
+  it("refuses the Plan's terms when the year isn't in the Profile", async () => {
+    const { goal } = await accepted();
+    const planId = (await readBiologyPlan());
+
+    const events = await turn("Add my plan", [
+      SUGGEST,
+      { why: "Why not.", plan_id: planId, plan_option: 1, plan_goal_id: goal.id, current_plan_year: 3, year_fact: "In their third year.", goal_milestones: [], standard_milestone_ids: [], remove_milestone_ids: [] },
+    ]);
+
+    expect(cardIn(events)).toBeUndefined();
+    expect(answersIn().at(-1)!.content).toMatch(/Ask the Student/);
   });
 
   it("skip a Milestone the Student has already removed", async () => {

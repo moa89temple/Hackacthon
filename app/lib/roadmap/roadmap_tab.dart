@@ -4,7 +4,7 @@ import '../chat/crisis_card.dart';
 import 'add_milestone_screen.dart';
 import 'roadmap_backend.dart';
 import 'roadmap_controller.dart';
-import 'source_link.dart';
+import 'roadmap_parts.dart';
 
 const _calendarHost = 'calendar.google.com';
 
@@ -23,7 +23,7 @@ class RoadmapTab extends StatefulWidget {
 }
 
 class _RoadmapTabState extends State<RoadmapTab> {
-  String? _couldNotOpen;
+  String? _phoneProblem;
 
   Future<void> _open(Uri address) async {
     bool opened;
@@ -32,7 +32,7 @@ class _RoadmapTabState extends State<RoadmapTab> {
     } on Exception {
       opened = false;
     }
-    if (mounted) setState(() => _couldNotOpen = opened ? null : couldNotOpenLink);
+    if (mounted) setState(() => _phoneProblem = opened ? null : couldNotOpen);
   }
 
   Widget _message(BuildContext context, String words, {Widget? action, bool isProblem = false}) {
@@ -86,30 +86,47 @@ class _RoadmapTabState extends State<RoadmapTab> {
             ),
           );
         }
-        return ListView.builder(
-          padding: const EdgeInsets.all(12),
-          // The heading goes first, then each Milestone, so that a long list doesn't build all at once.
-          itemCount: milestones.length + 1,
-          itemBuilder: (context, index) {
-            if (index == 0) return _header(context, roadmap);
-            final milestone = milestones[index - 1];
-            return _MilestoneRow(
-              // Keeps each row's state with its own Milestone as they move.
-              key: ValueKey(milestone.id),
-              milestone: milestone,
-              place: index,
-              total: milestones.length,
-              roadmap: roadmap,
-              open: _open,
-            );
-          },
+        final problem = roadmap.problem ?? _phoneProblem;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Above the list, so that it's seen and read out from however far down the Student has scrolled.
+            // With large text it can't take the whole screen, so it scrolls in its own third.
+            if (problem != null)
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: ProblemNote(problem),
+                ),
+              ),
+            Expanded(
+              flex: 2,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(12),
+                // The heading goes first, then each Milestone, so that a long list doesn't build all at once.
+                itemCount: milestones.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == 0) return _header(context);
+                  final milestone = milestones[index - 1];
+                  return _MilestoneRow(
+                    // Keeps each row's state with its own Milestone as they move.
+                    key: ValueKey(milestone.id),
+                    milestone: milestone,
+                    place: index,
+                    total: milestones.length,
+                    roadmap: roadmap,
+                    open: _open,
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _header(BuildContext context, RoadmapController roadmap) {
-    final problem = roadmap.problem ?? _couldNotOpen;
+  Widget _header(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -121,7 +138,6 @@ class _RoadmapTabState extends State<RoadmapTab> {
           alignment: AlignmentDirectional.centerStart,
           child: OutlinedButton(onPressed: () => _openAddScreen(context), child: const Text('Add a Milestone')),
         ),
-        ?(problem == null ? null : ProblemNote(problem)),
       ],
     );
   }
@@ -206,7 +222,7 @@ class _MilestoneRow extends StatelessWidget {
                 ],
               ),
             ),
-            for (final source in milestone.sources) SourceLink(source: source, open: open),
+            for (final source in milestone.sources) SourceButton(source: source, open: open),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [

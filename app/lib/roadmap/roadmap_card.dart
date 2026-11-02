@@ -4,9 +4,7 @@ import '../chat/chat_controller.dart';
 import '../chat/crisis_card.dart';
 import 'roadmap_backend.dart';
 import 'roadmap_controller.dart';
-import 'source_link.dart';
-
-const _tapDidNotCount = "The app couldn't reach Buddy, so nothing changed. Check that the backend is running, then try again.";
+import 'roadmap_parts.dart';
 
 /// Buddy's proposal for a Roadmap, or for a change to one. Nothing happens until the Student taps Accept, one
 /// tap that isn't a Permission. Its height is whatever its Milestones need, and the conversation's list scrolls
@@ -48,7 +46,7 @@ class _RoadmapCardViewState extends State<RoadmapCardView> {
         widget.chat.showRoadmapCard(card);
       }
     } on Exception {
-      if (mounted) setState(() => _problem = _tapDidNotCount);
+      if (mounted) setState(() => _problem = nothingChanged);
     }
   }
 
@@ -59,7 +57,7 @@ class _RoadmapCardViewState extends State<RoadmapCardView> {
     } on Exception {
       opened = false;
     }
-    if (mounted) setState(() => _problem = opened ? null : couldNotOpenLink);
+    if (mounted) setState(() => _problem = opened ? null : couldNotOpen);
   }
 
   String get _title => widget.card.isFirst ? 'Your first Roadmap' : 'A change to your Roadmap';
@@ -134,7 +132,7 @@ class _RoadmapCardViewState extends State<RoadmapCardView> {
                 child: Semantics(container: true, child: Text('Takes off: ${removed.name}')),
               ),
             const SizedBox(height: 8),
-            for (final source in sources) SourceLink(source: source, open: _open),
+            for (final source in sources) SourceButton(source: source, open: _open),
             if (outcome != null)
               Semantics(
                 container: true,

@@ -1,8 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'roadmap_backend.dart';
-
-const _nothingChanged = "The app couldn't reach Buddy, so nothing changed. Check that the backend is running, then try again.";
+import 'roadmap_parts.dart';
 
 /// Lives as long as the app, so that the Goals and the Roadmap keep their place while the Student is
 /// on another tab. Each change waits for the backend, so what's shown is always what's saved.
@@ -25,8 +24,13 @@ class RoadmapController extends ChangeNotifier {
   /// Why the latest change didn't happen.
   String? problem;
 
-  /// A change is on its way, and the controls wait for it, so that a second tap can't work from an old list.
-  bool isChanging = false;
+  /// How many changes are on their way. The controls wait for them, and a load can't overwrite them.
+  int _changes = 0;
+
+  bool get isChanging => _changes > 0;
+
+  /// Changes go to the backend one at a time, each working from what the one before it left.
+  Future<void> _lastChange = Future.value();
 
   /// Cards with a tap on its way, which can't take another until it's answered.
   final Set<int> _cardsBeingDecided = {};
@@ -50,20 +54,26 @@ class RoadmapController extends ChangeNotifier {
     _changed();
   }
 
-  /// Runs one change. A load that started earlier may hold the old list, so it no longer counts.
-  Future<void> _change(Future<void> Function() work) async {
-    if (isChanging) return;
-    isChanging = true;
-    problem = null;
-    _latestLoad++;
+  Future<void> _change(Future<void> Function() work) {
+    _changes++;
     _changed();
+    final thisChange = _lastChange.then((_) => _run(work));
+    _lastChange = thisChange.then((_) {}, onError: (_) {});
+    return thisChange;
+  }
+
+  /// A load that started before this finished may hold the old list, so it no longer counts.
+  Future<void> _run(Future<void> Function() work) async {
+    problem = null;
     try {
       await work();
     } on Exception {
-      problem = _nothingChanged;
+      problem = nothingChanged;
+    } finally {
+      _changes--;
+      _latestLoad++;
+      _changed();
     }
-    isChanging = false;
-    _changed();
   }
 
   Future<void> addGoal(String text) => _change(() async {
@@ -124,6 +134,7 @@ class RoadmapController extends ChangeNotifier {
       return answer.card;
     } finally {
       _cardsBeingDecided.remove(card.id);
+      _latestLoad++;
       _changed();
     }
   }
