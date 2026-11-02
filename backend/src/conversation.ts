@@ -8,17 +8,21 @@ import type { Draft, Drafts } from "./drafts.ts";
 import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from "./guidebook.ts";
 import { hiddenNote, maskSecrets } from "./masking.ts";
+import { newMilestoneTurn, type ToolOutcome } from "./milestone-chat.ts";
 import { describeProfile, type Profile } from "./profile.ts";
+import type { StandardMilestone, StandardMilestones } from "./standard-milestones.ts";
 import {
   BUDDY_SYSTEM_PROMPT,
   CHECK_CALENDAR_TOOL,
   CRISIS_CARD_TOOL,
   FIND_CONTACTS_TOOL,
   MAKE_HANDOFF_TOOL,
+  FIND_MILESTONES_TOOL,
   REMEMBER_TOOL,
   REQUEST_ACTION_TOOL,
   SEARCH_GUIDEBOOK_TOOL,
   SHOW_GUIDEBOOK_CARDS_TOOL,
+  SHOW_MILESTONE_CARDS_TOOL,
   SUGGEST_CONNECTION_TOOL,
 } from "./system-prompt.ts";
 import { THE_STUDENT, type NewMessage, type Store, type StoredMessage } from "./store.ts";
@@ -49,7 +53,7 @@ const QUESTIONS_REMINDER =
 
 /** In every turn for the same reason as the reminder above. */
 const SOURCE_REMINDER =
-  "Anything specific to Temple has to come from the Guidebook, with its card shown, even if you said it earlier or feel sure of it. If it isn't there, say you couldn't find a Source and offer a Handoff.";
+  "Anything specific to Temple has to come from the Guidebook or the Standard Milestones, with its card shown, even if you said it earlier or feel sure of it. If it isn't there, say you couldn't find a Source and offer a Handoff.";
 
 /** By number, because Claude has seen the numbers and a system message shouldn't carry a page's words. */
 function reportedItemsNote(ids: number[]): string {
@@ -121,6 +125,13 @@ export interface DraftCardEntry {
   sentAt: string;
 }
 
+/** A Standard Milestone's card as it should look now. Null once it's gone from its Source. */
+export interface MilestoneCardEntry {
+  type: "milestone_card";
+  milestone: StandardMilestone | null;
+  sentAt: string;
+}
+
 export type ConversationEvent =
   /** The Student's message had something hidden. This is the message as Buddy kept it. */
   | { type: "hidden"; text: string; note: string }
@@ -130,6 +141,7 @@ export type ConversationEvent =
   | { type: "guidebook_card"; item: GuidebookItem }
   | { type: "action_card"; card: ActionCard }
   | { type: "draft_card"; draft: Draft }
+  | { type: "milestone_card"; milestone: StandardMilestone }
   | { type: "done"; reply: ChatMessage }
   | { type: "error"; message: string };
 
@@ -140,7 +152,7 @@ export interface Conversation {
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
-  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry)[];
+  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry | MilestoneCardEntry)[];
 }
 
 export interface ConversationDeps {
@@ -154,11 +166,12 @@ export interface ConversationDeps {
   guidebook: Guidebook;
   actionCards: ActionCards;
   drafts: Drafts;
+  milestones: StandardMilestones;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -439,6 +452,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
           role: "system" as const,
           content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${drafts.newestEditNote(lastReply?.createdAt)}\n\n${QUESTIONS_REMINDER}${actionCards.noteForTurn()}`,
         };
+        const milestoneTurn = newMilestoneTurn({ milestones, store, logError, afterMessageId: studentMessageId!, now, turn });
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
         // What Claude wrote before its tool calls this turn. The Student watched it arrive, so it
@@ -504,6 +518,12 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   if (draft) yield { type: "draft_card", draft };
                   handoffMade = draft !== undefined;
                   answers.push(answer);
+                } else if (call.name === FIND_MILESTONES_TOOL.name) {
+                  answers.push(toolResultFrom(call, milestoneTurn.find(call.input)));
+                } else if (call.name === SHOW_MILESTONE_CARDS_TOOL.name) {
+                  const { cards, ...outcome } = milestoneTurn.show(call.input);
+                  for (const milestone of cards) yield { type: "milestone_card", milestone };
+                  answers.push(toolResultFrom(call, outcome));
                 } else {
                   answers.push(await answerCall(call, studentMessageId!, turn));
                 }
@@ -531,6 +551,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
               } catch (error) {
                 logError(error);
               }
+            }
+            // The same for a date the reply gives, which is never given without its Source.
+            if (!cardShown) {
+              for (const milestone of milestoneTurn.cardsForReply(words)) yield { type: "milestone_card", milestone };
             }
             // Saved together so a system message is always followed by an assistant
             // turn, as the API requires, even when a turn fails partway through.
@@ -563,6 +587,8 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const itemsOnCards = guidebook.itemsWithIds(guidebookCards.map((card) => card.itemId));
       const actionCardsSoFar = actionCards.list();
       const draftCards = drafts.list();
+      const milestoneCards = store.listMilestoneCards(THE_STUDENT);
+      const milestonesOnCards = milestones.withIds(milestoneCards.map((card) => card.milestoneId));
       return store
         .listMessages(THE_STUDENT)
         .filter(isShownToStudent)
@@ -583,6 +609,13 @@ export function createConversation(deps: ConversationDeps): Conversation {
             .map((card) => ({
               type: "guidebook_card" as const,
               item: itemsOnCards.find((item) => item.id === card.itemId) ?? null,
+              sentAt: card.createdAt.toISOString(),
+            })),
+          ...milestoneCards
+            .filter((card) => card.afterMessageId === message.id)
+            .map((card) => ({
+              type: "milestone_card" as const,
+              milestone: milestonesOnCards.find((milestone) => milestone.id === card.milestoneId) ?? null,
               sentAt: card.createdAt.toISOString(),
             })),
           ...actionCardsSoFar
@@ -627,6 +660,8 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       SHOW_GUIDEBOOK_CARDS_TOOL,
       ...(canAskForActions ? [REQUEST_ACTION_TOOL] : []),
       MAKE_HANDOFF_TOOL,
+      FIND_MILESTONES_TOOL,
+      SHOW_MILESTONE_CARDS_TOOL,
     ],
     messages,
   };
@@ -647,6 +682,10 @@ function toolFailure(call: ToolCall, content: string) {
 
 function actionCardOnScreen(id: number): string {
   return `Card ${id} is on the Student's screen. Nothing has happened: only their Approve tap on it lets Buddy do this, and a typed yes never counts. Now reply to them.`;
+}
+
+function toolResultFrom(call: ToolCall, outcome: ToolOutcome) {
+  return outcome.isError ? toolFailure(call, outcome.content) : toolAnswer(call, outcome.content);
 }
 
 function joinWords(earlier: string, later: string): string {

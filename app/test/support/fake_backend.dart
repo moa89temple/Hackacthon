@@ -109,6 +109,15 @@ class FakeBackend implements BuddyBackend {
     );
   }
 
+  List<StandardMilestone> upcoming = [];
+  Object? upcomingError;
+
+  @override
+  Future<List<StandardMilestone>> loadUpcomingMilestones() async {
+    if (upcomingError case final error?) throw error;
+    return upcoming;
+  }
+
   List<ActivityEntry> activity = [];
   Object? activityError;
 

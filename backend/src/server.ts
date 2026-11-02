@@ -26,6 +26,7 @@ import { createCrisisCheck } from "./crisis-check.ts";
 import { createDiscovery, type Discovery } from "./discovery.ts";
 import { createDrafts, type Drafts } from "./drafts.ts";
 import { createGuidebook, type Guidebook } from "./guidebook.ts";
+import { createStandardMilestones, type StandardMilestones } from "./standard-milestones.ts";
 import type { Office } from "./office-pages.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { formSubmitRoutine } from "./form-submit.ts";
@@ -49,7 +50,7 @@ export interface BackendOptions {
   databasePath: string;
   chatModel: string;
   crisisCheck: { model: string; timeoutMs: number };
-  discovery: { model: string; offices: Office[] };
+  discovery: { model: string; offices: Office[]; milestoneOffices: Office[] };
   host: string;
   port: number;
   logger: boolean;
@@ -62,6 +63,7 @@ export interface RunningBackend {
   connections: Connections;
   devices: Devices;
   guidebook: Guidebook;
+  milestones: StandardMilestones;
   discovery: Discovery;
   close(): Promise<void>;
 }
@@ -84,6 +86,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
   const guidebook = createGuidebook({ store, clock: options.adapters.clock });
   const drafts = createDrafts({ store, clock: options.adapters.clock, guidebook });
+  const milestones = createStandardMilestones({ store, clock: options.adapters.clock });
   const discovery = createDiscovery({
     claude: options.adapters.claude,
     web: options.adapters.web,
@@ -129,6 +132,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     guidebook,
     actionCards,
     drafts,
+    milestones,
     logError: (error) => app.log.error(error),
   });
 
@@ -204,9 +208,10 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addGuidebookRoutes(app, guidebook);
   addActionCardRoutes(app, actionCards, isStoredId);
   addDraftRoutes(app, drafts);
+  app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, actionCards, connections, devices, guidebook, discovery, close: () => app.close() };
+  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {

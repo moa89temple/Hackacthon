@@ -15,6 +15,7 @@
     "smoke": "node scripts/smoke-claude.ts",
     "smoke:guidebook": "node scripts/smoke-guidebook.ts",
     "smoke:handoff": "node scripts/smoke-handoff.ts",
+    "smoke:milestones": "node scripts/smoke-milestones.ts",
     "check-login": "node scripts/check-login.ts",
     "forget-login": "node scripts/forget-login.ts",
     "pair": "node --disable-warning=ExperimentalWarning scripts/pair.ts"

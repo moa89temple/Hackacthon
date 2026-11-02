@@ -1,15 +1,5 @@
 import 'package:flutter/material.dart';
 
-class TodayTab extends StatelessWidget {
-  const TodayTab({super.key});
-
-  @override
-  Widget build(BuildContext context) => const _EmptyTab(
-        icon: Icons.today,
-        message: 'Nothing for today yet. Your Briefings, Alerts and Tasks will show up here.',
-      );
-}
-
 class RoadmapTab extends StatelessWidget {
   const RoadmapTab({super.key});
 

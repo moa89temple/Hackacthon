@@ -210,6 +210,30 @@ export interface StoredDraft extends DraftWords {
   editedAt: Date | null;
 }
 
+/** What one page says about one Standard Milestone, as Discovery checked it. Read by that module's own code. */
+export interface MilestoneToStore {
+  /** The same on every page that has this Milestone. */
+  key: string;
+  fields: unknown;
+}
+
+/** One page's word on one Standard Milestone. */
+export interface StoredMilestone {
+  id: number;
+  key: string;
+  url: string;
+  pageTitle: string;
+  lastSeenAt: Date;
+  fields: unknown;
+}
+
+/** A Standard Milestone's card that was shown in the conversation. Its content comes from the page. */
+export interface StoredMilestoneCard {
+  milestoneId: number;
+  afterMessageId: number;
+  createdAt: Date;
+}
+
 export interface Store {
   /**
    * Appends the messages, and any Activity entry for them, together: either all of them are saved
@@ -340,6 +364,22 @@ export interface Store {
     editedAt: Date,
     entry: NewActivityEntry,
   ): StoredDraft | null;
+  /** Changes when the page's words do, so that an unchanged page needn't go to the model again. */
+  milestonePageHash(url: string): string | null;
+  /**
+   * Replaces what one page says with a new reading of it, all together. A date that's gone from the
+   * page goes straight away, because a wrong date mustn't linger. A Milestone it still has keeps its id.
+   */
+  saveMilestonePage(page: { url: string; title: string; textHash: string }, milestones: MilestoneToStore[], readAt: Date): void;
+  /** The page's words haven't changed, so what it has is seen again. */
+  confirmMilestonePage(url: string, title: string, readAt: Date): void;
+  /** Keeps the earliest time, for a page that's already failing. A page never read has nothing to lose. */
+  markMilestonePageFailing(url: string, at: Date): void;
+  /** Removes the dates and the record of each page failing since this moment or earlier, so that it's read afresh if it returns. */
+  removeMilestonesOfFailedPages(before: Date): void;
+  listStandardMilestones(): StoredMilestone[];
+  addMilestoneCard(studentId: string, card: StoredMilestoneCard): void;
+  listMilestoneCards(studentId: string): StoredMilestoneCard[];
   /** Activity only ever grows: nothing here changes or removes one entry. */
   addActivity(studentId: string, entry: NewActivityEntry): void;
   /** Newest first. */
@@ -496,6 +536,29 @@ const MIGRATIONS = [
      edited_at TEXT
    );
    CREATE INDEX drafts_by_student ON drafts (student_id, id);`,
+  // Not keyed by Student: every Temple Student faces these dates.
+  `CREATE TABLE milestone_pages (
+     url TEXT PRIMARY KEY,
+     title TEXT NOT NULL,
+     text_hash TEXT NOT NULL,
+     failing_since TEXT
+   );
+   CREATE TABLE standard_milestones (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     url TEXT NOT NULL,
+     milestone_key TEXT NOT NULL,
+     fields TEXT NOT NULL,
+     last_seen_at TEXT NOT NULL,
+     UNIQUE (url, milestone_key)
+   );
+   CREATE TABLE milestone_cards (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     milestone_id INTEGER NOT NULL,
+     after_message_id INTEGER NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   CREATE INDEX milestone_cards_by_student ON milestone_cards (student_id, id);`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -586,6 +649,36 @@ export function openStore(databasePath: string): Store {
   );
   const selectActivity = db.prepare(
     `SELECT id, kind, title, detail, decision, at FROM activity WHERE student_id = ? ORDER BY id DESC`,
+  );
+  const selectMilestonePage = db.prepare(`SELECT text_hash FROM milestone_pages WHERE url = ?`);
+  const upsertMilestonePage = db.prepare(
+    `INSERT INTO milestone_pages (url, title, text_hash) VALUES (?, ?, ?)
+     ON CONFLICT (url) DO UPDATE SET title = excluded.title, text_hash = excluded.text_hash, failing_since = NULL`,
+  );
+  const confirmMilestonePageRow = db.prepare(`UPDATE milestone_pages SET title = ?, failing_since = NULL WHERE url = ?`);
+  const confirmMilestones = db.prepare(`UPDATE standard_milestones SET last_seen_at = ? WHERE url = ?`);
+  const markMilestonePage = db.prepare(`UPDATE milestone_pages SET failing_since = COALESCE(failing_since, ?) WHERE url = ?`);
+  const selectMilestoneKeys = db.prepare(`SELECT milestone_key FROM standard_milestones WHERE url = ?`);
+  const deleteMilestone = db.prepare(`DELETE FROM standard_milestones WHERE url = ? AND milestone_key = ?`);
+  const upsertMilestone = db.prepare(
+    `INSERT INTO standard_milestones (url, milestone_key, fields, last_seen_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (url, milestone_key) DO UPDATE SET fields = excluded.fields, last_seen_at = excluded.last_seen_at`,
+  );
+  const removeMilestonesOfFailed = db.prepare(
+    `DELETE FROM standard_milestones WHERE url IN (SELECT url FROM milestone_pages WHERE failing_since <= ?)`,
+  );
+  const forgetFailedMilestonePages = db.prepare(`DELETE FROM milestone_pages WHERE failing_since <= ?`);
+  const selectMilestones = db.prepare(
+    `SELECT milestone.id, milestone.milestone_key, milestone.url, page.title, milestone.last_seen_at, milestone.fields
+     FROM standard_milestones milestone
+     JOIN milestone_pages page ON page.url = milestone.url
+     ORDER BY milestone.id`,
+  );
+  const insertMilestoneCard = db.prepare(
+    `INSERT INTO milestone_cards (student_id, milestone_id, after_message_id, created_at) VALUES (?, ?, ?, ?)`,
+  );
+  const selectMilestoneCards = db.prepare(
+    `SELECT milestone_id, after_message_id, created_at FROM milestone_cards WHERE student_id = ? ORDER BY id`,
   );
   const selectGuidebookPage = db.prepare(`SELECT text_hash FROM guidebook_pages WHERE url = ?`);
   const upsertGuidebookPage = db.prepare(
@@ -913,6 +1006,65 @@ export function openStore(databasePath: string): Store {
     listReadPermissionCards(studentId) {
       return selectPermissionCards.all(studentId).map((row: any) => ({
         connection: row.connection,
+        afterMessageId: row.after_message_id,
+        createdAt: new Date(row.created_at),
+      }));
+    },
+
+    milestonePageHash(url) {
+      return (selectMilestonePage.get(url) as any)?.text_hash ?? null;
+    },
+
+    saveMilestonePage(page, milestones, readAt) {
+      inTransaction(db, () => {
+        const at = readAt.toISOString();
+        upsertMilestonePage.run(page.url, page.title, page.textHash);
+        const kept = new Set(milestones.map((milestone) => milestone.key));
+        for (const row of selectMilestoneKeys.all(page.url) as any[]) {
+          if (!kept.has(row.milestone_key)) deleteMilestone.run(page.url, row.milestone_key);
+        }
+        for (const milestone of milestones) {
+          upsertMilestone.run(page.url, milestone.key, JSON.stringify(milestone.fields), at);
+        }
+      });
+    },
+
+    confirmMilestonePage(url, title, readAt) {
+      inTransaction(db, () => {
+        confirmMilestonePageRow.run(title, url);
+        confirmMilestones.run(readAt.toISOString(), url);
+      });
+    },
+
+    markMilestonePageFailing(url, at) {
+      markMilestonePage.run(at.toISOString(), url);
+    },
+
+    removeMilestonesOfFailedPages(before) {
+      inTransaction(db, () => {
+        removeMilestonesOfFailed.run(before.toISOString());
+        forgetFailedMilestonePages.run(before.toISOString());
+      });
+    },
+
+    listStandardMilestones() {
+      return selectMilestones.all().map((row: any) => ({
+        id: row.id,
+        key: row.milestone_key,
+        url: row.url,
+        pageTitle: row.title,
+        lastSeenAt: new Date(row.last_seen_at),
+        fields: JSON.parse(row.fields),
+      }));
+    },
+
+    addMilestoneCard(studentId, card) {
+      insertMilestoneCard.run(studentId, card.milestoneId, card.afterMessageId, card.createdAt.toISOString());
+    },
+
+    listMilestoneCards(studentId) {
+      return selectMilestoneCards.all(studentId).map((row: any) => ({
+        milestoneId: row.milestone_id,
         afterMessageId: row.after_message_id,
         createdAt: new Date(row.created_at),
       }));

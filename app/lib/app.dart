@@ -12,8 +12,10 @@ import 'device/lock_screen.dart';
 import 'device/pairing_details.dart';
 import 'device/pairing_screen.dart';
 import 'device/qr_scanner.dart';
+import 'milestones/milestones_controller.dart';
 import 'profile/profile_controller.dart';
 import 'tabs/simple_tabs.dart';
+import 'tabs/today_tab.dart';
 import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
 import 'widgets/buddy_avatar.dart';
@@ -219,6 +221,7 @@ class _Tabs extends StatefulWidget {
 
 class _TabsState extends State<_Tabs> {
   static const _titles = ['Buddy', 'Today', 'Roadmap', 'You'];
+  static const _todayTab = 1;
   static const _youTab = 3;
 
   late final ChatController _chat = ChatController(widget.backend)
@@ -228,6 +231,7 @@ class _TabsState extends State<_Tabs> {
   late final ProfileController _profile = ProfileController(widget.backend)..load();
   late final ConnectionsController _connections = ConnectionsController(widget.backend, onFactsChanged: _profile.load)
     ..load();
+  late final MilestonesController _milestones = MilestonesController(widget.backend)..load();
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
   int _selected = 0;
@@ -242,6 +246,7 @@ class _TabsState extends State<_Tabs> {
   void _selectTab(int index) {
     setState(() => _selected = index);
     if (index == _youTab) _refreshYouTab();
+    if (index == _todayTab) _milestones.load();
   }
 
   void _refreshYouTab() {
@@ -262,6 +267,7 @@ class _TabsState extends State<_Tabs> {
     _chat.dispose();
     _profile.dispose();
     _connections.dispose();
+    _milestones.dispose();
     super.dispose();
   }
 
@@ -277,7 +283,7 @@ class _TabsState extends State<_Tabs> {
         index: _selected,
         children: [
           BuddyTab(chat: _chat, connections: _connections, openPhone: widget.openPhone, openDraft: widget.openDraft),
-          const TodayTab(),
+          TodayTab(milestones: _milestones, openPhone: widget.openPhone),
           const RoadmapTab(),
           YouTab(
             backend: widget.backend,

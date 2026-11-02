@@ -9,6 +9,7 @@ import { createDrafts } from "../src/drafts.ts";
 import { createGuidebook } from "../src/guidebook.ts";
 import type { Connections } from "../src/connections.ts";
 import { createProfile } from "../src/profile.ts";
+import { createStandardMilestones } from "../src/standard-milestones.ts";
 import { openStore, type Store } from "../src/store.ts";
 import { MovableClock } from "./support/movable-clock.ts";
 import { ScriptedClaude, toolUseBlock } from "./support/scripted-claude.ts";
@@ -45,6 +46,7 @@ function send(text: string, storeInUse: Store): Promise<any[]> {
     guidebook,
     actionCards: createActionCards({ store: storeInUse, clock, routines: [], logError }),
     drafts: createDrafts({ store: storeInUse, clock, guidebook }),
+    milestones: createStandardMilestones({ store: storeInUse, clock }),
     logError,
   });
   return Array.fromAsync(conversation.send(text));

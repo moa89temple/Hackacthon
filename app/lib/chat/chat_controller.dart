@@ -56,6 +56,10 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   DraftCardItem? newestDraftCard;
 
+  /// The Standard Milestones' cards from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  List<MilestoneCardItem> newestMilestoneCards = const [];
+
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
   Future<void> loadHistory() async {
@@ -83,6 +87,7 @@ class ChatController extends ChangeNotifier {
     newestGuidebookCards = const [];
     newestActionCards = const [];
     newestDraftCard = null;
+    newestMilestoneCards = const [];
     _changed();
 
     ChatMessage? reply;
@@ -122,6 +127,11 @@ class ChatController extends ChangeNotifier {
             final card = DraftCardItem(event.draft);
             items = [...items, card];
             newestDraftCard = card;
+            _changed();
+          case ReplyMilestoneCard():
+            final card = MilestoneCardItem(event.milestone);
+            items = [...items, card];
+            newestMilestoneCards = [...newestMilestoneCards, card];
             _changed();
           case ReplyDone():
             reply = event.reply;

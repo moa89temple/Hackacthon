@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { discoveryFailed, discoveryRead } from "./activity.ts";
-import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./claude.ts";
+import type { Claude, ClaudeRequest } from "./claude.ts";
 import { philadelphiaClock, type Clock } from "./clock.ts";
+import { allNumbersAmong, askModel, comparable, filled, numbersIn } from "./extraction.ts";
 import { dialableNumbersIn, itemKey, namesToKeep, type ItemFields } from "./guidebook.ts";
+import { takeInMilestonePage } from "./milestone-reading.ts";
 import { readOfficePage, type OfficePage } from "./office-page.ts";
 import type { Office } from "./office-pages.ts";
 import { THE_STUDENT, type GuidebookItemToStore, type Store } from "./store.ts";
@@ -13,7 +15,6 @@ const MISSING_FOR_MS = 14 * DAY_MS;
 /** On Philadelphia's clock. Before this hour, the day's read hasn't come due yet. */
 const READ_FROM_HOUR = 6;
 const SCHEDULE_CHECK_EVERY_MS = 60_000;
-const EXTRACTION_TIMEOUT_MS = 120_000;
 /** How soon to try again when no page answered, which usually means this laptop has just woken. */
 const RETRY_WHEN_OFFLINE_AFTER_MS = 3_600_000;
 /** Less than this is a stand-in such as "Please wait", not one of the office's pages. */
@@ -42,6 +43,8 @@ export interface DiscoveryDeps {
   store: Store;
   model: string;
   offices: Office[];
+  /** The offices whose pages give dates, which become Standard Milestones rather than Guidebook items. */
+  milestoneOffices: Office[];
   logError: (error: unknown) => void;
 }
 
@@ -111,43 +114,6 @@ function extractionRequest(model: string, office: Office, page: OfficePage, url:
   };
 }
 
-async function finalMessage(claude: Claude, request: ClaudeRequest): Promise<ClaudeMessage> {
-  for await (const event of claude.stream(request, { signal: AbortSignal.timeout(EXTRACTION_TIMEOUT_MS) })) {
-    if (event.type === "message") return event.message;
-  }
-  throw new Error("Discovery's stream ended without a message");
-}
-
-/** Throws on anything other than a clean answer in the right shape, including a refusal. */
-async function askModel(claude: Claude, request: ClaudeRequest): Promise<Record<string, unknown>[]> {
-  const message = await finalMessage(claude, request);
-  if (message.stop_reason !== "end_turn") {
-    throw new Error(`The extraction stopped early (stop reason: ${message.stop_reason})`);
-  }
-  const items = JSON.parse(textOf(message.content))?.items;
-  if (!Array.isArray(items)) throw new Error("The extraction's answer had no list of items");
-  return items;
-}
-
-/** Curly quotes and odd spaces shouldn't stop a quote from matching the page it was copied from. */
-function comparable(text: string): string {
-  return text.normalize("NFKC").toLowerCase().replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();
-}
-
-function numbersIn(text: string): Set<string> {
-  return new Set(text.match(/\d+/g) ?? []);
-}
-
-/** The model could write down a number that's not there, and this is one mistake that's easy to catch. */
-function allNumbersAmong(value: string, known: Set<string>): boolean {
-  return [...numbersIn(value)].every((number) => known.has(number));
-}
-
-/** The words, or null if the model left this empty or gave something other than words. */
-function filled(value: unknown): string | null {
-  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
-}
-
 /**
  * Keeps only what can be checked against the page. It can't catch every mistake in a summary, but a
  * phone number, an address or the word "free" should send no Student to the wrong place.
@@ -208,7 +174,7 @@ function readDay(moment: Date): string {
 }
 
 export function createDiscovery(deps: DiscoveryDeps): Discovery {
-  const { claude, web, clock, store, model, offices, logError } = deps;
+  const { claude, web, clock, store, model, offices, milestoneOffices, logError } = deps;
   let underWay: Promise<void> | undefined;
   let timer: NodeJS.Timeout | undefined;
 
@@ -246,11 +212,16 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
 
   async function readEverything(): Promise<void> {
     const now = clock.now();
-    const allPages = offices.flatMap((office) => office.pages.map((url) => ({ office, url })));
+    const takeInDates = (office: Office, url: string, page: OfficePage, at: Date) =>
+      takeInMilestonePage({ claude, store, model, logError }, office, url, page, at);
+    const allPages = [
+      ...offices.flatMap((office) => office.pages.map((url) => ({ office, url, takeIn: takeInPage }))),
+      ...milestoneOffices.flatMap((office) => office.pages.map((url) => ({ office, url, takeIn: takeInDates }))),
+    ];
     const couldNotRead: string[] = [];
     let answered = 0;
 
-    for (const { office, url } of allPages) {
+    for (const { office, url, takeIn } of allPages) {
       const page = await fetchPage(url);
       if (!page) {
         couldNotRead.push(url);
@@ -258,7 +229,7 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
       }
       answered++;
       try {
-        await takeInPage(office, url, page, now);
+        await takeIn(office, url, page, now);
       } catch (error) {
         logError(new Error(`Discovery couldn't take in ${url}: ${error instanceof Error ? error.message : "unknown error"}`));
       }
@@ -272,8 +243,12 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
       store.recordDiscoveryFailure(THE_STUDENT, now, alreadySaid ? null : discoveryFailed(clock.now()));
       return;
     }
-    for (const url of couldNotRead) store.markGuidebookPageFailing(url, now);
+    for (const url of couldNotRead) {
+      store.markGuidebookPageFailing(url, now);
+      store.markMilestonePageFailing(url, now);
+    }
     store.removeMissingFromGuidebook(new Date(now.getTime() - MISSING_FOR_MS));
+    store.removeMilestonesOfFailedPages(new Date(now.getTime() - MISSING_FOR_MS));
     store.recordDiscovery(THE_STUDENT, now, discoveryRead(answered, allPages.length, couldNotRead, clock.now()));
   }
 
