@@ -22,9 +22,10 @@ import {
   TUPORTAL_ID,
   TUPORTAL_PAGES,
   type TuportalPage,
+  type TuportalReadPage,
 } from "./tuportal-rules.ts";
 
-const LONGEST_WORDS_FROM_A_PAGE = 300;
+const LONGEST_CHARACTERS_FROM_A_PAGE = 300;
 
 const LOG_IN = "Buddy needs you to log in to TUportal before it can read it. Tap Log in to TUportal on the You tab.";
 const COULD_NOT_OPEN = "Buddy's Browser couldn't open TUportal. Check that it's running. Buddy will try again at its next read, or you can tap Read now.";
@@ -49,7 +50,7 @@ const digest = (...words: string[]) =>
     .digest("hex")
     .slice(0, 16);
 
-const short = (words: string) => words.slice(0, LONGEST_WORDS_FROM_A_PAGE);
+const short = (words: string) => words.slice(0, LONGEST_CHARACTERS_FROM_A_PAGE);
 
 const whenRead = (at: Date) => `Read ${describeInPhiladelphia(at)}`;
 
@@ -63,18 +64,21 @@ function holdsCheckedFact(holds: HoldOnPage[], now: Date): ConnectionFactToStore
   };
 }
 
-function holdFact({ type, reason, from, until, amount, affects }: HoldOnPage): ConnectionFactToStore {
+/**
+ * The page gives a hold no number, so it's known by its type, and by which of that type it is when
+ * there are several. Not by its reason, because rewording that doesn't make it another hold.
+ */
+function holdFact({ type, reason, from, until, amount, affects }: HoldOnPage, sameTypeBefore: number): ConnectionFactToStore {
   const parts = [reason, from && `From ${from}`, until && `Until ${until}`, amount && `Amount ${amount}`, affects && `Affects ${affects}`];
   return {
-    // Made from its words, because the page gives a hold no number. Which is why the Student's own changes to the fact don't matter here.
-    key: `hold:${digest(type, reason ?? "")}`,
+    key: `hold:${digest(type)}:${sameTypeBefore}`,
     text: `Hold: ${short(type)}`,
     detail: parts.filter((part) => part !== null).map(short).join(" · "),
     data: { kind: "hold" } satisfies TuportalData,
   };
 }
 
-function moneyWords({ cents, credit }: { cents: number; credit: boolean }): string {
+function moneyWords({ cents, credit }: BalanceOnPage): string {
   const amount = `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return credit ? `a credit of ${amount}` : amount;
 }
@@ -99,7 +103,7 @@ function registrationFact({ status, term }: RegistrationOnPage, now: Date): Conn
 
 /** One page's worth of a read: what's wanted from it, how to say it's missing, and which facts it's the source of. */
 interface Section<T> {
-  page: Exclude<TuportalPage, "home">;
+  page: TuportalReadPage;
   missing: string;
   kinds: TuportalData["kind"][];
   understand: (page: PageToRead) => T | null;
@@ -108,13 +112,16 @@ interface Section<T> {
 
 const section = <T>(one: Section<T>): Section<unknown> => one as Section<unknown>;
 
-const SECTIONS = [
+export const TUPORTAL_SECTIONS = [
   section({
     page: "holds",
     missing: "your holds",
     kinds: ["holds_checked", "hold"],
     understand: readHoldsPage,
-    facts: (holds: HoldOnPage[], now) => [holdsCheckedFact(holds, now), ...holds.map(holdFact)],
+    facts: (holds: HoldOnPage[], now) => [
+      holdsCheckedFact(holds, now),
+      ...holds.map((hold, index) => holdFact(hold, holds.slice(0, index).filter((earlier) => digest(earlier.type) === digest(hold.type)).length)),
+    ],
   }),
   section({
     page: "balance",
@@ -136,9 +143,9 @@ function listOf(words: string[]): string {
   return words.length === 1 ? words[0]! : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
 }
 
-function missedPart(missing: string[]): string {
-  const andHolds = missing.includes("your holds") ? " That doesn't mean you have no holds." : "";
-  return `Buddy couldn't read ${listOf(missing)} on TUportal, so what it has may be out of date or missing.${andHolds} It will try again at its next read, or you can tap Read now.`;
+function missedPart(missing: Section<unknown>[]): string {
+  const andHolds = missing.some(({ page }) => page === "holds") ? " That doesn't mean you have no holds." : "";
+  return `Buddy couldn't read ${listOf(missing.map((part) => part.missing))} on TUportal, so what it has may be out of date or missing.${andHolds} It will try again at its next read, or you can tap Read now.`;
 }
 
 async function readTuportal(home: string, hosts: string[] | undefined, { browser, now, previous, reportMissed }: ReadContext): Promise<ConnectionFactToStore[]> {
@@ -163,7 +170,7 @@ async function readTuportal(home: string, hosts: string[] | undefined, { browser
   const facts: ConnectionFactToStore[] = [];
   const missing: Section<unknown>[] = [];
   let anyWouldNotOpen = false;
-  for (const wanted of SECTIONS) {
+  for (const wanted of TUPORTAL_SECTIONS) {
     let understood: unknown = null;
     try {
       const reading = await open(wanted.page);
@@ -178,8 +185,8 @@ async function readTuportal(home: string, hosts: string[] | undefined, { browser
     else facts.push(...wanted.facts(understood, now));
   }
 
-  if (missing.length === SECTIONS.length) throw new ReadProblem(anyWouldNotOpen ? COULD_NOT_OPEN : COULD_NOT_UNDERSTAND);
-  if (missing.length > 0) reportMissed(missedPart(missing.map(({ missing: words }) => words)));
+  if (missing.length === TUPORTAL_SECTIONS.length) throw new ReadProblem(anyWouldNotOpen ? COULD_NOT_OPEN : COULD_NOT_UNDERSTAND);
+  if (missing.length > 0) reportMissed(missedPart(missing));
 
   // What Buddy has from a page it couldn't read this time stays as it was, with the time it was read.
   const stayAsTheyAre = new Set(missing.flatMap(({ kinds }) => kinds));
@@ -198,6 +205,8 @@ async function readTuportal(home: string, hosts: string[] | undefined, { browser
 function eventsBetween(before: FactFromConnection[], after: ConnectionFactToStore[]): ConnectionEventToStore[] {
   const known = new Map(before.map((fact) => [fact.key, dataOf(fact)]));
   const stillThere = new Set(after.map((fact) => fact.key));
+  // Holds Buddy couldn't read before aren't new because it can now. They're still told apart and kept, so nothing about them is lost.
+  const couldReadHoldsBefore = before.some((fact) => dataOf(fact)?.kind === "holds_checked");
   const events: ConnectionEventToStore[] = [];
 
   for (const fact of after) {
@@ -206,10 +215,15 @@ function eventsBetween(before: FactFromConnection[], after: ConnectionFactToStor
     // The Student deleted or renamed one whose source had gone, so there's nothing to compare it with.
     if (!current || was === null) continue;
     if (current.kind === "hold" && !was) {
-      events.push({ kind: "new_hold", factKey: fact.key, text: `New hold on TUportal: ${fact.text}${fact.detail ? ` · ${fact.detail}` : ""}`, data: {} });
+      const about = `${fact.text}${fact.detail ? ` · ${fact.detail}` : ""}`;
+      events.push(
+        couldReadHoldsBefore
+          ? { kind: "new_hold", factKey: fact.key, text: `New hold on TUportal: ${about}`, data: {} }
+          : { kind: "hold_first_seen", factKey: fact.key, text: `A hold on TUportal, seen for the first time because Buddy couldn't read them before, so it may not be new: ${about}`, data: {} },
+      );
     }
     if (current.kind === "balance" && was?.kind === "balance" && (was.cents !== current.cents || was.credit !== current.credit)) {
-      const signed = ({ cents, credit }: { cents: number; credit: boolean }) => (credit ? -cents : cents);
+      const signed = ({ cents, credit }: BalanceOnPage) => (credit ? -cents : cents);
       events.push({
         kind: "balance_changed",
         factKey: fact.key,
@@ -231,6 +245,7 @@ function eventsBetween(before: FactFromConnection[], after: ConnectionFactToStor
 
 const EVENT_NAMES: Record<string, [one: string, many: string]> = {
   new_hold: ["new hold", "new holds"],
+  hold_first_seen: ["hold seen for the first time", "holds seen for the first time"],
   hold_cleared: ["hold gone", "holds gone"],
   balance_changed: ["balance change", "balance changes"],
   registration_status_changed: ["registration status change", "registration status changes"],

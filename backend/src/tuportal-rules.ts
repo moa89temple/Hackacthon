@@ -23,7 +23,7 @@ import type { PagePattern, Site } from "./browser-access.ts";
 
 /** The Connection's id. It's also the site's id, because the guard checks the Read Permission by it. */
 export const TUPORTAL_ID = "tuportal";
-export const TUPORTAL_HOST = "tuportal6.temple.edu";
+const TUPORTAL_HOST = "tuportal6.temple.edu";
 export const TUPORTAL_HOME = `https://${TUPORTAL_HOST}/`;
 const TUPORTAL_HOSTS = [TUPORTAL_HOST, "tuportal.temple.edu"];
 const SIGN_ON_HOST = "fim.temple.edu";
@@ -43,8 +43,17 @@ export const TUPORTAL_PAGES = {
 };
 
 export type TuportalPage = keyof typeof TUPORTAL_PAGES;
+/** A page that has something of the Student's on it, as the home page doesn't. */
+export type TuportalReadPage = Exclude<TuportalPage, "home">;
 
-const pathOf = (address: string) => new URL(address, TUPORTAL_HOME).pathname;
+/** Temple links the same page under both of these, and which a logged-in browser ends up on isn't known. */
+const pathsOf = (address: string) => {
+  const { pathname } = new URL(address, TUPORTAL_HOME);
+  return [pathname, pathname.replace(/^\/group\/home/, "/web/home-community")];
+};
+
+/** The portal's own way to the sign-on. */
+const WAY_TO_SIGN_ON = /^\/c\/portal\/(?:login|saml(?:\/|$))/;
 
 /**
  * Whether this address is the page that was asked for, wherever the portal keeps it for someone logged in.
@@ -52,9 +61,7 @@ const pathOf = (address: string) => new URL(address, TUPORTAL_HOME).pathname;
  */
 export function isTuportalPage(page: TuportalPage, address: string): boolean {
   const url = URL.parse(address);
-  if (!url) return false;
-  const wanted = pathOf(TUPORTAL_PAGES[page]);
-  return url.pathname === wanted || url.pathname === wanted.replace(/^\/group\/home/, "/web/home-community");
+  return url !== null && pathsOf(TUPORTAL_PAGES[page]).includes(url.pathname);
 }
 
 /**
@@ -63,39 +70,40 @@ export function isTuportalPage(page: TuportalPage, address: string): boolean {
  * blocked pages that deal with an action sent as a link.
  */
 export function tuportalReadablePages(hosts: string[] = TUPORTAL_HOSTS): PagePattern[] {
-  const paths = Object.values(TUPORTAL_PAGES).map(pathOf);
+  const paths = Object.values(TUPORTAL_PAGES).flatMap(pathsOf);
   return [
     ...hosts.flatMap((host) => [
       // Where a login check starts.
       { host, path: /^\/$/ },
-      ...paths.flatMap((path) => [
-        { host, path: new RegExp(`^${path}$`) },
-        { host, path: new RegExp(`^${path.replace(/^\/group\/home/, "/web/home-community")}$`) },
-      ]),
+      ...paths.map((path) => ({ host, path: new RegExp(`^${path}$`) })),
       // Only so that a read can see a login has expired. Nothing is taken from these pages.
-      { host, path: /^\/c\/portal\/(?:login|saml(?:\/|$))/ },
+      { host, path: WAY_TO_SIGN_ON },
     ]),
     { host: SIGN_ON_HOST, path: /^\// },
   ];
 }
 
-/** The words that make a page on the portal one Buddy never opens. Each has to be a whole word in the address. */
-const NEVER_WORDS = [
-  // Paying.
-  "tupay|pay|payment|payments|epay|touchnet|checkout|cart|refund|refunds|authorized-payer|e-?check",
-  // Changing registration.
-  "register|registration|registrations|add-?drop|adddrop|addordrop|classregistration|studentregistrationssb|bwskfreg|bwckcoms|bwckregs|planahead|plan-your-schedule|waitlist|waitlisting|withdraw|withdrawal|drop",
-  // Forms, and anything that files something.
-  "forms?|submit|apply|application|applications|petition|petitions|declaration|declarations|consent|authorize|authorization|accept|decline|sign|signature|request|requests|update|edit|change|proxy",
-  // Logging out would lose the login. It's a plain link, so that nobody has to submit anything.
-  "logout|logoff|signout|sign-out|p_logout",
-].join("|");
-const NEVER_WORD = new RegExp(`(?:^|[/_.;-])(?:${NEVER_WORDS})(?:$|[/_.;-])`);
+/** Words that make a page on the portal one Buddy never opens, wherever they are in the address. */
+const NEVER_ANYWHERE = new RegExp(
+  [
+    // Paying.
+    "tupay|payment|epay|touchnet|checkout|refund|authorized-?payer",
+    // Changing registration.
+    "regist|enroll|add-?drop|addordrop|bwskfreg|bwckcoms|bwckregs|planahead|plan-your-schedule|waitlist|withdraw|classes?/+(?:add|drop)",
+    // Forms, and anything that files something.
+    "petition|declaration|consent|authoriz|signature",
+    // Logging out would lose the login. It's a plain link, so that nobody has to submit anything.
+    "logout|logoff|signout|sign-out",
+  ].join("|"),
+);
+/** Words too short to look for inside another, such as "pay" in "display". These have to stand alone in the address. */
+const NEVER_WHOLE_WORDS = "pay|cart|e-?check|drop|forms?|submit|apply|applications?|accept|decline|sign|requests?|update|edit|change|proxy";
+const NEVER_WORD = new RegExp(`(?:^|[/_.;-])(?:${NEVER_WHOLE_WORDS})(?:$|[/_.;-])`);
 
 const everyPageOf = (hosts: string[]): PagePattern[] => hosts.map((host) => ({ host, path: /^/ }));
 
 /**
- * Pages Buddy never opens, reads or submits, even with an approved card. The guard refuses these first,
+ * Pages Buddy never opens, reads or submits, even with an Action Permission. The guard refuses these first,
  * for pages, frames, redirects and everything a page loads. Each names its hosts, because a pattern with
  * none would apply to Temple's sign-on and to Duo too, and neither is TUportal's to limit.
  *
@@ -108,6 +116,7 @@ export function tuportalBlockedPages(hosts: string[] = TUPORTAL_HOSTS): PagePatt
     ...everyPageOf(BANNER_HOSTS),
     ...everyPageOf(PAYMENT_HOSTS),
     ...hosts.flatMap((host) => [
+      { host, path: NEVER_ANYWHERE },
       { host, path: NEVER_WORD },
       // The portal's own actions are ordinary links, told apart only by this.
       { host, path: /^/, query: /(?:^|[?&])p_p_lifecycle=1(?:&|$)/ },
@@ -116,13 +125,10 @@ export function tuportalBlockedPages(hosts: string[] = TUPORTAL_HOSTS): PagePatt
   ];
 }
 
-export const TUPORTAL_BLOCKED_PAGES = tuportalBlockedPages();
-export const TUPORTAL_READABLE_PAGES = tuportalReadablePages();
-
 /** TUportal sends the browser to one of these when it isn't logged in: anywhere off the portal, or the portal's own way to the sign-on. */
 export function isTuportalLoginPage(address: string, hosts: string[] = TUPORTAL_HOSTS): boolean {
   const url = URL.parse(address);
-  return !url || !hosts.includes(url.hostname) || /^\/c\/portal\/(?:login|saml(?:\/|$))/.test(url.pathname);
+  return !url || !hosts.includes(url.hostname) || WAY_TO_SIGN_ON.test(url.pathname);
 }
 
 export const TUPORTAL_SITE: Site = {
@@ -133,7 +139,8 @@ export const TUPORTAL_SITE: Site = {
   // Banner and the payment hosts are listed so that the guard counts them as this site's and refuses them.
   loginHosts: [...TUPORTAL_HOSTS, SIGN_ON_HOST, DUO_HOST, ...BANNER_HOSTS, ...PAYMENT_HOSTS],
   isConnection: true,
-  readablePages: TUPORTAL_READABLE_PAGES,
-  blockedPages: TUPORTAL_BLOCKED_PAGES,
+  signOnDomains: ["temple.edu"],
+  readablePages: tuportalReadablePages(),
+  blockedPages: tuportalBlockedPages(),
   isLoginPage: (address) => isTuportalLoginPage(address),
 };

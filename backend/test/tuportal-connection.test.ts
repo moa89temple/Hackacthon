@@ -276,6 +276,43 @@ describe("what changed between reads", () => {
     expect(await eventKinds()).toEqual([]);
   });
 
+  it("stays quiet when only a hold's reason is reworded, which doesn't make it another hold", async () => {
+    const withReason = (reason: string) => `<table><tr><th>Hold Type</th><th>Reason</th></tr><tr><td>Made-Up Bursar Hold</td><td>${reason}</td></tr></table>`;
+    changeTuportalPage(backend.browser, HOLDS_PAGE, withReason("Made-up first wording"));
+    await connect();
+    changeTuportalPage(backend.browser, HOLDS_PAGE, withReason("Made-up second wording"));
+
+    await readAgain();
+
+    expect(await eventKinds()).toEqual([]);
+    expect((await fact("Made-Up Bursar Hold")).detail).toContain("Made-up second wording");
+  });
+
+  it("copes with two rows naming the same hold, and spots when one goes", async () => {
+    const rows = (count: number) => `<table><tr><th>Hold Type</th></tr>${"<tr><td>Made-Up Bursar Hold</td></tr>".repeat(count)}</table>`;
+    changeTuportalPage(backend.browser, HOLDS_PAGE, rows(2));
+    await connect();
+    expect(await fact("TUportal showed 2 holds")).toBeDefined();
+    changeTuportalPage(backend.browser, HOLDS_PAGE, rows(1));
+
+    await readAgain();
+
+    expect(await eventKinds()).toEqual(["hold_cleared"]);
+    expect(await fact("TUportal showed 1 hold")).toBeDefined();
+  });
+
+  it("doesn't call a hold new when it's only the first time Buddy could read the holds", async () => {
+    changeTuportalPage(backend.browser, HOLDS_PAGE, UNREADABLE);
+    await connect();
+    saveTuportalPages(backend.browser);
+
+    await readAgain();
+
+    expect(await eventKinds()).toEqual(["hold_first_seen", "hold_first_seen"]);
+    expect((await backend.activity())[0].detail).toContain("2 holds seen for the first time");
+    expect((await backend.activity())[0].detail).not.toContain("new hold");
+  });
+
   it("spots a changed balance", async () => {
     await connect();
     changeTuportalPage(backend.browser, BALANCE_PAGE, "<p>Current Balance: $20.00</p>");
@@ -334,6 +371,7 @@ describe("the Student's own changes", () => {
 
     expect(await fact("Made-Up Bursar Hold")).toBeUndefined();
     expect(await eventKinds()).toEqual([]);
+    expect((await backend.activity())[0].detail).not.toContain("new hold");
   });
 });
 

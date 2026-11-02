@@ -36,6 +36,7 @@ describe("the pages the reader opens", () => {
 describe("pages that are refused whichever way they're reached", () => {
   const NEVER_LOADED: Record<string, string[]> = {
     "paying": [
+      `${TUPORTAL}/group/home/makepayment`,
       `${TUPORTAL}/web/home-community/tupay`,
       `${TUPORTAL}/group/home/tupay`,
       `${TUPORTAL}/group/home/make-a-payment`,
@@ -47,6 +48,8 @@ describe("pages that are refused whichever way they're reached", () => {
       "https://secure.touchnet.net/C21551_tsa/web/login.jsp",
     ],
     "changing registration": [
+      `${TUPORTAL}/group/home/classes/add`,
+      `${TUPORTAL}/group/home/enroll`,
       `${TUPORTAL}/group/home/registration`,
       `${TUPORTAL}/group/home/register-for-classes`,
       `${TUPORTAL}/group/home/add-drop`,
@@ -70,6 +73,8 @@ describe("pages that are refused whichever way they're reached", () => {
     ],
     "an action sent as an ordinary link in the portal": [`${HOME_PAGE}?p_p_id=made_up&p_p_lifecycle=1&_made_up_action=drop`],
     "anything at all on Banner, which can act on a GET": ["https://prd-wlssb.temple.edu/prod8/bwskoacc.P_ViewAcct", "https://prd-xereg.temple.edu/anything"],
+    // Temple's sign-on would log a frame or a script in to it, Connection or not.
+    "a Temple host nobody has listed": ["https://prd-not-listed.temple.edu/prod8/bwskfreg.P_AltPin", "https://navigate-not-listed.temple.edu/"],
   };
 
   describe.each(Object.keys(NEVER_LOADED))("%s", (kind) => {
@@ -84,6 +89,11 @@ describe("pages that are refused whichever way they're reached", () => {
 describe("what a page loads for itself", () => {
   it("may read other pages of the portal, such as its stylesheets", () => {
     expect(guards.forReading().check(loading(`${TUPORTAL}/o/made-up-theme/main.css`))).toEqual({ allowed: true });
+  });
+
+  it("may load from a public page of Temple's, and from outside Temple", () => {
+    expect(guards.forReading().check(loading("https://www.temple.edu/made-up.css"))).toEqual({ allowed: true });
+    expect(guards.forReading().check(loading("https://cdn.example.com/made-up.css"))).toEqual({ allowed: true });
   });
 
   it.each(["POST", "PUT", "PATCH", "DELETE"])("can't %s anything, so nothing is ever submitted", (method) => {

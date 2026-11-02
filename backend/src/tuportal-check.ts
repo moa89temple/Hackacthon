@@ -1,5 +1,4 @@
 import { parse } from "parse5";
-import type { DefaultTreeAdapterTypes as Html } from "parse5";
 import { createBrowserAccess, TakeoverInProgress, type Site } from "./browser-access.ts";
 import type { BuddysBrowser, PageReading } from "./buddys-browser.ts";
 import { EXIT_FAILED, EXIT_LOGIN_NEEDED, EXIT_NO_READ_PERMISSION, EXIT_OK, EXIT_OLD_LOGIN_REMAINS, EXIT_TAKEOVER_UNDER_WAY, structureOf, type StudentState } from "./canvas-check.ts";
@@ -8,9 +7,9 @@ import { createConnections, type ConnectionType } from "./connections.ts";
 import { createGuardPolicy, isOnSite, type RequestGuard } from "./network-guard.ts";
 import { createProfile } from "./profile.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
-import { readBalancePage, readHoldsPage, readRegistrationPage, type PageToRead } from "./tuportal-pages.ts";
+import { attribute, elementsNamed, wordsIn } from "./tuportal-pages.ts";
 import { TUPORTAL_PAGES, type TuportalPage } from "./tuportal-rules.ts";
-import { tuportal } from "./tuportal.ts";
+import { tuportal, TUPORTAL_SECTIONS } from "./tuportal.ts";
 
 /**
  * Checks the TUportal reader against a real login, for someone who must not see the Student's records.
@@ -22,7 +21,7 @@ import { tuportal } from "./tuportal.ts";
  */
 
 /** The login works and the reader couldn't understand a page, which is what this check is for finding. */
-export const EXIT_PAGES_NOT_UNDERSTOOD = 6;
+const EXIT_PAGES_NOT_UNDERSTOOD = 6;
 
 /** More than a portal page has. Each link can only say so much, and this keeps a broken page short. */
 const MOST_LINKS = 80;
@@ -41,13 +40,15 @@ const WORDS_IT_MAY_SHOW = new Set(
     .split(/\s+/)
     .filter(Boolean),
 );
+/** Fine in an address, where they name a page. On a holds page, as a heading, they could name the Student's hold. */
+const NOT_IN_HEADINGS = new Set(["hold", "bursar", "financial", "advising"]);
 /** A page of Banner's own is named for what it does, the same for everyone, such as bwskoacc.P_ViewAcct. */
 const BANNER_PAGE = /^(?:bw[a-z]{2,8}|twb[a-z]{2,8})\.p_[a-z_]{1,40}$/;
 
 const ordinaryWords = (phrase: string, separator: RegExp) => phrase.split(separator).every((word) => word === "" || WORDS_IT_MAY_SHOW.has(word));
 
 /** Takes a raw address to its path, with anything that could be someone's words replaced. What follows a ? never comes out. */
-export function cleanPath(address: string, base?: string): string {
+function cleanPath(address: string, base?: string): string {
   const url = URL.parse(address, base);
   if (!url) return ":text";
   const segments = url.pathname
@@ -60,45 +61,28 @@ export function cleanPath(address: string, base?: string): string {
   return `/${segments.join("/")}`;
 }
 
+/** A host of Temple's or the site's says something, and any other could be named after anything. */
+function hostToShow(address: string, base: string | undefined, sites: Record<string, Site>): string {
+  const host = URL.parse(address, base)?.hostname ?? "";
+  return host.endsWith(".temple.edu") || Object.values(sites).some((site) => isOnSite(host, site)) ? host : "(a host off the portal)";
+}
+
 /** Headings and labels, each word shown only if it's one of the ordinary ones. They're what the reader goes by, and the values never are headings. */
 function headingsOf(html: string): string[] {
-  const headings = new Set<string>();
-  const visit = (node: Html.ChildNode | Html.Document): void => {
-    if ("tagName" in node && ["th", "dt", "label", "caption", "legend", "h1", "h2", "h3", "h4", "h5", "h6"].includes(node.tagName)) {
-      const words = wordsIn(node).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-      if (words.length > 0) headings.add(words.map((word) => (WORDS_IT_MAY_SHOW.has(word) ? word : ":word")).join(" "));
-    }
-    if ("childNodes" in node) node.childNodes.forEach(visit);
-  };
-  visit(parse(html));
-  return [...headings].slice(0, MOST_HEADINGS);
+  const headings = elementsNamed(parse(html), "th", "dt", "label", "caption", "legend", "h1", "h2", "h3", "h4", "h5", "h6")
+    .map((element) => wordsIn(element).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean))
+    .filter((words) => words.length > 0)
+    .map((words) => words.map((word) => (WORDS_IT_MAY_SHOW.has(word) && !NOT_IN_HEADINGS.has(word) ? word : ":word")).join(" "));
+  return [...new Set(headings)].slice(0, MOST_HEADINGS);
 }
 
-function wordsIn(node: Html.ChildNode): string {
-  if (node.nodeName === "#text") return (node as Html.TextNode).value;
-  return "childNodes" in node ? node.childNodes.map(wordsIn).join(" ") : "";
+function addressesIn(html: string, tag: string, name: string): string[] {
+  return elementsNamed(parse(html), tag).flatMap((element) => attribute(element, name) ?? []);
 }
 
-function addressesIn(html: string, tag: string, attribute: string): string[] {
-  const found: string[] = [];
-  const visit = (node: Html.ChildNode | Html.Document): void => {
-    if ("tagName" in node && node.tagName === tag) {
-      const value = node.attrs.find((attr) => attr.name === attribute)?.value;
-      if (value) found.push(value);
-    }
-    if ("childNodes" in node) node.childNodes.forEach(visit);
-  };
-  visit(parse(html));
-  return found;
-}
-
-/** A frame's address: a host of Temple's says something, and any other could be named after anything. */
-function frameLines(html: string, pageAddress: string): string[] {
-  const lines = addressesIn(html, "iframe", "src").map((source) => {
-    const url = URL.parse(source, pageAddress);
-    const host = url?.hostname.endsWith(".temple.edu") ? url.hostname : "(a host off the portal)";
-    return `frame: ${host} ${cleanPath(source, pageAddress)}`;
-  });
+/** Where the page's frames come from, because the portal may keep what matters in one. */
+function frameLines(html: string, pageAddress: string, sites: Record<string, Site>): string[] {
+  const lines = addressesIn(html, "iframe", "src").map((source) => `frame: ${hostToShow(source, pageAddress, sites)} ${cleanPath(source, pageAddress)}`);
   return [...new Set(lines)];
 }
 
@@ -113,14 +97,6 @@ function linkLines(html: string, pageAddress: string, sites: Record<string, Site
     .map((address) => `link: ${cleanPath(address, pageAddress)}`);
   return [...new Set(lines)].slice(0, MOST_LINKS);
 }
-
-/** What the reader goes by, on a page it's meant to understand. */
-const READERS: Record<Exclude<TuportalPage, "home">, (page: PageToRead) => unknown> = {
-  holds: readHoldsPage,
-  balance: readBalancePage,
-  registration: readRegistrationPage,
-};
-const PAGE_NAMES = Object.keys(READERS) as Exclude<TuportalPage, "home">[];
 
 interface PageVisit {
   /** Which page the reader asked for. */
@@ -173,11 +149,9 @@ function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: P
         check(request) {
           const decision = guard.check(request);
           if (!decision.allowed) {
-            const target = URL.parse(request.url);
-            const known = target && (target.hostname.endsWith(".temple.edu") || Object.values(sites).some((site) => isOnSite(target.hostname, site)));
             refusals.push({
               method: /^[A-Z]{1,10}$/.test(request.method) ? request.method : "OTHER",
-              host: known ? target.hostname : "(a host off the portal)",
+              host: hostToShow(request.url, undefined, sites),
               path: cleanPath(request.url),
             });
           }
@@ -197,19 +171,11 @@ function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: P
   };
 }
 
-function hostOf(address: string): string {
-  const host = URL.parse(address)?.hostname ?? "";
-  return host.endsWith(".temple.edu") ? host : "(a host off the portal)";
-}
-
-/** Whether a read page landed where it should, and if not, in words that aren't the Student's. */
-function verdict(visit: PageVisit, page: Exclude<TuportalPage, "home">): { understood: boolean; note: string } {
-  if (visit.failed) return { understood: false, note: ` (${visit.failed})` };
-  const { reading } = visit;
-  if (!reading) return { understood: false, note: "" };
-  const landed = cleanPath(reading.url);
-  const elsewhere = landed === visit.asked ? "" : ` (ended up at ${hostOf(reading.url)} ${landed})`;
-  return { understood: elsewhere === "" && READERS[page](reading) !== null, note: elsewhere };
+/** How a visit went, if it didn't simply land where it was sent, in words that aren't the Student's. */
+function visitNote(visit: PageVisit, sites: Record<string, Site>): string {
+  if (visit.failed) return ` (${visit.failed})`;
+  const landed = visit.reading && cleanPath(visit.reading.url);
+  return !landed || landed === visit.asked ? "" : ` (ended up at ${hostToShow(visit.reading!.url, undefined, sites)} ${landed})`;
 }
 
 export interface TuportalCheckDeps {
@@ -306,15 +272,16 @@ async function runChecked({ browser, connection = tuportal, sites, student, prin
   print("");
   print("Pages:");
   const home = visits.find((visit) => visit.page === "home");
-  if (home) print(`  home ${home.asked}${home.failed ? ` (${home.failed})` : home.reading && cleanPath(home.reading.url) !== home.asked ? ` (ended up at ${hostOf(home.reading.url)} ${cleanPath(home.reading.url)})` : ""}`);
+  if (home) print(`  home ${home.asked}${visitNote(home, sites)}`);
   const notUnderstood: { visit: PageVisit; name: string }[] = [];
-  for (const name of PAGE_NAMES) {
+  for (const { page: name, understand } of TUPORTAL_SECTIONS) {
     const visit = visits.find((candidate) => candidate.page === name);
     if (!visit) {
       print(`  ${name}: not reached`);
       continue;
     }
-    const { understood, note } = verdict(visit, name);
+    const note = visitNote(visit, sites);
+    const understood = note === "" && visit.reading !== null && understand(visit.reading) !== null;
     print(`  ${name} ${visit.asked}: ${understood ? "understood" : "NOT understood"}${note}`);
     if (!understood) notUnderstood.push({ visit, name });
   }
@@ -339,7 +306,7 @@ async function runChecked({ browser, connection = tuportal, sites, student, prin
     if (!visit.reading) continue;
     print("");
     print(`The ${name} page, which the reader couldn't understand:`);
-    for (const line of [...frameLines(visit.reading.html, visit.reading.url), ...headingsOf(visit.reading.html).map((heading) => `heading: ${heading}`)]) print(`  ${line}`);
+    for (const line of [...frameLines(visit.reading.html, visit.reading.url, sites), ...headingsOf(visit.reading.html).map((heading) => `heading: ${heading}`)]) print(`  ${line}`);
     // How many rows there are could be how many holds there are.
     for (const line of structureOf(visit.reading.html)) print(line.replace(/ ×\d+$/, " (repeated)"));
   }

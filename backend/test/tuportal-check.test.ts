@@ -165,9 +165,19 @@ describe("with pages it doesn't understand", () => {
 
     const { output } = await check(browser);
 
-    expect(output).toContain("heading: hold type");
+    expect(output).toContain("heading: :word type");
     expect(output).toContain("heading: :word");
     expect(output).toContain("heading: :word :word");
+  });
+
+  it("doesn't print a hold's kind when the page has it as a heading", async () => {
+    const browser = browserWithAllPages();
+    changeTuportalPage(browser, HOLDS_PAGE, "<h3>Bursar Hold</h3><h3>Financial Hold</h3><h3>Advising Hold</h3>");
+
+    const { output } = await check(browser);
+
+    expect(output).toContain("heading: :word :word");
+    expect(output.slice(output.indexOf("The holds page"))).not.toMatch(/bursar|financial|advising|\bhold\b/i);
   });
 
   it("doesn't count rows, which would say how many holds there are", async () => {

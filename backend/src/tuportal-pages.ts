@@ -45,7 +45,7 @@ export interface RegistrationOnPage {
 
 type Node = Html.ChildNode | Html.Document;
 
-function attribute(element: Html.Element, name: string): string | undefined {
+export function attribute(element: Html.Element, name: string): string | undefined {
   return element.attrs.find((attr) => attr.name === name)?.value;
 }
 
@@ -57,9 +57,9 @@ function* elementsIn(node: Node): Generator<Html.Element> {
   }
 }
 
-const elementsNamed = (node: Node, ...tags: string[]) => [...elementsIn(node)].filter((element) => tags.includes(element.tagName));
+export const elementsNamed = (node: Node, ...tags: string[]) => [...elementsIn(node)].filter((element) => tags.includes(element.tagName));
 
-function wordsIn(node: Node): string {
+export function wordsIn(node: Node): string {
   const words: string[] = [];
   const visit = (current: Node): void => {
     if (current.nodeName === "#text") words.push((current as Html.TextNode).value);
@@ -80,6 +80,16 @@ const SAYS_NO_HOLDS =
   /^(?:(?:you (?:currently )?have|there are(?: currently)?) no|you (?:do not|don't)(?: currently)? have any|no)\s+(?:(?:active|current)\s+)?holds?(?:\s+(?:exists?|(?:were )?found))?(?:\s+on (?:your|this) (?:record|account))?(?:\s+at this time)?[.!]?$/i;
 /** Words that only a page with a hold on it would show, whatever else it says. */
 const SAYS_THERE_IS_A_HOLD = /\bhold type\b|\bprocesses affected\b|\byou have (?:an?|one|some|\d+)\s+(?:[a-z]+\s+)?holds?\b/i;
+/**
+ * A short line that isn't a sentence and speaks of one hold, or of holds and a number: how a hold or a
+ * count of them reads when it's drawn some way the reader doesn't know, such as "Made-Up Bursar Hold".
+ */
+const NAMES_A_HOLD = /^(?=.{1,100}$)[^.?!]*(?:\bhold\b|\bholds?\b[^.?!]*\d|\d[^.?!]*\bholds?\b)[^.?!]*$/i;
+
+/** A table with a row of more than one filled cell, on a page that's meant to say there's nothing to list. */
+function hasDataRows(html: string): boolean {
+  return elementsNamed(parse(html), "tr").some((row) => elementsNamed(row, "td").filter((cell) => wordsIn(cell) !== "").length > 1);
+}
 
 /** Who placed a hold isn't read: a column with no match here is left alone. */
 const COLUMNS: Record<Exclude<keyof HoldOnPage, "type">, RegExp> = {
@@ -131,21 +141,21 @@ export function readHoldsPage({ html, text }: PageToRead): HoldOnPage[] | null {
     .map((table) => elementsNamed(table, "tr"))
     .filter((rows) => rows.length > 0 && elementsNamed(rows[0]!, "th", "td").some((cell) => HOLD_COLUMN.test(wordsIn(cell))));
 
-  const holds = new Map<string, HoldOnPage>();
+  const holds: HoldOnPage[] = [];
   let aTableSaysNone = false;
   for (const rows of tables) {
     const found = holdsInTable(rows, shown);
     if (!found) return null;
     aTableSaysNone ||= found.empty;
-    for (const hold of found.holds) holds.set(`${hold.type}\n${hold.reason}`, hold);
+    holds.push(...found.holds);
   }
-  if (holds.size > 0) return [...holds.values()];
+  if (holds.length > 0) return holds;
 
   const saysNone = lines.some((line) => SAYS_NO_HOLDS.test(line));
   // A table's own heading has the words for a hold in it, and it doesn't mean there is one.
   if (aTableSaysNone) return saysNone ? [] : null;
-  const saysOne = lines.some((line) => !SAYS_NO_HOLDS.test(line) && SAYS_THERE_IS_A_HOLD.test(line));
-  return saysNone && !saysOne ? [] : null;
+  const saysOne = lines.some((line) => !SAYS_NO_HOLDS.test(line) && (SAYS_THERE_IS_A_HOLD.test(line) || NAMES_A_HOLD.test(line)));
+  return saysNone && !saysOne && !hasDataRows(html) ? [] : null;
 }
 
 const BALANCE_LABEL = String.raw`(?:your\s+)?(?:(?:current|total|account|student\s+account|outstanding)\s+)*(?:balance(?:\s+due)?|amount\s+due)`;

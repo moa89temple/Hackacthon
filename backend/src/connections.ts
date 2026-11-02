@@ -244,7 +244,9 @@ export function createConnections(deps: ConnectionsDeps): Connections {
         },
       });
       // On the first read everything looks new, and none of it is news.
-      const events = permission.lastReadAt ? (type.eventsBetween?.(previous, facts) ?? []) : [];
+      const deleted = new Set(store.deletedFactKeys(THE_STUDENT, type.id));
+      // Nor is a fact the Student deleted, which isn't among the previous ones and so would look new every time.
+      const events = permission.lastReadAt ? (type.eventsBetween?.(previous, facts) ?? []).filter((event) => !deleted.has(event.factKey)) : [];
       const whatsNew = events.length > 0 ? type.countEvents?.(events) : undefined;
       // Saves only if this Read Permission still stands, so a revoke made meanwhile stays revoked.
       profile.saveReading(permission.id, facts, now, connectionRead(type.name, reason, clock.now(), whatsNew, missed), {

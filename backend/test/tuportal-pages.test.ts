@@ -51,6 +51,14 @@ describe("the holds page", () => {
       expect(readHoldsPage({ html: `<p>${text}</p>`, text })).toBeNull();
     });
 
+    it.each([
+      ["a hold drawn as a card beside it", "No holds found\nMade-Up Bursar Hold", ""],
+      ["a count of holds beside it", "No holds\nHolds: 2", ""],
+      ["a table beside it whose headings don't say hold", "No holds found\nType\tWhy\nMade-up\tMade-up", "<table><tr><th>Type</th><th>Why</th></tr><tr><td>Made-up</td><td>Made-up</td></tr></table>"],
+    ])("a visible line saying there are none, with %s", (_, text, html) => {
+      expect(readHoldsPage({ html: `<p>No holds found</p>${html}`, text })).toBeNull();
+    });
+
     it("a line saying there are none inside a longer visible line", () => {
       const text = "Holds: No holds exist for last term, 1 for this term";
 
@@ -76,10 +84,10 @@ describe("the holds page", () => {
     expect(readHoldsPage(pageFrom(html))).toEqual([]);
   });
 
-  it("gives identical rows once", () => {
+  it("keeps identical rows, so that the count isn't short", () => {
     const row = "<tr><td>Made-Up Bursar Hold</td></tr>";
 
-    expect(readHoldsPage(pageFrom(`<table><tr><th>Hold</th></tr>${row}${row}</table>`))).toHaveLength(1);
+    expect(readHoldsPage(pageFrom(`<table><tr><th>Hold</th></tr>${row}${row}</table>`))).toHaveLength(2);
   });
 });
 

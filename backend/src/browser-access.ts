@@ -42,6 +42,12 @@ export interface Site {
   homeUrl: string;
   /** Every host that holds part of this site's login, including its single sign-on. */
   loginHosts: string[];
+  /**
+   * Domains this site's single sign-on works across. Any other host on them is refused unless it's a
+   * site's or a listed public page, even as a frame or something a page loads, because the sign-on could
+   * log it in to a Temple system with no Read Permission. This doesn't make the domain one of the site's.
+   */
+  signOnDomains?: string[];
   /** What the network guard lets through for this site without an Action Permission. See network-guard.ts. */
   readOnlyRequests?: KnownRequest[];
   /**

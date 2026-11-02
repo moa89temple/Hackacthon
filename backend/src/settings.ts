@@ -63,8 +63,9 @@ export const settings = {
     [CANVAS_ID]: {
       name: "Canvas",
       homeUrl: CANVAS_HOME,
-      // Temple's single sign-on and Duo are listed too. Otherwise a forgotten Canvas login
-      // would quietly come back the next time Canvas sent the browser to the sign-on page.
+      // Temple's single sign-on and Duo are listed too. Otherwise a forgotten Canvas login would quietly
+      // come back the next time Canvas sent the browser to the sign-on page, once no other Connection
+      // that shares them is left to keep them. See forgetLogin in browser-access.ts.
       loginHosts: ["instructure.com", "fim.temple.edu", "duosecurity.com"],
       isConnection: true,
       readablePages: CANVAS_READABLE_PAGES,
