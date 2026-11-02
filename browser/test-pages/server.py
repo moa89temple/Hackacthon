@@ -316,7 +316,7 @@ NAVIGATE360_PAGES = {
         const team = location.hash.includes('/people/');
         const answer = await fetch(team ? '/api/students/7/support_team' : "/api/v2/scheduling/current_user?slim=%27true%27");
         const { data } = await answer.json();
-        root.innerHTML = '<h1>MARKERDRAWN</h1><button>' + (data.team ? data.team[0].first_name : 'Schedule') + '</button>';
+        root.innerHTML = '<h1>MARKER' + 'DRAWN</h1><button>' + (data.team ? data.team[0].first_name : 'Schedule') + '</button>';
         fetch('/api/v2/scheduling/appointments/', { method: 'POST', body: 'x=1' }).catch(() => {});
       }, 300);
     }
