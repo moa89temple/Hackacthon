@@ -86,7 +86,7 @@ const ANY_DATE = new RegExp(`\\b(?:${MONTHS.join("|")})[a-z]*\\.?\\s+\\d{1,2}\\b
 const TERM_HEADING = /^(?:fall|spring|summer)(?: i{1,2})?(?: & ii)? \d{4}:?$/;
 
 /** Null unless this is a day on the calendar, written YYYY-MM-DD. */
-function realDay(value: unknown): Date | null {
+export function realDay(value: unknown): Date | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const day = new Date(`${value}T12:00:00Z`);
   return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(value) ? day : null;

@@ -16,6 +16,8 @@
     "smoke:guidebook": "node scripts/smoke-guidebook.ts",
     "smoke:handoff": "node scripts/smoke-handoff.ts",
     "smoke:milestones": "node scripts/smoke-milestones.ts",
+    "smoke:roadmap": "node scripts/smoke-roadmap.ts",
+    "save-bulletin-pages": "node scripts/save-bulletin-pages.ts",
     "check-login": "node scripts/check-login.ts",
     "forget-login": "node scripts/forget-login.ts",
     "check-canvas": "node --disable-warning=ExperimentalWarning scripts/check-canvas.ts",

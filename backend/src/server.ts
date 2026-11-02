@@ -35,6 +35,8 @@ import { createLiveViewProxy } from "./live-view-proxy.ts";
 import { hiddenNote } from "./masking.ts";
 import { createGuardPolicy } from "./network-guard.ts";
 import { createProfile, type Profile } from "./profile.ts";
+import { addRoadmapRoutes } from "./roadmap-routes.ts";
+import { createRoadmap } from "./roadmap.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { BUDDY_OPENING } from "./system-prompt.ts";
 
@@ -119,6 +121,15 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     ],
     logError: (error) => app.log.error(error),
   });
+  const roadmap = createRoadmap({
+    store,
+    clock: options.adapters.clock,
+    web: options.adapters.web,
+    profile,
+    guidebook,
+    milestones,
+    logError: (error) => app.log.error(error),
+  });
   const conversation = createConversation({
     claude: options.adapters.claude,
     clock: options.adapters.clock,
@@ -135,6 +146,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     actionCards,
     drafts,
     milestones,
+    roadmap,
     logError: (error) => app.log.error(error),
   });
 
@@ -210,6 +222,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addGuidebookRoutes(app, guidebook);
   addActionCardRoutes(app, actionCards, isStoredId);
   addDraftRoutes(app, drafts);
+  addRoadmapRoutes(app, roadmap, isStoredId);
   app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
 
   const url = await app.listen({ host: options.host, port: options.port });

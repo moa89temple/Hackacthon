@@ -6,17 +6,22 @@ import '../connections/connections_controller.dart';
 import '../connections/connections_section.dart';
 import '../profile/profile_controller.dart';
 import '../profile/profile_section.dart';
+import '../roadmap/goals_section.dart';
+import '../roadmap/roadmap_controller.dart';
+
 class YouTab extends StatelessWidget {
   const YouTab({
     super.key,
     required this.backend,
     required this.profile,
     required this.connections,
+    required this.roadmap,
   });
 
   final BuddyBackend backend;
   final ProfileController profile;
   final ConnectionsController connections;
+  final RoadmapController roadmap;
 
   void _openActivity(BuildContext context) {
     Navigator.of(context).push(
@@ -31,6 +36,8 @@ class YouTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         ConnectionsSection(connections: connections),
+        const SizedBox(height: 32),
+        GoalsSection(roadmap: roadmap),
         const SizedBox(height: 32),
         ProfileSection(profile: profile),
         const SizedBox(height: 32),

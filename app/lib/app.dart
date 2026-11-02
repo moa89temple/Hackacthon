@@ -14,7 +14,8 @@ import 'device/pairing_screen.dart';
 import 'device/qr_scanner.dart';
 import 'milestones/milestones_controller.dart';
 import 'profile/profile_controller.dart';
-import 'tabs/simple_tabs.dart';
+import 'roadmap/roadmap_controller.dart';
+import 'roadmap/roadmap_tab.dart';
 import 'tabs/today_tab.dart';
 import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
@@ -223,6 +224,7 @@ class _Tabs extends StatefulWidget {
 class _TabsState extends State<_Tabs> {
   static const _titles = ['Buddy', 'Today', 'Roadmap', 'You'];
   static const _todayTab = 1;
+  static const _roadmapTab = 2;
   static const _youTab = 3;
 
   late final ChatController _chat = ChatController(widget.backend)
@@ -236,6 +238,7 @@ class _TabsState extends State<_Tabs> {
     openTakeover: _openTakeover,
   )..load();
   late final MilestonesController _milestones = MilestonesController(widget.backend)..load();
+  late final RoadmapController _roadmap = RoadmapController(widget.backend)..load();
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
   int _selected = 0;
@@ -244,12 +247,14 @@ class _TabsState extends State<_Tabs> {
   void _refreshProfileAfterTurn() {
     final replying = _chat.replyInProgress != null;
     if (_wasReplying && !replying && _selected == _youTab) _refreshYouTab();
+    if (_wasReplying && !replying && _selected == _roadmapTab) _roadmap.load();
     _wasReplying = replying;
   }
 
   void _selectTab(int index) {
     setState(() => _selected = index);
     if (index == _youTab) _refreshYouTab();
+    if (index == _roadmapTab) _roadmap.load();
     if (index == _todayTab) {
       _milestones.load();
       // A read since the last look may have found that a login expired.
@@ -273,6 +278,13 @@ class _TabsState extends State<_Tabs> {
   void _refreshYouTab() {
     _profile.load();
     _connections.load();
+    _roadmap.load();
+  }
+
+  /// The Roadmap tab's way into the conversation. If Buddy is still replying, the Student is shown that instead.
+  void _askBuddy(String words) {
+    setState(() => _selected = 0);
+    if (_chat.canSend) _chat.send(words);
   }
 
   /// A Crisis card can arrive while the Student is on another tab, and they mustn't miss it.
@@ -289,6 +301,7 @@ class _TabsState extends State<_Tabs> {
     _profile.dispose();
     _connections.dispose();
     _milestones.dispose();
+    _roadmap.dispose();
     super.dispose();
   }
 
@@ -303,13 +316,14 @@ class _TabsState extends State<_Tabs> {
       body: IndexedStack(
         index: _selected,
         children: [
-          BuddyTab(chat: _chat, connections: _connections, openPhone: widget.openPhone, openDraft: widget.openDraft),
+          BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, openPhone: widget.openPhone, openDraft: widget.openDraft),
           TodayTab(milestones: _milestones, connections: _connections, openPhone: widget.openPhone),
-          const RoadmapTab(),
+          RoadmapTab(roadmap: _roadmap, openPhone: widget.openPhone, askBuddy: _askBuddy),
           YouTab(
             backend: widget.backend,
             profile: _profile,
             connections: _connections,
+            roadmap: _roadmap,
           ),
         ],
       ),

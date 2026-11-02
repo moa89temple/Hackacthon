@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../backend/buddy_backend.dart';
+import '../roadmap/roadmap_backend.dart';
 
 /// Lives as long as the app, so that a reply keeps streaming while the Student
 /// looks at another tab.
@@ -22,6 +23,9 @@ class ChatController extends ChangeNotifier {
 
   /// Why the latest turn failed, for the Student to read.
   String? turnError;
+
+  /// The message the Student sent last, which should be brought into view. Null until they send one.
+  ChatMessage? newestSent;
 
   /// The reply that just finished, which screen readers should read out.
   /// Replies loaded from history are never announced.
@@ -60,6 +64,10 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   List<MilestoneCardItem> newestMilestoneCards = const [];
 
+  /// The Roadmap cards from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  List<RoadmapCardItem> newestRoadmapCards = const [];
+
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
   Future<void> loadHistory() async {
@@ -77,7 +85,9 @@ class ChatController extends ChangeNotifier {
 
   Future<void> send(String text) async {
     final studentMessageAt = items.length;
-    items = [...items, ChatMessage(isFromBuddy: false, text: text)];
+    final sent = ChatMessage(isFromBuddy: false, text: text);
+    items = [...items, sent];
+    newestSent = sent;
     replyInProgress = '';
     turnError = null;
     newestReply = null;
@@ -88,6 +98,7 @@ class ChatController extends ChangeNotifier {
     newestActionCards = const [];
     newestDraftCard = null;
     newestMilestoneCards = const [];
+    newestRoadmapCards = const [];
     _changed();
 
     ChatMessage? reply;
@@ -132,6 +143,19 @@ class ChatController extends ChangeNotifier {
             final card = MilestoneCardItem(event.milestone);
             items = [...items, card];
             newestMilestoneCards = [...newestMilestoneCards, card];
+            _changed();
+          case ReplyRoadmapCard():
+            final card = RoadmapCardItem(event.card);
+            // The backend has already stopped any earlier waiting card working.
+            items = [
+              for (final existing in items)
+                if (existing is RoadmapCardItem && existing.card.status == RoadmapCardStatus.waiting)
+                  RoadmapCardItem(existing.card.withStatus(RoadmapCardStatus.replaced))
+                else
+                  existing,
+              card,
+            ];
+            newestRoadmapCards = [...newestRoadmapCards, card];
             _changed();
           case ReplyDone():
             reply = event.reply;
@@ -214,6 +238,15 @@ class ChatController extends ChangeNotifier {
     ];
     _changed();
     return edited.hiddenNote;
+  }
+
+  /// A Roadmap card as the backend says it stands, after a tap on it.
+  void showRoadmapCard(RoadmapCard card) {
+    items = [
+      for (final existing in items)
+        if (existing is RoadmapCardItem && existing.card.id == card.id) RoadmapCardItem(card) else existing,
+    ];
+    _changed();
   }
 
   void _changed() {
