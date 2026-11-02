@@ -26,6 +26,21 @@ describe("reading the course list", () => {
     expect(readCoursesPage('<div class="header-bar"><h1>All Courses</h1></div><div class="ic-Action-header"></div>')).toEqual([]);
   });
 
+  it("says it couldn't understand a table whose rows it can't read, rather than finding no courses", () => {
+    expect(readCoursesPage('<table id="my_courses_table"><tbody><tr class="new-row-style"><td>x</td></tr></tbody></table>')).toBeNull();
+    expect(
+      readCoursesPage('<table id="my_courses_table"><tbody><tr class="course-list-table-row"><td class="new-title"><a href="/courses/1">x</a></td></tr></tbody></table>'),
+    ).toBeNull();
+  });
+
+  it("can't tell whether they're a student when that column has gone, and says so", () => {
+    const [course] = readCoursesPage(
+      '<table id="my_courses_table"><tbody><tr class="course-list-table-row"><td class="course-list-course-title-column"><a href="/courses/1"><span class="name">Made-Up</span></a></td></tr></tbody></table>',
+    )!;
+
+    expect(course!.isStudent).toBeNull();
+  });
+
   it("says it couldn't understand a page that isn't the course list", () => {
     expect(readCoursesPage("<html><body><h1>Page Not Found</h1></body></html>")).toBeNull();
   });
@@ -58,6 +73,10 @@ describe("reading the assignments list", () => {
 
   it("finds nothing, and says so, when a course has no assignments", () => {
     expect(readAssignmentsPage('<div class="ig-row ig-row-empty"><div class="ig-empty-msg">No assignments</div></div>')).toEqual([]);
+  });
+
+  it("says it couldn't understand rows it can't read a name from", () => {
+    expect(readAssignmentsPage('<li class="assignment" id="assignment_1"><a class="new-title">x</a></li>')).toBeNull();
   });
 
   it("says it couldn't understand a page whose list never came", () => {
@@ -95,6 +114,10 @@ describe("reading the grades page", () => {
     expect(grades.total).toBe("91.2%");
   });
 
+  it("says it couldn't understand a table whose rows it doesn't know", () => {
+    expect(readGradesPage('<table id="grades_summary"><tr class="new-row"><td>18</td></tr></table>', now)).toBeNull();
+  });
+
   it("says it couldn't understand a page with no grades table", () => {
     expect(readGradesPage('<div id="grade-summary-react"></div>', now)).toBeNull();
   });
@@ -123,6 +146,10 @@ describe("reading the announcements list", () => {
 
   it("finds nothing, and says so, when there are none", () => {
     expect(readAnnouncementsPage('<div class="announcements-v2__wrapper"><h2>No Announcements</h2></div>', now)).toEqual([]);
+  });
+
+  it("says it couldn't understand rows it can't read a title from", () => {
+    expect(readAnnouncementsPage('<div class="ic-announcement-row"><h3>x</h3></div>', now)).toBeNull();
   });
 
   it("says it couldn't understand a page whose list never came", () => {

@@ -902,7 +902,7 @@ describe("the Canvas reader, against made-up pages in the real browser", () => {
       browser,
       connection: canvasAt(HOME),
       sites,
-      student: () => ({ hasReadPermission: true, takeoverUnderWay: false }),
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: false, oldLoginRemains: false }),
       print: (line) => lines.push(line),
     });
     return { exitCode, output: lines.join("\n") };

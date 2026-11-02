@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Site } from "../src/browser-access.ts";
+import { PageBlocked } from "../src/buddys-browser.ts";
 import { canvas } from "../src/canvas.ts";
 import { settings } from "../src/settings.ts";
 import { BackendHarness, TEST_CHAT_MODEL } from "./support/backend-harness.ts";
-import { CANVAS_HOME, saveCanvasPages } from "./support/canvas-pages.ts";
+import { canvasPage, CANVAS_HOME, saveCanvasPages } from "./support/canvas-pages.ts";
 import { toolUseBlock } from "./support/scripted-claude.ts";
 
 /**
@@ -64,6 +65,21 @@ async function requestCard(input: unknown): Promise<any> {
 
 describe("on the real Canvas", () => {
   beforeEach(() => start(settings.sites.canvas));
+
+  it.each(GRADED_WORK)("refuses %s, with its saved page there to be read", async (_name, url) => {
+    backend.browser.savedPages.set(url, canvasPage("<h1>Made-up page Buddy must never read</h1>", { text: "Made-up words" }));
+
+    await expect(backend.browserAccess.read(url)).rejects.toThrow(PageBlocked);
+
+    expect(backend.browser.actions).toEqual([]);
+  });
+
+  it.each(GRADED_WORK)("refuses a redirect to %s from a page it may open", async (_name, url) => {
+    const page = `${CANVAS_HOME}/courses/101/grades`;
+    backend.browser.savedPages.set(page, canvasPage("<h1>Made-up page</h1>", { finalUrl: url }));
+
+    await expect(backend.browserAccess.read(page)).rejects.toThrow(PageBlocked);
+  });
 
   it("offers no way to submit anything at all", async () => {
     backend.claude.willReply({ chunks: ["Hello."] });

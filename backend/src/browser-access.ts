@@ -343,7 +343,8 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
           failIfStudentInControl();
           // A page left open could otherwise write its login straight back.
           await browser.clearScreen(guards.forReading());
-          await browser.forgetLogin(site.loginHosts);
+          // The site's own address too: its storage belongs to that exact origin, whether or not a cookie is left.
+          await browser.forgetLogin([...new Set([new URL(site.homeUrl).hostname, ...site.loginHosts])]);
         });
       } catch (error) {
         if (error instanceof TakeoverInProgress) throw error;

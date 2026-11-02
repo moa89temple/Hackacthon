@@ -80,7 +80,7 @@ async function check(browser: RecordingBrowser, more: Partial<Parameters<typeof 
     browser,
     connection: canvas,
     sites: settings.sites,
-    student: () => ({ hasReadPermission: true, takeoverUnderWay: false }),
+    student: () => ({ hasReadPermission: true, takeoverUnderWay: false, oldLoginRemains: false }),
     print: (line) => lines.push(line),
     ...more,
   });
@@ -176,6 +176,32 @@ describe("what the check prints", () => {
     // The second course's empty lists are real pages with nothing on them.
     expect(summary).toContain("/courses/:id/announcements");
     expect(summary).not.toContain("<");
+  });
+
+  it("gives the structure of a page that had things on it, when a whole kind came out empty", async () => {
+    const browser = browserWithAllPages();
+    // The list is there, but none of its due dates can be read.
+    const page = browser.savedPages.get(coursePage("101", "assignments"))!;
+    browser.savedPages.set(coursePage("101", "assignments"), { ...page, html: page.html!.replaceAll("assignment-date-due", "new-due-date") });
+    browser.savedPages.set(coursePage("101", "grades"), canvasPage('<table id="grades_summary"></table>'));
+
+    const { output } = await check(browser);
+
+    expect(output).toMatch(/due dates: 0\b/);
+    const summary = output.slice(output.indexOf("Structure"));
+    expect(summary).toContain("/courses/:id/assignments");
+    expect(summary).toContain("div.ig-details__item.new-due-date");
+  });
+
+  it("gives one page the reader couldn't recognize, even after one with nothing on it", async () => {
+    const browser = browserWithAllPages();
+    browser.savedPages.set(coursePage("101", "grades"), canvasPage('<table id="grades_summary"></table>'));
+    browser.savedPages.set(coursePage("102", "grades"), canvasPage(LEAKY_HTML));
+
+    const { output } = await check(browser);
+
+    expect(output).toContain("the reader couldn't recognize this page");
+    expect(output).toContain("div.real-class");
   });
 
   it("uses a throwaway database, leaving nothing behind", async () => {
@@ -343,6 +369,16 @@ describe("the structure summary", () => {
     expect(summary).not.toContain("made-up-rich");
   });
 
+  it("drops a short name that's also words on the page, when it's shaped like someone's words", () => {
+    const summary = structureOf(
+      `<body><p>Jane Doe takes CIS 1068 and has a grade and a title</p><div class="Jane-Doe CIS-1068 grade title ig-title"></div></body>`,
+    ).join("\n");
+
+    expect(summary).not.toContain("Jane");
+    expect(summary).not.toContain("CIS");
+    expect(summary).toContain("div.grade.title.ig-title");
+  });
+
   it("drops a name that's also words on the page", () => {
     const summary = structureOf(`<body><p>Made Up Biology Course</p><div class="made-up-biology-course keep"></div></body>`).join("\n");
 
@@ -390,7 +426,7 @@ describe("when the Student isn't ready", () => {
     const browser = browserWithAllPages();
 
     const { output, exitCode } = await check(browser, {
-      student: () => ({ hasReadPermission: false, takeoverUnderWay: false }),
+      student: () => ({ hasReadPermission: false, takeoverUnderWay: false, oldLoginRemains: false }),
     });
 
     expect(exitCode).toBe(2);
@@ -403,7 +439,7 @@ describe("when the Student isn't ready", () => {
     const browser = browserWithAllPages();
 
     const { output, exitCode } = await check(browser, {
-      student: () => ({ hasReadPermission: true, takeoverUnderWay: true }),
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: true, oldLoginRemains: false }),
     });
 
     expect(exitCode).toBe(3);
@@ -411,12 +447,37 @@ describe("when the Student isn't ready", () => {
     expect(browser.actions).toEqual([]);
   });
 
+  it("opens nothing while an old login is still waiting to be deleted, and says so", async () => {
+    const browser = browserWithAllPages();
+
+    const { output, exitCode } = await check(browser, {
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: false, oldLoginRemains: true }),
+    });
+
+    expect(exitCode).toBe(5);
+    expect(output).toMatch(/old login/);
+    expect(browser.actions).toEqual([]);
+  });
+
+  it("stops opening pages if the Student revokes the Read Permission partway through", async () => {
+    const browser = browserWithAllPages();
+    let asked = 0;
+
+    const { output, exitCode } = await check(browser, {
+      student: () => ({ hasReadPermission: ++asked <= 2, takeoverUnderWay: false, oldLoginRemains: false }),
+    });
+
+    expect(exitCode).toBe(2);
+    expect(browser.actions.length).toBeLessThanOrEqual(1);
+    expect(output).toMatch(/revoked/);
+  });
+
   it("stops opening pages if the Student takes control partway through", async () => {
     const browser = browserWithAllPages();
     let asked = 0;
 
     const { output } = await check(browser, {
-      student: () => ({ hasReadPermission: true, takeoverUnderWay: ++asked > 2 }),
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: ++asked > 2, oldLoginRemains: false }),
     });
 
     expect(browser.actions.length).toBeLessThanOrEqual(1);
@@ -452,14 +513,14 @@ describe("reading the Student's state from the real database", () => {
   const newEntry = { kind: "x", title: "x", at: new Date("2026-11-02T14:00:00Z") };
 
   it("finds no Read Permission in a database that isn't there, and creates nothing", () => {
-    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: false, takeoverUnderWay: false });
+    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: false, takeoverUnderWay: false, oldLoginRemains: false });
     expect(() => readFileSync(path)).toThrow();
   });
 
   it("finds nothing in a database with no Read Permission", () => {
     openStore(path).close();
 
-    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: false, takeoverUnderWay: false });
+    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: false, takeoverUnderWay: false, oldLoginRemains: false });
   });
 
   it("finds the Student's tap, without changing the file, while the backend has it open", () => {
@@ -467,12 +528,21 @@ describe("reading the Student's state from the real database", () => {
     store.giveReadPermission(THE_STUDENT, canvas.id, { address: null, givenAt: newEntry.at }, newEntry);
     store.beginTakeover(THE_STUDENT, { site: canvas.id, liveViewToken: "made-up", startedAt: newEntry.at });
 
-    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: true, takeoverUnderWay: true });
+    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: true, takeoverUnderWay: true, oldLoginRemains: false });
 
     store.close();
     const before = readFileSync(path);
-    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: true, takeoverUnderWay: true });
+    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: true, takeoverUnderWay: true, oldLoginRemains: false });
     expect(readFileSync(path).equals(before)).toBe(true);
+  });
+
+  it("finds a login still waiting to be deleted", () => {
+    const store = openStore(path);
+    store.giveReadPermission(THE_STUDENT, canvas.id, { address: null, givenAt: newEntry.at }, newEntry);
+    store.revokeReadPermission(THE_STUDENT, canvas.id, newEntry, canvas.id);
+    store.close();
+
+    expect(readStudentState(path, canvas.id)).toEqual({ hasReadPermission: false, takeoverUnderWay: false, oldLoginRemains: true });
   });
 
   it("doesn't count another Connection's Read Permission", () => {

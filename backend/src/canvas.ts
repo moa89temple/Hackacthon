@@ -61,19 +61,29 @@ function courseFact(course: CourseOnPage): ConnectionFactToStore {
   };
 }
 
-function assignmentDetail(assignment: AssignmentOnList & Partial<AssignmentOnGrades>): string {
+/** An assignment from either page or both, so what only the grades page knows may not be known. */
+type MergedAssignment = AssignmentOnList & Partial<AssignmentOnGrades>;
+
+/** Null when the grades page wasn't there to say. */
+function submissionWords({ missing, late, submitted }: { missing?: boolean; late?: boolean; submitted?: boolean | null }): string | null {
+  if (missing) return "marked missing";
+  if (late) return "marked late";
+  if (submitted === true) return "submitted";
+  if (submitted === false) return "not submitted";
+  return null;
+}
+
+function assignmentDetail(assignment: MergedAssignment): string {
   const parts = [assignment.dueAt ? `Due ${describeInPhiladelphia(new Date(assignment.dueAt))}` : "No due date"];
   if (assignment.points) parts.push(`${assignment.points} points`);
-  if (assignment.missing) parts.push("Marked missing");
-  else if (assignment.late) parts.push("Marked late");
-  else if (assignment.submitted === true) parts.push("Submitted");
-  else if (assignment.submitted === false) parts.push("Not submitted");
+  const submission = submissionWords(assignment);
+  if (submission) parts.push(submission[0]!.toUpperCase() + submission.slice(1));
   return parts.join(" · ");
 }
 
 /** The two pages list the same assignments, with different things known about each. */
-function mergedAssignments(list: AssignmentOnList[], grades: AssignmentOnGrades[]): (AssignmentOnList & Partial<AssignmentOnGrades>)[] {
-  const merged = new Map<string, AssignmentOnList & Partial<AssignmentOnGrades>>();
+function mergedAssignments(list: AssignmentOnList[], grades: AssignmentOnGrades[]): MergedAssignment[] {
+  const merged = new Map<string, MergedAssignment>();
   for (const assignment of list) merged.set(assignment.id, assignment);
   for (const assignment of grades) {
     const listed = merged.get(assignment.id);
@@ -148,6 +158,7 @@ function announcementFact(course: CourseOnPage, announcement: AnnouncementOnPage
 
 type PageOfCourse = "assignments" | "grades" | "announcements";
 /** Which kinds of fact each page is the source of. Assignments and grades can each come from either. */
+const ALL_COURSE_FACTS: CanvasData["kind"][] = ["assignment", "grade", "course_grade", "announcement"];
 const FACTS_FROM: Record<PageOfCourse, CanvasData["kind"][]> = {
   assignments: ["assignment", "grade"],
   grades: ["assignment", "grade", "course_grade"],
@@ -202,7 +213,12 @@ async function readCanvas(home: string, { browser, now, previous, reportMissed }
 
   for (const course of courses.slice(0, MOST_COURSES)) {
     facts.push(courseFact(course));
-    // Only the Student's own work: a course they help teach would show other people's.
+    // Only the Student's own work: a course they help teach would show other people's. If the page
+    // doesn't say which it is, nothing gets opened and nothing Buddy already has gets lost.
+    if (course.isStudent === null) {
+      reportMissed(MISSED_PART);
+      carryForward.push({ courseId: course.id, kinds: ALL_COURSE_FACTS });
+    }
     if (!course.isStudent) continue;
 
     const list = await openCoursePage(course, "assignments", readAssignmentsPage);
@@ -236,23 +252,23 @@ function eventsBetween(before: FactFromConnection[], after: ConnectionFactToStor
     events.push({ kind, factKey: fact.key, text: fact.detail ? `${fact.text} · ${fact.detail}` : fact.text, data });
 
   for (const fact of after) {
-    const now = dataOf(fact);
+    const current = dataOf(fact);
     const was = known.get(fact.key);
-    if (!now) continue;
+    if (!current) continue;
     // The Student deleted or renamed one whose source had gone, so there's nothing to compare it with.
     if (was === null) continue;
-    switch (now.kind) {
+    switch (current.kind) {
       case "assignment":
-        if (!was) events.push({ kind: "new_assignment", factKey: fact.key, text: fact.text, data: { dueAt: now.dueAt } });
-        else if (was.kind === "assignment" && was.dueAt !== now.dueAt) add("due_date_changed", fact, { from: was.dueAt, to: now.dueAt });
+        if (!was) events.push({ kind: "new_assignment", factKey: fact.key, text: fact.text, data: { dueAt: current.dueAt } });
+        else if (was.kind === "assignment" && was.dueAt !== current.dueAt) add("due_date_changed", fact, { from: was.dueAt, to: current.dueAt });
         break;
       case "grade":
-        if (!was) add("new_grade", fact, { to: now.score, points: now.points });
-        else if (was.kind === "grade" && was.score !== now.score) add("grade_changed", fact, { from: was.score, to: now.score, points: now.points });
+        if (!was) add("new_grade", fact, { to: current.score, points: current.points });
+        else if (was.kind === "grade" && was.score !== current.score) add("grade_changed", fact, { from: was.score, to: current.score, points: current.points });
         break;
       case "course_grade":
-        if (!was) add("new_course_grade", fact, { to: now.total });
-        else if (was.kind === "course_grade" && was.total !== now.total) add("course_grade_changed", fact, { from: was.total, to: now.total });
+        if (!was) add("new_course_grade", fact, { to: current.total });
+        else if (was.kind === "course_grade" && was.total !== current.total) add("course_grade_changed", fact, { from: was.total, to: current.total });
         break;
       case "announcement":
         if (!was) add("new_announcement", fact);
@@ -290,17 +306,9 @@ function countEvents(events: ConnectionEventToStore[]): string {
 function assignmentLine(fact: FactFromConnection): string {
   const data = dataOf(fact) as Extract<CanvasData, { kind: "assignment" }>;
   const when = data.dueAt ? describeInPhiladelphia(new Date(data.dueAt)) : "No due date";
-  const status = data.missing
-    ? ", marked missing"
-    : data.late
-      ? ", marked late"
-      : data.submitted === true
-        ? ", submitted"
-        : data.submitted === false
-          ? ", not submitted"
-          : "";
+  const submission = submissionWords(data);
   const points = data.points ? `, ${data.points} points` : "";
-  return `- ${when}: ${JSON.stringify(fact.text)}${points}${status}`;
+  return `- ${when}: ${JSON.stringify(fact.text)}${points}${submission ? `, ${submission}` : ""}`;
 }
 
 function section(heading: string, lines: string[]): string[] {

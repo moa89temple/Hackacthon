@@ -23,11 +23,14 @@ export const EXIT_FAILED = 1;
 export const EXIT_NO_READ_PERMISSION = 2;
 export const EXIT_TAKEOVER_UNDER_WAY = 3;
 export const EXIT_LOGIN_NEEDED = 4;
+export const EXIT_OLD_LOGIN_REMAINS = 5;
 
 const MOST_STRUCTURE_LINES = 400;
 const LONGEST_NAME = 60;
-/** Shorter names, such as "grade" or "title", are on most pages in ordinary words and say nothing. */
+/** A plain word shorter than this, such as "grade" or "title", is on most pages and says nothing. */
 const SHORTEST_NAME_TO_COMPARE = 8;
+/** A name in parts or with capitals could be someone's words, such as Jane-Doe or CIS-1068, even when it's short. */
+const SHORTEST_COMPOUND_NAME_TO_COMPARE = 5;
 /** A whole part of a host name, such as "cloudfront". Shorter ones, such as "events" or "cdn", are ordinary words. */
 const SHORTEST_HOST_PART_TO_COMPARE = 8;
 
@@ -117,7 +120,8 @@ function shownWords(page: Html.Document): string {
 function cleanName(raw: string, pageWords: string): string | null {
   if (raw.length > LONGEST_NAME || !/^[A-Za-z_][\w-]*$/.test(raw)) return null;
   const name = normalized(raw);
-  if (name.length >= SHORTEST_NAME_TO_COMPARE && pageWords.includes(name)) return null;
+  const shortest = /[-_A-Z]/.test(raw) ? SHORTEST_COMPOUND_NAME_TO_COMPARE : SHORTEST_NAME_TO_COMPARE;
+  if (name.length >= shortest && pageWords.includes(name)) return null;
   return raw.replace(/\d+/g, ":id");
 }
 
@@ -211,7 +215,7 @@ interface Refusal {
  */
 function watchingBrowser(
   inner: BuddysBrowser,
-  isStudentInControl: () => boolean,
+  mayGoOn: () => boolean,
   visits: PageVisit[],
   refusals: Refusal[],
 ): BuddysBrowser {
@@ -226,7 +230,8 @@ function watchingBrowser(
     forgetLogin: async () => notInACheck(),
 
     async read(url, guard) {
-      if (isStudentInControl()) throw new TakeoverInProgress();
+      // The same answer to the reader for either, which stops it. The check says which it was afterwards.
+      if (!mayGoOn()) throw new TakeoverInProgress();
       const watching: RequestGuard = {
         check(request) {
           const decision = guard.check(request);
@@ -292,6 +297,8 @@ function countedLines<T>(items: T[], line: (item: T) => string): string[] {
 export interface StudentState {
   hasReadPermission: boolean;
   takeoverUnderWay: boolean;
+  /** A revoked login is still in Buddy's Browser. Nothing may read with it, under a new Read Permission or not. */
+  oldLoginRemains: boolean;
 }
 
 /**
@@ -307,9 +314,14 @@ export function readStudentState(databasePath: string, connection: string): Stud
       .prepare("SELECT 1 FROM read_permissions WHERE student_id = ? AND connection = ?")
       .get(THE_STUDENT, connection);
     const takeover = database.prepare("SELECT 1 FROM takeovers WHERE student_id = ?").get(THE_STUDENT);
-    return { hasReadPermission: permission !== undefined, takeoverUnderWay: takeover !== undefined };
+    const oldLogin = database.prepare("SELECT 1 FROM logins_to_delete WHERE student_id = ? AND site = ?").get(THE_STUDENT, connection);
+    return {
+      hasReadPermission: permission !== undefined,
+      takeoverUnderWay: takeover !== undefined,
+      oldLoginRemains: oldLogin !== undefined,
+    };
   } catch {
-    return { hasReadPermission: false, takeoverUnderWay: false };
+    return { hasReadPermission: false, takeoverUnderWay: false, oldLoginRemains: false };
   } finally {
     database?.close();
   }
@@ -319,7 +331,7 @@ export interface CanvasCheckDeps {
   browser: BuddysBrowser;
   connection: ConnectionType;
   sites: Record<string, Site>;
-  /** Asked before anything opens, and before each page, because the Student can start a Takeover at any time. */
+  /** Asked before anything opens, and before each page, because the Student can revoke or start a Takeover at any time. */
   student: () => StudentState;
   print: (line: string) => void;
 }
@@ -335,7 +347,11 @@ export async function runCanvasCheck(deps: CanvasCheckDeps): Promise<number> {
 }
 
 async function runChecked({ browser, connection, sites, student, print }: CanvasCheckDeps): Promise<number> {
-  const { hasReadPermission, takeoverUnderWay } = student();
+  const { hasReadPermission, takeoverUnderWay, oldLoginRemains } = student();
+  if (oldLoginRemains) {
+    print(`${connection.name}'s old login is still waiting to be deleted, so nothing was opened. Start the backend with Buddy's Browser running, wait a minute, then run this again.`);
+    return EXIT_OLD_LOGIN_REMAINS;
+  }
   if (!hasReadPermission) {
     print(`${connection.name} has no Read Permission, so nothing was opened. On the phone: You tab, Connect ${connection.name}, Give Read Permission. Then run this again.`);
     return EXIT_NO_READ_PERMISSION;
@@ -347,7 +363,13 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
 
   const visits: PageVisit[] = [];
   const refusals: Refusal[] = [];
-  const watched = watchingBrowser(browser, () => student().takeoverUnderWay, visits, refusals);
+  let revokedMeanwhile = false;
+  const mayGoOn = () => {
+    const now = student();
+    revokedMeanwhile = !now.hasReadPermission || now.oldLoginRemains;
+    return !revokedMeanwhile && !now.takeoverUnderWay;
+  };
+  const watched = watchingBrowser(browser, mayGoOn, visits, refusals);
 
   // In memory, so that there's no file for what's read to be left in. The Read Permission was the Student's tap, checked above.
   const store = openStore(":memory:");
@@ -384,6 +406,10 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
     store.close();
   }
 
+  if (revokedMeanwhile) {
+    print(`The Read Permission for ${connection.name} was revoked during the check, so it stopped. Nothing was saved.`);
+    return EXIT_NO_READ_PERMISSION;
+  }
   print(`${connection.name} check. This shows counts and page structure only, and nothing was saved.`);
   print("Read Permission: given by the Student");
   print(`Login: ${reading.needsLogin ? "not logged in. The Student needs to log in through a Takeover: You tab, Log in to Canvas." : "works"}`);
@@ -402,13 +428,14 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
   for (const line of refusalLines) print(line);
 
   const now = clock.now();
-  const summaries = reading.needsLogin ? [] : pagesWithNothing(visits, now);
+  const emptyKinds = reading.counts.filter(([, count]) => count === 0).map(([kind]) => kind);
+  const summaries = reading.needsLogin ? [] : pagesToDescribe(visits, emptyKinds, now);
   if (summaries.length > 0) {
     print("");
     print("Structure of the pages where the reader found nothing (the first of each kind):");
-    for (const { path, understood, html } of summaries) {
+    for (const { path, why, html } of summaries) {
       print("");
-      print(`${path}  (${understood ? "the reader knows this page, and it had nothing on it" : "the reader couldn't recognize this page"})`);
+      print(`${path}  (${why})`);
       for (const line of structureOf(html)) print(line);
     }
   }
@@ -446,17 +473,39 @@ function cleanHost(host: string, sites: Record<string, Site>, pageWords: string)
   return onThePage ? "(a host named after words on the page)" : host;
 }
 
-function pagesWithNothing(visits: PageVisit[], now: Date): { path: string; understood: boolean; html: string }[] {
-  const seen = new Set<PageKind>();
-  const summaries: { path: string; understood: boolean; html: string }[] = [];
+/** Which page to look at when a whole kind comes out empty, even if that page had other things on it. */
+const PAGE_FOR_EMPTY_KIND: Partial<Record<string, PageKind>> = {
+  courses: "course list",
+  assignments: "assignments",
+  "due dates": "assignments",
+  grades: "grades",
+  announcements: "announcements",
+};
+
+const WHY_RECOGNIZED = "the reader knows this page, and it had nothing on it";
+const WHY_NOT_RECOGNIZED = "the reader couldn't recognize this page";
+const WHY_KIND_EMPTY = "a whole kind of thing came out empty, and this is where it should have been";
+
+function pagesToDescribe(visits: PageVisit[], emptyKinds: string[], now: Date): { path: string; why: string; html: string }[] {
+  const seen = new Set<string>();
+  const summaries: { path: string; why: string; html: string }[] = [];
+  const pageKindsToShow = new Set(emptyKinds.map((kind) => PAGE_FOR_EMPTY_KIND[kind]));
+
   for (const visit of visits) {
     if (visit.html === null || visit.landed !== visit.asked) continue;
     const page = PAGES.find(({ path }) => path.test(visit.asked));
-    if (!page || seen.has(page.kind)) continue;
+    if (!page) continue;
     const found = page.found(visit.html, now);
-    if (found !== null && found > 0) continue;
-    seen.add(page.kind);
-    summaries.push({ path: visit.asked, understood: found !== null, html: visit.html });
+    let why: string | null = null;
+    if (found === null) why = WHY_NOT_RECOGNIZED;
+    else if (found === 0) why = WHY_RECOGNIZED;
+    else if (pageKindsToShow.has(page.kind)) why = WHY_KIND_EMPTY;
+    if (why === null) continue;
+    // One of each kind for each reason, so that an empty page doesn't hide one that couldn't be recognized.
+    const key = `${page.kind} ${why}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    summaries.push({ path: visit.asked, why, html: visit.html });
   }
   return summaries;
 }

@@ -1,6 +1,7 @@
 import { parse } from "parse5";
 import type { DefaultTreeAdapterTypes as Html } from "parse5";
 import { wallClockInPhiladelphia } from "./calendar-feed.ts";
+import { PHILADELPHIA } from "./clock.ts";
 
 /**
  * Reads Canvas's pages. There's no model here and no fetching: each function takes a page's HTML, as it
@@ -13,8 +14,11 @@ export interface CourseOnPage {
   id: string;
   name: string;
   term: string;
-  /** Only pages about the Student's own work get read, so a course they help teach isn't opened. */
-  isStudent: boolean;
+  /**
+   * Only pages about the Student's own work get read, so a course they help teach isn't opened. Null
+   * when the page doesn't say, which is not the same as saying they aren't.
+   */
+  isStudent: boolean | null;
 }
 
 export interface AssignmentOnList {
@@ -127,21 +131,26 @@ export function readCoursesPage(html: string): CourseOnPage[] | null {
     return isCourseList ? [] : null;
   }
 
+  const rows = findAll(table, withClass("course-list-table-row"));
   const courses: CourseOnPage[] = [];
-  for (const row of findAll(table, withClass("course-list-table-row"))) {
+  let namedRows = 0;
+  for (const row of rows) {
     const title = find(row, withClass("course-list-course-title-column"));
     const id = title ? idFromLink(find(title, (element) => element.tagName === "a"), /\/courses\/(\d+)(?:[/?#]|$)/) : null;
     const name = title ? wordsIn(find(title, withClass("name"))) : "";
+    if (name) namedRows++;
     // No link means Canvas won't let the Student into it yet, so there's nothing to read.
     if (!id || !name) continue;
+    const role = wordsIn(find(row, withClass("course-list-enrolled-as-column")));
     courses.push({
       id,
       name,
       term: wordsIn(find(row, withClass("course-list-term-column"))),
-      isStudent: /student/i.test(wordsIn(find(row, withClass("course-list-enrolled-as-column")))),
+      isStudent: role === "" ? null : /student/i.test(role),
     });
   }
-  return courses;
+  // Canvas leaves the table out when there are no courses, so a table with no rows it can read has changed.
+  return namedRows === 0 ? null : courses;
 }
 
 export function readAssignmentsPage(html: string): AssignmentOnList[] | null {
@@ -149,7 +158,7 @@ export function readAssignmentsPage(html: string): AssignmentOnList[] | null {
   const rows = findAll(page, (element) => hasClass(element, "assignment") && /^assignment_\d+$/.test(attribute(element, "id") ?? ""));
   if (rows.length === 0) return find(page, withClass("ig-empty-msg")) ? [] : null;
 
-  return rows.flatMap((row) => {
+  const assignments = rows.flatMap((row) => {
     const name = wordsIn(find(row, withClass("ig-title")));
     if (!name) return [];
     const due = find(row, withClass("assignment-date-due"));
@@ -166,6 +175,7 @@ export function readAssignmentsPage(html: string): AssignmentOnList[] | null {
       },
     ];
   });
+  return assignments.length > 0 ? assignments : null;
 }
 
 export function readGradesPage(html: string, now: Date): GradesOnPage | null {
@@ -174,8 +184,11 @@ export function readGradesPage(html: string, now: Date): GradesOnPage | null {
 
   const assignments: AssignmentOnGrades[] = [];
   let total: string | null = null;
+  const studentRows = findAll(table, withClass("student_assignment"));
+  // A real grades table always has its total, so cells with no row of the Student's mean it has changed.
+  if (studentRows.length === 0 && find(table, (element) => element.tagName === "td")) return null;
   // Only rows marked as the Student's. The class's mean, high and low are in rows of their own.
-  for (const row of findAll(table, withClass("student_assignment"))) {
+  for (const row of studentRows) {
     if (hasClass(row, "final_grade")) {
       total = wordsIn(find(row, withClass("grade"))) || null;
       continue;
@@ -219,7 +232,7 @@ export function readAnnouncementsPage(html: string, now: Date): AnnouncementOnPa
     return wrapper && /no announcements/i.test(wordsIn(wrapper)) ? [] : null;
   }
 
-  return rows.flatMap((row) => {
+  const announcements = rows.flatMap((row) => {
     const link = find(row, withClass("ic-item-row__content-link"));
     const id = idFromLink(link, /\/discussion_topics\/(\d+)(?:[/?#]|$)/);
     const title = wordsIn(link);
@@ -233,6 +246,7 @@ export function readAnnouncementsPage(html: string, now: Date): AnnouncementOnPa
       },
     ];
   });
+  return announcements.length > 0 ? announcements : null;
 }
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -268,6 +282,6 @@ export function readCanvasDate(text: string, now: Date): string | null {
 
   const written = new Date(at);
   // February 31 comes out in March, and isn't a date.
-  const sameDay = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", day: "numeric" }).format(written);
+  const sameDay = new Intl.DateTimeFormat("en-US", { timeZone: PHILADELPHIA, day: "numeric" }).format(written);
   return Number(sameDay) === day ? written.toISOString() : null;
 }

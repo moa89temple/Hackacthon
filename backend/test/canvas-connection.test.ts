@@ -14,6 +14,8 @@ import {
 } from "./support/canvas-pages.ts";
 
 const CANVAS = canvas.id;
+/** Canvas's own address as well as the hosts holding its login, so that its own storage goes too. */
+const LOGIN_HOSTS = ["templeu.instructure.com", ...settings.sites.canvas.loginHosts];
 let backend: BackendHarness;
 
 beforeEach(async () => {
@@ -217,6 +219,29 @@ describe("reading Canvas", () => {
     expect((await statusOf()).needsLogin).toBe(false);
   });
 
+  it("keeps what it had when a course list it can't read would otherwise look like no courses", async () => {
+    await connectCanvas();
+    const before = (await factsFromCanvas()).length;
+    changeSavedPage(backend.browser, COURSES_PAGE, (html) => html.replaceAll("course-list-table-row", "new-row-style"));
+
+    await backend.readNow(CANVAS);
+
+    expect((await factsFromCanvas()).length).toBe(before);
+    expect((await statusOf()).lastReadProblem).toMatch(/couldn't make sense/);
+  });
+
+  it("keeps a course's facts, and says so, when it can't tell whether they're still a student in it", async () => {
+    await connectCanvas();
+    changeSavedPage(backend.browser, COURSES_PAGE, (html) => html.replaceAll("course-list-enrolled-as-column", "new-role-column"));
+    backend.browser.actions.length = 0;
+
+    await backend.readNow(CANVAS);
+
+    expect(await fact("Made-Up Biology 1111: Made-Up Lab Report 3")).toBeDefined();
+    expect((await statusOf()).lastReadProblem).toMatch(/part of Canvas/);
+    expect(pagesOpened()).toEqual([COURSES_PAGE]);
+  });
+
   it("still gets grades from the assignments list when the grades page can't be understood", async () => {
     changeSavedPage(backend.browser, coursePage("101", "grades"), () => '<div id="grade-summary-react"></div>');
 
@@ -350,6 +375,27 @@ describe("what's new since the last read", () => {
     expect(await events()).toEqual([]);
   });
 
+  it("forgets the events about a fact the Student deletes or rewrites, because the Profile is theirs", async () => {
+    await connectCanvas();
+    changeSavedPage(backend.browser, coursePage("101", "grades"), (html) =>
+      html.replace(/18\.0/g, "12.0").replace("\n                      18\n", "\n                      12\n").replace(/91\.2%/g, "84%"),
+    );
+    changeSavedPage(backend.browser, coursePage("101", "assignments"), (html) => html.replace("<b>18</b>", "<b>12</b>"));
+    await backend.readNow(CANVAS);
+    expect((await events()).map((event) => event.kind)).toEqual(expect.arrayContaining(["grade_changed", "course_grade_changed"]));
+
+    await backend.deleteFact((await fact("Made-Up Lab Report 2 in"))!.id);
+    await backend.editFact((await fact("Current grade in"))!.id, "My grade, in my own words");
+
+    expect((await events()).map((event) => event.kind)).toEqual([]);
+    backend.claude.willReply(
+      { content: [toolUseBlock("check_canvas", { read_again: false })], stopReason: "tool_use" },
+      { chunks: ["Okay."] },
+    );
+    await backend.sendAndCollect("How am I doing?");
+    expect(JSON.stringify(backend.claude.requests.at(-1)!.messages)).not.toContain("12 out of 20");
+  });
+
   it("says how many in Activity, without any of the records", async () => {
     await connectCanvas();
     changeSavedPage(backend.browser, coursePage("102", "announcements"), () =>
@@ -471,7 +517,7 @@ describe("the login check at Done", () => {
 
     expect(finished.signedIn).toBe(false);
     expect(pagesOpened()).toEqual([]);
-    expect(backend.browser.actions.at(-1)).toEqual({ type: "forget-login", hosts: settings.sites.canvas.loginHosts });
+    expect(backend.browser.actions.at(-1)).toEqual({ type: "forget-login", hosts: LOGIN_HOSTS });
   });
 
   it("is refused directly too, without a Read Permission", async () => {
@@ -497,7 +543,7 @@ describe("revoking the Read Permission", () => {
     expect(await backend.connectionEvents(CANVAS)).toEqual([]);
     expect(backend.browser.actions).toEqual([
       { type: "clear-screen" },
-      { type: "forget-login", hosts: settings.sites.canvas.loginHosts },
+      { type: "forget-login", hosts: LOGIN_HOSTS },
     ]);
     expect(await statusOf()).toMatchObject({ on: false, loginNotDeletedYet: false });
     expect(backend.storageContains("Made-Up Lab Report")).toBe(false);
@@ -549,7 +595,7 @@ describe("revoking the Read Permission", () => {
     await backend.readDueConnections();
 
     expect(await statusOf()).toMatchObject({ loginNotDeletedYet: false });
-    expect(backend.browser.actions.at(-1)).toEqual({ type: "forget-login", hosts: settings.sites.canvas.loginHosts });
+    expect(backend.browser.actions.at(-1)).toEqual({ type: "forget-login", hosts: LOGIN_HOSTS });
   });
 
   it("remembers that across a restart", async () => {
@@ -561,7 +607,7 @@ describe("revoking the Read Permission", () => {
     backend.browser.unreachable = false;
     await backend.readDueConnections();
 
-    expect(backend.browser.actions.at(-1)).toEqual({ type: "forget-login", hosts: settings.sites.canvas.loginHosts });
+    expect(backend.browser.actions.at(-1)).toEqual({ type: "forget-login", hosts: LOGIN_HOSTS });
     expect(await statusOf()).toMatchObject({ loginNotDeletedYet: false });
   });
 

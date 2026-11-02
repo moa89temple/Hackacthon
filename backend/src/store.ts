@@ -291,7 +291,7 @@ export interface Store {
   editProfileFact(studentId: string, id: number, text: string, editedAt: Date): StoredProfileFact | null;
   /**
    * Returns whether this Student had such a fact. A fact from a Connection stays deleted through
-   * later reads, until the Read Permission is revoked.
+   * later reads, until the Read Permission is revoked, and any event quoting it goes too.
    */
   deleteProfileFact(studentId: string, id: number): boolean;
   readPermission(studentId: string, connection: string): StoredReadPermission | null;
@@ -710,6 +710,7 @@ export function openStore(databasePath: string): Store {
     `SELECT id, connection, kind, fact_key, text, data, at FROM connection_events WHERE student_id = ? AND connection = ? ORDER BY id`,
   );
   const deleteConnectionEvents = db.prepare(`DELETE FROM connection_events WHERE student_id = ? AND connection = ?`);
+  const deleteEventsAboutFact = db.prepare(`DELETE FROM connection_events WHERE student_id = ? AND connection = ? AND fact_key = ?`);
   const insertLoginToDelete = db.prepare(`INSERT OR IGNORE INTO logins_to_delete (student_id, site) VALUES (?, ?)`);
   const selectLoginsToDelete = db.prepare(`SELECT site, told_student FROM logins_to_delete WHERE student_id = ? ORDER BY site`);
   const markLoginToldStudent = db.prepare(`UPDATE logins_to_delete SET told_student = 1 WHERE student_id = ? AND site = ?`);
@@ -991,14 +992,23 @@ export function openStore(databasePath: string): Store {
     listProfileFacts: listFacts,
 
     editProfileFact(studentId, id, text, editedAt) {
-      const { changes } = updateFact.run(text, editedAt.toISOString(), studentId, id);
-      return changes === 0 ? null : (listFacts(studentId).find((fact) => fact.id === id) ?? null);
+      return inTransaction(db, () => {
+        const origin = selectFactOrigin.get(studentId, id) as any;
+        // An event quotes the fact, and the Student's words are the ones that count now.
+        if (origin?.origin_connection) deleteEventsAboutFact.run(studentId, origin.origin_connection, origin.origin_key);
+        const { changes } = updateFact.run(text, editedAt.toISOString(), studentId, id);
+        return changes === 0 ? null : (listFacts(studentId).find((fact) => fact.id === id) ?? null);
+      });
     },
 
     deleteProfileFact(studentId, id) {
       return inTransaction(db, () => {
         const origin = selectFactOrigin.get(studentId, id) as any;
-        if (origin?.origin_connection) insertDeletedFact.run(studentId, origin.origin_connection, origin.origin_key);
+        if (origin?.origin_connection) {
+          insertDeletedFact.run(studentId, origin.origin_connection, origin.origin_key);
+          // An event quotes the fact, so it goes with it.
+          deleteEventsAboutFact.run(studentId, origin.origin_connection, origin.origin_key);
+        }
         return deleteFact.run(studentId, id).changes !== 0;
       });
     },
