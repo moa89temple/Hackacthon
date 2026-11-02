@@ -36,6 +36,11 @@ const MOST_CARDS_FOR_A_GUESS = 3;
 
 /** In a question about dates these would match nearly every Milestone. */
 const DATE_WORDS = new Set(["when", "whens", "date", "dates", "deadline", "deadlines", "last", "day", "days", "due", "next", "coming", "up", "upcoming"]);
+/** They say when, not what, and most of a term's dates have them, so alone they'd outrank what's being asked about. */
+const TERM_STEMS = new Set(["fall", "autumn", "spring", "summer", "semester", "term"].map(stem));
+const isTermStem = (word: string) => TERM_STEMS.has(word) || /^20\d{2}$/.test(word);
+/** Enough to put the right term first among dates for the same thing, and never more than that. */
+const TERM_TIE_BREAK = 0.01;
 const ORDINAL = "(?:st|nd|rd|th)?";
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -122,11 +127,18 @@ export function createStandardMilestones(deps: { store: Store; clock: Clock }): 
       const queryStems = new Set(wordsIn(query).filter((word) => !FILLER.has(word) && !DATE_WORDS.has(word)).map(stem));
       // A question such as "What's coming up?" has nothing to narrow it down.
       if (queryStems.size === 0) return upcoming().slice(0, MOST_UPCOMING_RESULTS);
+      const termStems = new Set([...queryStems].filter(isTermStem));
+      const whatStems = new Set([...queryStems].filter((word) => !isTermStem(word)));
+      const scoreOf = (rows: StoredMilestone[]) => {
+        if (whatStems.size === 0) return relevance(rows, termStems);
+        const score = relevance(rows, whatStems);
+        return score > 0 ? score + TERM_TIE_BREAK * relevance(rows, termStems) : 0;
+      };
 
       const stored = store.listStandardMilestones();
       const rowsOf = new Map(sameMilestone(stored).map((rows) => [rows[0]!.id, rows]));
       const matches = asMilestones(stored, todayInPhiladelphia(clock.now()))
-        .map((milestone) => ({ milestone, score: relevance(rowsOf.get(milestone.id)!, queryStems) }))
+        .map((milestone) => ({ milestone, score: scoreOf(rowsOf.get(milestone.id)!) }))
         .filter(({ score }) => score > 0)
         .toSorted((a, b) => b.score - a.score || byDate(a.milestone, b.milestone))
         .map(({ milestone }) => milestone);

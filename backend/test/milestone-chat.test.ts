@@ -7,6 +7,7 @@ import {
   FAFSA_PRIORITY,
   FINALS_FIRST_DAYS,
   haikuFindsDates,
+  LOAN_CHANGE_FINAL,
   PRIORITY_REGISTRATION_FALL,
   TEST_MILESTONE_OFFICES,
   WITHDRAW_16_WEEK,
@@ -52,6 +53,49 @@ function lastToolAnswer(): any {
 
 const cardsIn = (events: any[]) => events.filter((event) => event.type === "milestone_card").map((event) => event.milestone);
 const latestDecision = async () => (await backend.activity()).find((entry) => entry.decision).decision;
+
+describe("a search that names the term, as Claude's usually do", () => {
+  const aidDate = (name: string, date: string, quote: string) => ({ name: `${name} (Fall 2026)`, date, date_quote: quote, what_quote: name, search_terms: ["fall", "loan"] });
+
+  beforeEach(async () => {
+    await backend.stop();
+    backend = await BackendHarness.start({ offices: [], milestoneOffices: TEST_MILESTONE_OFFICES });
+    backend.claude.willReply(
+      haikuFindsDates(WITHDRAW_7B, WITHDRAW_16_WEEK, FINALS_FIRST_DAYS),
+      haikuFindsDates(
+        aidDate(LOAN_CHANGE_FINAL.name, LOAN_CHANGE_FINAL.date, LOAN_CHANGE_FINAL.date_quote),
+        aidDate(LOAN_CHANGE_FINAL.name.replace("Final deadline", "Priority deadline"), "2026-11-20", "November 20, 2026"),
+      ),
+    );
+    await backend.discovery.run();
+    backend.claude.requests.length = 0;
+  });
+
+  const namesFound = async (query: string) => {
+    backend.claude.willReply(toolCall(FIND, { query }), { chunks: ["Here."] });
+    await backend.sendAndCollect("When?");
+    const answer = lastToolAnswer().content as string;
+    return answer.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line).name as string);
+  };
+
+  it("goes by what the date is for, however many other dates are in that term", async () => {
+    const names = await namesFound("last day to withdraw from a class fall 2026");
+
+    expect(names.slice(0, 2).toSorted()).toEqual([WITHDRAW_16_WEEK.name, WITHDRAW_7B.name].toSorted());
+  });
+
+  it("doesn't return dates that are only in the same term", async () => {
+    expect((await namesFound("withdraw fall 2026")).toSorted()).toEqual([WITHDRAW_16_WEEK.name, WITHDRAW_7B.name].toSorted());
+  });
+
+  it("puts finals ahead of a deadline that has the word final in it", async () => {
+    expect((await namesFound("finals fall 2026"))[0]).toBe(FINALS_FIRST_DAYS.name);
+  });
+
+  it("gives what's in the term when the term is all it's asked", async () => {
+    expect(await namesFound("fall 2026")).toEqual(expect.arrayContaining([WITHDRAW_7B.name, WITHDRAW_16_WEEK.name]));
+  });
+});
 
 describe("the same Milestone in two years", () => {
   const FINALS_NAME = "Days 4 & 5 of Final Exams for Full Term 16-week Courses (1)";
