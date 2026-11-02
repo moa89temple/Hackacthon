@@ -52,11 +52,16 @@ export const NAVIGATE360_ROUTES: Record<AppVersion, { team: string; appointments
  * address only behind a button, and Buddy never clicks. Neither of these needs anything clicked or any
  * extra request made. Each is tested against an address's path. From v2's scripts.
  */
-export const TEAM_ANSWER = /^\/api\/students\/[^/]+\/support_team\/?$/;
-export const APPOINTMENTS_ANSWER = /^\/api\/v2\/scheduling\/current_user\/?$/;
+export const TEAM_ANSWER_PATH = /^\/api\/students\/[^/]+\/support_team\/?$/;
+export const APPOINTMENTS_ANSWER_PATH = /^\/api\/v2\/scheduling\/current_user\/?$/;
+
+/** Where those answers can come from. Anything a page loads from anywhere else isn't the app's. */
+export const ANSWER_HOSTS = ["eab.com"];
 
 /** Who on the Student's team counts as an advisor, by what the app calls them. */
 export const ADVISOR_ROLE = /advis[eo]r|advising/i;
+/** Who on it Buddy knows isn't one. Any other title could be an advisor by another name, so it's never taken to mean no advisor. */
+export const NOT_ADVISOR_ROLE = /instructor|professor|teach|lecturer|faculty/i;
 
 /** An advisor's address is where a Draft goes, so it has to be Temple's own. Subdomains count, such as tuj.temple.edu. */
 export const ADVISOR_EMAIL_DOMAIN = "temple.edu";
@@ -83,7 +88,8 @@ const READABLE_FRAGMENT = new RegExp(`^(?:${READABLE_ROUTES.map(escaped).join("|
  * through the browser is its address without them. See `fragment` on PagePattern.
  */
 export function navigate360ReadablePages(host: string): PagePattern[] {
-  const app = /^\/app\/(?:v[12]\/)?$/;
+  // Any version: one Buddy doesn't know should be reported as that, not refused and taken for a lost login.
+  const app = /^\/app\/(?:v\d+\/)?$/;
   return [
     { host, path: app, fragment: READABLE_FRAGMENT },
     // Only so that a read can see a login has expired. Nothing is taken from these.

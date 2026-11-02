@@ -91,7 +91,7 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
     read(url, guard, options = {}) {
       return whileGuarded(guard, async (context, guarded): Promise<PageReading> => {
         const page = await guardedPage(context, guarded);
-        const answers = watchForAnswers(page, options.answersFrom ?? []);
+        const answers = watchForAnswers(page, options.answersFrom);
         try {
           await page.goto(url, { timeout: PAGE_TIMEOUT_MS, waitUntil: "load" });
           // Some pages only fetch their content once they've loaded. A page that never goes quiet is read as it stands.

@@ -263,6 +263,29 @@ describe("an advisor's address, which is where a Draft goes", () => {
   });
 });
 
+describe("something on a page pretending to be the app's answer", () => {
+  it("can't choose the advisor from another host, even with the right path", async () => {
+    await connect();
+    const blank = { title: "Navigate360", text: "", accessibilitySnapshot: "" };
+    backend.browser.savedPages.set(TEAM_PAGE, {
+      ...blank,
+      answers: [
+        { url: TEAM_ANSWER_ADDRESS, status: 200, body: teamAnswer(person()) },
+        {
+          url: "https://evil.example/api/students/1/support_team",
+          status: 200,
+          body: teamAnswer(person({ first_name: "Someone", last_name: "Else", email: "someone.else@temple.edu" })),
+        },
+      ],
+    });
+
+    await backend.readNow(NAVIGATE360);
+
+    expect(advisors().map((item) => item.email)).toEqual(["riley.madeup@temple.edu"]);
+    expect(backend.storageContains("someone.else@temple.edu")).toBe(false);
+  });
+});
+
 describe("a Contact from somewhere else", () => {
   beforeEach(async () => {
     backend.web.save(
@@ -420,6 +443,26 @@ describe("a page Buddy couldn't understand is not an empty one", () => {
     expect((await statusOf()).lastReadProblem).toMatch(/part of Navigate360/);
   });
 
+  it("doesn't take a team with only titles it doesn't know to mean there's no advisor", async () => {
+    await connect();
+    const [before] = advisors();
+
+    await readAgain({ team: teamAnswer(person({ first_name: "Jordan", email: "jordan.madeup@temple.edu", relationship: "Success Coach" })) });
+
+    expect(advisors()).toEqual([before]);
+    expect((await statusOf()).lastReadProblem).toMatch(/advisor/);
+  });
+
+  it("isn't fooled by a title it doesn't know when it has found the advisor anyway", async () => {
+    await connect();
+
+    await readAgain({ team: teamAnswer(person(), person({ first_name: "Jordan", relationship: "Success Coach" })) });
+
+    expect(advisors().map((item) => item.name)).toEqual(["Riley Madeup"]);
+    expect((await statusOf()).lastReadProblem).toBeNull();
+    expect(backend.storageContains("Jordan")).toBe(false);
+  });
+
   it("makes the same difference in what Claude is told", () => {
     const reading = { facts: [], events: [], now: new Date("2026-11-02T14:00:00Z"), lastReadAt: new Date("2026-11-02T13:00:00Z"), needsLogin: false };
 
@@ -447,8 +490,11 @@ describe("the two versions of the app", () => {
     expect(advisors().map((item) => item.name)).toEqual(["Riley Madeup"]);
   });
 
-  it("doesn't go looking when it can't tell which version it's in", async () => {
-    backend.browser.savedPages.set(LANDING_PAGE, { title: "Navigate360", text: "", accessibilitySnapshot: "" });
+  it.each([
+    ["it stays on the page that chooses", undefined],
+    ["the app has a version Buddy doesn't know, which no login would fix", "https://temple.navigate.eab.com/app/v3/"],
+  ])("doesn't go looking or ask for a login when %s", async (_, finalUrl) => {
+    backend.browser.savedPages.set(LANDING_PAGE, { title: "Navigate360", text: "", accessibilitySnapshot: "", ...(finalUrl ? { finalUrl } : {}) });
 
     await connect();
 
@@ -479,6 +525,18 @@ describe("the login", () => {
 
     expect((await statusOf()).needsLogin).toBe(true);
     expect(advisors()).toEqual([before]);
+  });
+
+  it("doesn't need one when the server only refuses that one thing, which logging in wouldn't fix", async () => {
+    await connect();
+    const blank = { title: "Navigate360", text: "", accessibilitySnapshot: "" };
+    backend.browser.savedPages.set(TEAM_PAGE, { ...blank, answers: [{ url: TEAM_ANSWER_ADDRESS, status: 403, body: "{}" }] });
+
+    await backend.readNow(NAVIGATE360);
+
+    expect(await statusOf()).toMatchObject({ needsLogin: false });
+    expect((await statusOf()).lastReadProblem).toMatch(/part of Navigate360/);
+    expect(advisors().map((item) => item.name)).toEqual(["Riley Madeup"]);
   });
 
   it("needs one when the app leaves for a sign-on page the guard won't go to", async () => {

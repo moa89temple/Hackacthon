@@ -41,7 +41,7 @@ describe("reading the Student's team", () => {
   });
 
   it("an answer with an empty team is a Student with no advisor", () => {
-    expect(readTeamAnswer(team())).toEqual({ advisors: [], othersOnTeam: 0, unusable: 0 });
+    expect(readTeamAnswer(team())).toEqual({ advisors: [], othersOnTeam: 0, unknownRoles: 0, unusable: 0 });
   });
 
   it("a team with no advisor on it is a Student with no advisor", () => {
@@ -61,6 +61,14 @@ describe("reading the Student's team", () => {
 
   it("a team where nobody says what they are has changed shape, so it couldn't be understood", () => {
     expect(readTeamAnswer(team(person({ relationship: undefined }), person({ relationship: "" })))).toBeNull();
+  });
+
+  it("counts someone whose title it doesn't know, which can't be taken to mean they aren't an advisor", () => {
+    expect(readTeamAnswer(team(person({ relationship: "Success Coach" })))).toMatchObject({ advisors: [], othersOnTeam: 0, unknownRoles: 1 });
+  });
+
+  it.each(["Instructor", "Professor", "Teaching Assistant", "Course Instructor"])("knows that %s isn't an advisor", (relationship) => {
+    expect(readTeamAnswer(team(person({ relationship })))).toMatchObject({ othersOnTeam: 1, unknownRoles: 0 });
   });
 
   it("someone hidden from the Student isn't kept", () => {
@@ -130,7 +138,7 @@ describe("what counts as an advisor's address", () => {
 });
 
 describe("reading upcoming appointments", () => {
-  it("finds what's still to come, and not what's past or what a staff member wrote", () => {
+  it("finds what's still to come, and not what's past or what someone wrote about it", () => {
     const found = readAppointmentsAnswer(saved("current-user"), NOW)!;
 
     expect(found.appointments).toEqual([

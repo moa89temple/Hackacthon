@@ -21,12 +21,18 @@ export interface PageAnswer {
   body: string;
 }
 
+export interface AnswersToKeep {
+  /** Each means that host and its subdomains. A page can load anything from anywhere, so this is what says it's the app's. */
+  hosts: string[];
+  paths: RegExp[];
+}
+
 export interface ReadOptions {
   /**
-   * For an app that builds its pages by script: the paths of the requests the page makes for itself
-   * whose answers to keep. The read waits for one of each, for a little while, before it finishes.
+   * For an app that builds its pages by script: the requests the page's scripts make for themselves whose
+   * answers to keep. The read waits for one of each path, for a little while, before it finishes.
    */
-  answersFrom?: RegExp[];
+  answersFrom?: AnswersToKeep;
 }
 
 /** Exactly what the Student approved: one form, its fields and the one button to press. */

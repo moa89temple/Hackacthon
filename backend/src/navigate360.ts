@@ -11,22 +11,24 @@ import {
   type AdvisorOnPage,
   type AppointmentOnPage,
 } from "./navigate360-pages.ts";
+import { hasPath } from "./page-answers.ts";
 import {
-  APPOINTMENTS_ANSWER,
+  ANSWER_HOSTS,
+  APPOINTMENTS_ANSWER_PATH,
   NAVIGATE360_HOST,
   NAVIGATE360_ID,
   NAVIGATE360_ROUTES,
   NAVIGATE360_SOURCE,
-  TEAM_ANSWER,
+  TEAM_ANSWER_PATH,
 } from "./navigate360-rules.ts";
 import type { FactFromConnection } from "./profile.ts";
 import type { ConnectionEventToStore, ConnectionFactToStore, ContactFromConnection } from "./store.ts";
 
 /** A page built by script can miss the browser's wait, so each gets one more look. Then it's a problem to report. */
 const LOOKS_AT_A_PAGE = 2;
-/** The server's way of saying that the login has gone, in an app that doesn't leave the page to say so. */
-const LOGGED_OUT_STATUSES = new Set([401, 403]);
-const OK = 200;
+/** The server's way of saying that the login has gone, in an app that doesn't leave the page to say so. A 403 is about one thing, and logging in wouldn't change it. */
+const LOGGED_OUT = 401;
+const STATUS_OK = 200;
 const MOST_NEWS = 10;
 
 const LOG_IN = "Buddy needs you to log in to Navigate360 before it can read it. Tap Log in to Navigate360 on the You tab.";
@@ -35,6 +37,8 @@ const STUDENT_IN_CONTROL = "You're in control of Buddy's Browser, so Buddy didn'
 const COULD_NOT_UNDERSTAND = "Buddy opened Navigate360 but couldn't make sense of it, so it kept what it already had. Navigate360 may have changed how it works.";
 const MISSED_PART = "Buddy couldn't read part of Navigate360, so some of what it has may be out of date. It will try again at its next read, or you can tap Read now.";
 const UNUSABLE_ADVISOR = "Buddy found an advisor on Navigate360 whose name or email it couldn't use, so it left them out and kept what it already had about your advisors. Check with your college's advising office if that looks wrong.";
+
+const UNKNOWN_TITLES = "Buddy couldn't tell who on your Navigate360 team is your advisor, so it kept what it already had. Check with your college's advising office if that looks wrong.";
 
 /** What's kept with each fact. What the app's server says stays apart from the words the Student can change. */
 type Navigate360Data =
@@ -70,16 +74,17 @@ const asFactToStore = (fact: FactFromConnection, data: Navigate360Data): Connect
 });
 
 /** Opens one page, and says plainly when what came back was somewhere to log in. */
-async function openPage(browser: ReadContext["browser"], url: string, answer: RegExp): Promise<PageReading> {
-  const page = await browser.read(url, { answersFrom: [answer] });
-  if (isNavigate360LoginPage(page.url, new URL(url).hostname)) throw new LoginNeeded(LOG_IN);
+async function openPage(browser: ReadContext["browser"], url: string, answerPath: RegExp): Promise<PageReading> {
+  const { hostname } = new URL(url);
+  const page = await browser.read(url, { answersFrom: { hosts: [hostname, ...ANSWER_HOSTS], paths: [answerPath] } });
+  if (isNavigate360LoginPage(page.url, hostname)) throw new LoginNeeded(LOG_IN);
   return page;
 }
 
 /** The first page. It's always there for someone logged in, so being refused it means the login has gone. */
 async function openLanding(browser: ReadContext["browser"], url: string): Promise<PageReading> {
   try {
-    return await openPage(browser, url, APPOINTMENTS_ANSWER);
+    return await openPage(browser, url, APPOINTMENTS_ANSWER_PATH);
   } catch (error) {
     if (error instanceof ReadProblem) throw error;
     if (error instanceof TakeoverInProgress) throw new ReadProblem(STUDENT_IN_CONTROL);
@@ -89,17 +94,17 @@ async function openLanding(browser: ReadContext["browser"], url: string): Promis
 }
 
 /** What the server told the page, or null if it didn't say. */
-function answerOn(page: PageReading, answer: RegExp): string | null {
-  const answers = (page.answers ?? []).filter(({ url }) => answer.test(URL.parse(url)?.pathname ?? ""));
-  if (answers.some(({ status }) => LOGGED_OUT_STATUSES.has(status))) throw new LoginNeeded(LOG_IN);
-  return answers.findLast(({ status }) => status === OK)?.body ?? null;
+function answerOn(page: PageReading, answerPath: RegExp): string | null {
+  const answers = (page.answers ?? []).filter(({ url }) => hasPath(url, answerPath));
+  if (answers.some(({ status }) => status === LOGGED_OUT)) throw new LoginNeeded(LOG_IN);
+  return answers.findLast(({ status }) => status === STATUS_OK)?.body ?? null;
 }
 
 /** Null means this read can say nothing about what the page holds. A later read might. */
-async function lookFor(browser: ReadContext["browser"], url: string, answer: RegExp): Promise<string | null> {
+async function lookFor(browser: ReadContext["browser"], url: string, answerPath: RegExp): Promise<string | null> {
   for (let look = 0; look < LOOKS_AT_A_PAGE; look++) {
     try {
-      const found = answerOn(await openPage(browser, url, answer), answer);
+      const found = answerOn(await openPage(browser, url, answerPath), answerPath);
       if (found !== null) return found;
     } catch (error) {
       if (error instanceof ReadProblem) throw error;
@@ -117,8 +122,8 @@ async function readNavigate360(origin: string, { browser, now, previous, reportM
   const pageOf = (route: string) => `${origin}/app/${version}/${route}`;
   const routes = NAVIGATE360_ROUTES[version];
 
-  const appointmentsBody = answerOn(landing, APPOINTMENTS_ANSWER) ?? (await lookFor(browser, pageOf(routes.appointments), APPOINTMENTS_ANSWER));
-  const teamBody = await lookFor(browser, pageOf(routes.team), TEAM_ANSWER);
+  const appointmentsBody = answerOn(landing, APPOINTMENTS_ANSWER_PATH) ?? (await lookFor(browser, pageOf(routes.appointments), APPOINTMENTS_ANSWER_PATH));
+  const teamBody = await lookFor(browser, pageOf(routes.team), TEAM_ANSWER_PATH);
 
   const appointments = appointmentsBody === null ? null : readAppointmentsAnswer(appointmentsBody, now);
   const team = teamBody === null ? null : readTeamAnswer(teamBody);
@@ -143,6 +148,10 @@ async function readNavigate360(origin: string, { browser, now, previous, reportM
     keepPrevious("advisor");
   } else if (team.unusable > 0) {
     reportMissed(UNUSABLE_ADVISOR);
+    keepPrevious("advisor");
+  } else if (team.advisors.length === 0 && team.unknownRoles > 0) {
+    // Someone there could be the advisor under another title, so this can't be taken to mean there's none.
+    reportMissed(UNKNOWN_TITLES);
     keepPrevious("advisor");
   }
   return facts;
@@ -262,7 +271,7 @@ export const navigate360At = (origin: string): ConnectionType => ({
     ],
     notes: [
       "Buddy opens only Navigate360's home page and the page listing your team. That page also lists others on your team, such as your instructors. Buddy doesn't keep them.",
-      "Buddy never books, cancels or changes an appointment, and never sends anything through Navigate360, including a raised hand. It doesn't open Study Buddies, which shows classmates, or your notes and reports. Buddy's code stops all of this, so nothing the AI reads can change it.",
+      "Buddy never books, cancels or changes an appointment, and never sends anything through Navigate360, including a raised hand. It doesn't open Study Buddies, which shows classmates, or your notes and progress reports. Buddy's code stops all of this, so nothing the AI reads can change it.",
       "You log in yourself through a Takeover, so Buddy never learns your password. After you give this Read Permission, Buddy asks you to log in if it needs you to, and asks again whenever the login expires.",
       "Buddy reads it at 7 a.m., 1 p.m. and 7 p.m., and when you ask. If your laptop was asleep at one of those times, it reads when the laptop wakes.",
       "What it reads is saved to your Profile, where you can change or delete it. When you ask about your advisor or your appointments, Buddy sends it to Claude, the AI behind Buddy.",

@@ -1,5 +1,5 @@
 import { createBrowserAccess, TakeoverInProgress, type Site } from "./browser-access.ts";
-import type { BuddysBrowser, PageAnswer } from "./buddys-browser.ts";
+import type { BuddysBrowser, PageReading } from "./buddys-browser.ts";
 import {
   EXIT_FAILED,
   EXIT_LOGIN_NEEDED,
@@ -7,6 +7,8 @@ import {
   EXIT_OK,
   EXIT_OLD_LOGIN_REMAINS,
   EXIT_TAKEOVER_UNDER_WAY,
+  kindOfError,
+  normalized,
   structureOf,
   type StudentState,
 } from "./canvas-check.ts";
@@ -14,7 +16,8 @@ import { systemClock } from "./clock.ts";
 import { createConnections, type ConnectionType } from "./connections.ts";
 import { createGuardPolicy, isOnSite, type RequestGuard } from "./network-guard.ts";
 import { appVersionOf, readAppointmentsAnswer, readTeamAnswer } from "./navigate360-pages.ts";
-import { APPOINTMENTS_ANSWER, TEAM_ANSWER } from "./navigate360-rules.ts";
+import { APPOINTMENTS_ANSWER_PATH, TEAM_ANSWER_PATH } from "./navigate360-rules.ts";
+import { hasPath } from "./page-answers.ts";
 import { createProfile } from "./profile.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 
@@ -61,10 +64,6 @@ const ROLES = new Set(
     .split(/\s+/)
     .filter(Boolean),
 );
-
-function normalized(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
 
 function cleanSegment(segment: string, wordsSeen: string, afterName: boolean): string {
   const lower = segment.toLowerCase();
@@ -169,11 +168,9 @@ export function shapeOfAccessibility(snapshot: string): string[] {
 
 interface Visit {
   asked: string;
-  landed: string | null;
-  text: string;
-  accessibilitySnapshot: string;
-  html: string;
-  answers: PageAnswer[];
+  /** Null if it didn't get there. */
+  page: PageReading | null;
+  /** The paths of the answers the reader came for. */
   expected: RegExp[];
   /** The kind of error, never its words, which often quote the address. */
   failed: string | null;
@@ -183,12 +180,6 @@ interface RequestSeen {
   method: string;
   url: string;
   refused: boolean;
-}
-
-/** A class's name is from the code, where its message could say anything. */
-function kindOfError(error: unknown): string {
-  const name = error instanceof Error ? error.constructor.name : "";
-  return /^[A-Za-z]{1,40}$/.test(name) ? name : "Error";
 }
 
 /**
@@ -217,22 +208,13 @@ function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: V
           return decision;
         },
       };
-      const expected = options?.answersFrom ?? [];
+      const expected = options?.answersFrom?.paths ?? [];
       try {
         const page = await inner.read(url, watching, options);
-        visits.push({
-          asked: url,
-          landed: page.url,
-          text: page.text,
-          accessibilitySnapshot: page.accessibilitySnapshot,
-          html: page.html,
-          answers: page.answers ?? [],
-          expected,
-          failed: null,
-        });
+        visits.push({ asked: url, page, expected, failed: null });
         return page;
       } catch (error) {
-        visits.push({ asked: url, landed: null, text: "", accessibilitySnapshot: "", html: "", answers: [], expected, failed: kindOfError(error) });
+        visits.push({ asked: url, page: null, expected, failed: kindOfError(error) });
         throw error;
       }
     },
@@ -253,8 +235,8 @@ function cleanHost(address: string, sites: Record<string, Site>, wordsSeen: stri
   return parts.some((part) => part.length >= SHORTEST_HOST_PART_TO_COMPARE && wordsSeen.includes(part)) ? "(a host named after words on the page)" : host;
 }
 
-const answersMatching = (visits: Visit[], pattern: RegExp) =>
-  visits.flatMap((visit) => visit.answers).filter((answer) => pattern.test(URL.parse(answer.url)?.pathname ?? ""));
+const answersAt = (visits: Visit[], path: RegExp) =>
+  visits.flatMap((visit) => visit.page?.answers ?? []).filter((answer) => hasPath(answer.url, path));
 
 export interface Navigate360CheckDeps {
   browser: BuddysBrowser;
@@ -304,7 +286,7 @@ async function runChecked({ browser, connection, sites, student, print }: Naviga
   const store = openStore(":memory:");
   const clock = systemClock;
   let status: { needsLogin: boolean; lastReadProblem: string | null };
-  let kinds: { kind?: string; email?: string | null }[];
+  let factData: { kind?: string; email?: string | null }[];
   let contactsAdded: number;
   try {
     const profile = createProfile({ store, clock, connectionName: () => connection.name });
@@ -324,7 +306,7 @@ async function runChecked({ browser, connection, sites, student, print }: Naviga
       logError: () => {},
     });
     status = await connections.give(connection.id, undefined);
-    kinds = profile.factsFromConnection(connection.id).map((fact) => (fact.data ?? {}) as { kind?: string; email?: string | null });
+    factData = profile.factsFromConnection(connection.id).map((fact) => (fact.data ?? {}) as { kind?: string; email?: string | null });
     contactsAdded = store.listGuidebookItems().length;
   } finally {
     store.close();
@@ -337,14 +319,14 @@ async function runChecked({ browser, connection, sites, student, print }: Naviga
 
   const now = clock.now();
   const wordsSeen = normalized(
-    visits.flatMap((visit) => [visit.text, visit.accessibilitySnapshot, ...visit.answers.map((answer) => valuesIn(answer.body))]).join(" "),
+    visits.flatMap(({ page }) => (page ? [page.text, page.accessibilitySnapshot, ...(page.answers ?? []).map((answer) => valuesIn(answer.body))] : [])).join(" "),
   );
-  const teams = answersMatching(visits, TEAM_ANSWER).map((answer) => readTeamAnswer(answer.body));
-  const appointmentLists = answersMatching(visits, APPOINTMENTS_ANSWER).map((answer) => readAppointmentsAnswer(answer.body, now));
+  const teams = answersAt(visits, TEAM_ANSWER_PATH).map((answer) => readTeamAnswer(answer.body));
+  const appointmentLists = answersAt(visits, APPOINTMENTS_ANSWER_PATH).map((answer) => readAppointmentsAnswer(answer.body, now));
   const lastTeam = teams.at(-1);
   const lastAppointments = appointmentLists.at(-1);
-  const version = visits.map((visit) => (visit.landed ? appVersionOf(visit.landed) : null)).find(Boolean);
-  const advisors = kinds.filter(({ kind }) => kind === "advisor");
+  const version = visits.map(({ page }) => (page ? appVersionOf(page.url) : null)).find(Boolean);
+  const advisors = factData.filter(({ kind }) => kind === "advisor");
 
   print(`${connection.name} check. This shows counts and page shape only, and nothing was saved.`);
   print("Read Permission: given by the Student");
@@ -359,15 +341,16 @@ async function runChecked({ browser, connection, sites, student, print }: Naviga
   print(`  Contacts added: ${contactsAdded}`);
   print(`  advisors left out, with a name or address Buddy can't use: ${lastTeam?.unusable ?? 0}`);
   print(`  others on the team, not kept: ${lastTeam?.othersOnTeam ?? 0}`);
-  print(`  upcoming appointments: ${kinds.filter(({ kind }) => kind === "appointment").length}`);
+  print(`  others on the team with a title the reader doesn't know: ${lastTeam?.unknownRoles ?? 0}`);
+  print(`  upcoming appointments: ${factData.filter(({ kind }) => kind === "appointment").length}`);
   print(`  appointments left out, with no time Buddy can read: ${lastAppointments?.unusable ?? 0}`);
   print("");
   print("Pages opened:");
   const describeVisit = (visit: Visit) => {
     const asked = cleanAddress(visit.asked, wordsSeen);
-    if (visit.failed) return `${asked}  (${visit.failed})`;
-    if (visit.landed === visit.asked) return asked;
-    return `${asked}  (ended up at ${cleanHost(visit.landed!, sites, wordsSeen)} ${cleanAddress(visit.landed!, wordsSeen)})`;
+    if (!visit.page) return `${asked}  (${visit.failed})`;
+    if (visit.page.url === visit.asked) return asked;
+    return `${asked}  (ended up at ${cleanHost(visit.page.url, sites, wordsSeen)} ${cleanAddress(visit.page.url, wordsSeen)})`;
   };
   for (const line of countedLines(visits.map(describeVisit))) print(line);
   print("");
@@ -384,29 +367,29 @@ async function runChecked({ browser, connection, sites, student, print }: Naviga
 
   if (status.needsLogin) return EXIT_LOGIN_NEEDED;
 
-  const printAnswers = (name: string, pattern: RegExp, understood: boolean) => {
-    const answer = answersMatching(visits, pattern).at(-1);
+  const printAnswers = (name: string, path: RegExp, understood: boolean) => {
+    const answer = answersAt(visits, path).at(-1);
     if (!answer) return;
     print("");
     print(`The app's answer about ${name}, status ${answer.status}${understood ? "" : ". It isn't what the reader expects"}:`);
     for (const line of shapeOfAnswer(answer.body, wordsSeen)) print(`  ${line}`);
   };
-  printAnswers("the team", TEAM_ANSWER, Boolean(lastTeam));
-  printAnswers("appointments", APPOINTMENTS_ANSWER, Boolean(lastAppointments));
+  printAnswers("the team", TEAM_ANSWER_PATH, Boolean(lastTeam));
+  printAnswers("appointments", APPOINTMENTS_ANSWER_PATH, Boolean(lastAppointments));
 
   // One of each page, where an answer the reader came for never came.
   const shown = new Set<string>();
-  for (const visit of visits) {
-    const missing = visit.failed === null && visit.expected.some((pattern) => answersMatching(visits, pattern).length === 0);
-    const where = cleanAddress(visit.landed ?? visit.asked, wordsSeen);
-    if (!missing || shown.has(where)) continue;
+  for (const { page, expected } of visits) {
+    if (!page || !expected.some((path) => answersAt(visits, path).length === 0)) continue;
+    const where = cleanAddress(page.url, wordsSeen);
+    if (shown.has(where)) continue;
     shown.add(where);
     print("");
     print(`Shape of the page, where the reader didn't get what it came for: ${where}`);
     print("Its accessibility tree, by role:");
-    for (const line of shapeOfAccessibility(visit.accessibilitySnapshot)) print(`  ${line}`);
+    for (const line of shapeOfAccessibility(page.accessibilitySnapshot)) print(`  ${line}`);
     print("Its HTML, by tag and class. An app that draws inside its own elements shows little here:");
-    for (const line of structureOf(visit.html || "<body></body>")) print(`  ${line}`);
+    for (const line of structureOf(page.html || "<body></body>")) print(`  ${line}`);
   }
   return EXIT_OK;
 }

@@ -1,6 +1,7 @@
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
 import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type PageAnswer, type PageReading, type ReadOptions } from "../../src/buddys-browser.ts";
 import type { ArmableGuard, RequestGuard } from "../../src/network-guard.ts";
+import { isAnswerToKeep } from "../../src/page-answers.ts";
 
 export type RecordedAction =
   | { type: "show"; url: string }
@@ -101,7 +102,7 @@ export class RecordingBrowser implements BuddysBrowser {
       accessibilitySnapshot: page.accessibilitySnapshot,
       html: page.html ?? "",
       ...(options.answersFrom
-        ? { answers: (page.answers ?? []).filter(({ url: address }) => options.answersFrom!.some((pattern) => pattern.test(new URL(address).pathname))) }
+        ? { answers: (page.answers ?? []).filter(({ url: address }) => isAnswerToKeep(address, options.answersFrom!)) }
         : {}),
     };
   }

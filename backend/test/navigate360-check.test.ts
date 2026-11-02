@@ -218,6 +218,15 @@ describe("when the reader can't understand the app", () => {
     expectNoLeak();
   });
 
+  it("says how many on the team have a title the reader doesn't know, without saying what it is", async () => {
+    saveNavigate360Pages(browser, { team: teamAnswer(person({ first_name: MARKERS.advisor, relationship: MARKERS.role })) });
+
+    await check();
+
+    expect(output()).toMatch(/others on the team with a title the reader doesn't know: 1/);
+    expectNoLeak();
+  });
+
   it("says how many it left out when an advisor's address can't be used, without saying whose", async () => {
     saveNavigate360Pages(browser, { team: teamAnswer(person({ first_name: MARKERS.advisor, email: `${MARKERS.email}@example.test` })) });
 

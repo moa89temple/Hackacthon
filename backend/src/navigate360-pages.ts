@@ -1,5 +1,5 @@
 import { maskSecrets } from "./masking.ts";
-import { ADVISOR_EMAIL_DOMAIN, ADVISOR_ROLE, isLoginRoute, NAVIGATE360_HOST, type AppVersion } from "./navigate360-rules.ts";
+import { ADVISOR_EMAIL_DOMAIN, ADVISOR_ROLE, isLoginRoute, NAVIGATE360_HOST, NOT_ADVISOR_ROLE, type AppVersion } from "./navigate360-rules.ts";
 
 /**
  * Reads what Navigate360's own scripts got from its server. There's no model here and no fetching. Each
@@ -21,6 +21,8 @@ export interface TeamOnPage {
   advisors: AdvisorOnPage[];
   /** Instructors and so on, who are counted and never kept. */
   othersOnTeam: number;
+  /** People with a title Buddy doesn't know. They're never kept, and they could be an advisor by another name. */
+  unknownRoles: number;
   /** Advisors who couldn't be used, such as one whose address isn't an address. */
   unusable: number;
 }
@@ -87,7 +89,7 @@ export function readTeamAnswer(body: string): TeamOnPage | null {
   // A real team always says who's who, so a team that doesn't has changed shape.
   if (team.length > 0 && team.every((person) => rolesOf(person).length === 0)) return null;
 
-  const found: TeamOnPage = { advisors: [], othersOnTeam: 0, unusable: 0 };
+  const found: TeamOnPage = { advisors: [], othersOnTeam: 0, unknownRoles: 0, unusable: 0 };
   const seen = new Set<string>();
   for (const person of team) {
     if (person.visible_to_student === false) continue;
@@ -96,7 +98,8 @@ export function readTeamAnswer(body: string): TeamOnPage | null {
     if (!role) {
       // Someone who doesn't say what they are could be the advisor, so this isn't the whole answer.
       if (roles.length === 0) found.unusable++;
-      else found.othersOnTeam++;
+      else if (roles.some((candidate) => NOT_ADVISOR_ROLE.test(candidate))) found.othersOnTeam++;
+      else found.unknownRoles++;
       continue;
     }
 
@@ -126,7 +129,7 @@ function firstNameIn(people: unknown): string | null {
 
 /**
  * Answers `/api/v2/scheduling/current_user`, as `{ data: { user: { upcoming_appointments: [...] } } }`.
- * Only what's still to come. A staff member's comment and a meeting's link are left out.
+ * Only what's still to come. A comment someone wrote about it and a meeting's link are left out.
  */
 export function readAppointmentsAnswer(body: string, now: Date): AppointmentsOnPage | null {
   const answer = parsed(body);

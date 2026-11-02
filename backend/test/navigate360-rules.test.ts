@@ -58,7 +58,11 @@ describe("the pages Buddy opens", () => {
   it("doesn't open anything else on the site, or anywhere on the app's other host", () => {
     expect(opening("https://temple.navigate.eab.com/admin").allowed).toBe(false);
     expect(opening(`https://${NAVIGATE360_CAMPUS_HOST}/`).allowed).toBe(false);
-    expect(opening(`${APP}/v3/`).allowed).toBe(false);
+    expect(opening(`${APP}/somewhere/`).allowed).toBe(false);
+  });
+
+  it("opens a version of the app it doesn't know yet, so that it can say so instead of asking for a login", () => {
+    expect(opening(`${APP}/v3/`)).toEqual({ allowed: true });
   });
 
   it("opens nothing at all without the Read Permission", () => {
