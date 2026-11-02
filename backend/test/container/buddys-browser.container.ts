@@ -17,6 +17,10 @@ import { createGuardPolicy } from "../../src/network-guard.ts";
 import { keepToReadablePages } from "../../src/readable-pages.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
 import { systemClock } from "../../src/clock.ts";
+import { tuportalAt } from "../../src/tuportal.ts";
+import { runTuportalCheck } from "../../src/tuportal-check.ts";
+import { readHoldsPage } from "../../src/tuportal-pages.ts";
+import { isTuportalLoginPage, tuportalBlockedPages, tuportalReadablePages } from "../../src/tuportal-rules.ts";
 
 const browserDirectory = fileURLToPath(new URL("../../../browser", import.meta.url));
 const CONTROL_PORT = 19222;
@@ -1036,6 +1040,102 @@ describe("the Canvas reader, against made-up pages in the real browser", () => {
 
     expect(visited()).toEqual([]);
   });
+});
+
+describe("the TUportal reader, against made-up pages in the real browser", () => {
+  const HOST = "127.0.0.5";
+  const HOME = `http://${HOST}:8000/`;
+  const TUPORTAL_SITE: Site = {
+    name: "TUportal",
+    homeUrl: HOME,
+    loginHosts: [HOST],
+    isConnection: true,
+    readablePages: tuportalReadablePages([HOST]),
+    blockedPages: tuportalBlockedPages([HOST]),
+    isLoginPage: (address) => isTuportalLoginPage(address, [HOST]),
+  };
+  const sites = { tuportal: TUPORTAL_SITE };
+  const portalGuards = createGuardPolicy({ sites, publicHosts: [], hasReadPermission: () => true });
+  const readPortal = (path: string) => browser.read(new URL(path, HOME).href, keepToReadablePages(portalGuards.forReading(), sites));
+  const logInToTuportal = async () => {
+    await browser.show(`${HOME}made-up-tuportal-login`);
+    await settle(300);
+  };
+  const visited = () => ledger().filter((entry) => entry.host.startsWith(HOST)).map((entry) => `${entry.method} ${entry.path}`);
+
+  async function runCheck() {
+    const lines: string[] = [];
+    const exitCode = await runTuportalCheck({
+      browser,
+      connection: tuportalAt(HOME, [HOST]),
+      sites,
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: false, oldLoginRemains: false }),
+      print: (line) => lines.push(line),
+    });
+    return { exitCode, output: lines.join("\n") };
+  }
+
+  beforeEach(async () => {
+    await browser.forgetLogin([HOST]);
+    clearLedger();
+  });
+
+  it("understands every page through the real guard, including what a page fills in after it loads, and prints nothing from them", async () => {
+    await logInToTuportal();
+
+    const { exitCode, output } = await runCheck();
+
+    expect(exitCode).toBe(0);
+    expect(output).toMatch(/holds \/group\/home\/student-record-services: understood/);
+    expect(output).toMatch(/balance \/group\/home\/costs-and-aid: understood/);
+    expect(output).toMatch(/registration \/group\/home\/student: understood/);
+    expect(output).not.toMatch(/marker/i);
+    expect(output).not.toContain("876");
+  });
+
+  it("nothing a page tries that's blocked gets out, and nothing is ever submitted", async () => {
+    await logInToTuportal();
+    clearLedger();
+
+    const { output } = await runCheck();
+    await settle();
+
+    const requests = visited();
+    expect(requests).toContain("GET /group/home/student-record-services?holds?pweb");
+    expect(requests.filter((request) => /registration|add-drop/.test(request))).toEqual([]);
+    expect(requests.filter((request) => !request.startsWith("GET "))).toEqual([]);
+    expect(output).toContain(`POST ${HOST} /group/home/student-record-services`);
+  });
+
+  it("takes an empty message hidden by the stylesheet for what it is, not for no holds", async () => {
+    const page = await browser.read(`${HOME}tuportal-hidden-empty-message`, portalGuards.forReading());
+
+    expect(page.html).toContain("No holds exist");
+    expect(page.text).not.toContain("No holds exist");
+    expect(readHoldsPage(page)).toBeNull();
+  });
+
+  it("says the login has expired, and goes no further", async () => {
+    const { exitCode, output } = await runCheck();
+    await settle();
+
+    expect(exitCode).toBe(4);
+    expect(output).toMatch(/Login: not logged in/);
+    expect(output).not.toMatch(/marker/i);
+    expect(visited().filter((request) => request.includes("student-record-services"))).toEqual([]);
+  });
+
+  it.each(["/group/home/registration", "/group/home/add-drop", "/group/home/tupay", "/group/home/forms/1", "/c/portal/logout", "/group/home/student-tools"])(
+    "refuses %s, and nothing reaches the site",
+    async (path) => {
+      await logInToTuportal();
+      clearLedger();
+
+      await expect(readPortal(path)).rejects.toThrow(PageBlocked);
+
+      expect(visited()).toEqual([]);
+    },
+  );
 });
 
 describe("what the browser never keeps", () => {

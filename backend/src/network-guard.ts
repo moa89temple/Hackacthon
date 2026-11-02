@@ -75,7 +75,8 @@ const refuse = (why: string): GuardDecision => ({ allowed: false, why });
  * 1. A page on a site's `blockedPages` is refused, always. Nothing gets past this: not a Read
  *    Permission, not the read-only list, and not an approved card.
  * 2. Only the web, and only the Student's Connections and public pages. A Connection counts once it
- *    has its Read Permission. Anywhere else may only serve what an open page loads, like a font.
+ *    has its Read Permission. Anywhere else may only serve what an open page loads, like a font, unless
+ *    it's on a site's `signOnDomains`, where nothing unlisted is loaded.
  * 3. Requests that only read go through.
  * 4. The one approved request goes through, once, if it matches exactly.
  * 5. A request on the site's `readOnlyRequests` goes through. Anything else that changes something
@@ -98,7 +99,9 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
         isOnSite(parsed.hostname, site) &&
         (site.blockedPages ?? []).some(
           (page) =>
-            (page.host === undefined || page.host === withoutFinalDot(parsed.hostname)) && page.path.test(pathToBlock(parsed)),
+            (page.host === undefined || page.host === withoutFinalDot(parsed.hostname)) &&
+            page.path.test(decodedAndLower(parsed.pathname)) &&
+            (page.query === undefined || page.query.test(decodedAndLower(parsed.search))),
         ),
     );
   }
@@ -117,6 +120,11 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
     );
   }
 
+  function isOnSignOnDomain(hostname: string): boolean {
+    const name = withoutFinalDot(hostname);
+    return siteEntries.some(([, site]) => (site.signOnDomains ?? []).some((domain) => name === domain || name.endsWith(`.${domain}`)));
+  }
+
   /** Rules 1 and 2. */
   function placeDecision(url: URL, request: RequestToCheck, mayEnter: (siteId: string) => boolean): GuardDecision {
     if (isBlockedPage(request.url)) return refuse(`Buddy never opens this page, even with an approved card: ${url.host}`);
@@ -126,7 +134,7 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
       return refuse(`There's no Read Permission for ${owners.map(([, site]) => site.name).join(" or ")}: ${url.host}`);
     }
     if (publicHostSet.has(url.hostname)) return allow;
-    if (!request.opensPage && isPublicAddress(url.hostname)) return allow;
+    if (!request.opensPage && !isOnSignOnDomain(url.hostname) && isPublicAddress(url.hostname)) return allow;
     return refuse(`This isn't one of the Student's Connections or a public page: ${url.host}`);
   }
 
@@ -197,12 +205,12 @@ function withoutFinalDot(hostname: string): string {
 }
 
 /** Decoded and in lower case, so that a page can't be reached by spelling its address another way. */
-function pathToBlock(url: URL): string {
+function decodedAndLower(part: string): string {
   try {
-    return decodeURIComponent(url.pathname).toLowerCase();
+    return decodeURIComponent(part).toLowerCase();
   } catch {
     // It can't be read, so it can't be shown not to be a blocked page. The raw address has to do.
-    return url.pathname.toLowerCase();
+    return part.toLowerCase();
   }
 }
 

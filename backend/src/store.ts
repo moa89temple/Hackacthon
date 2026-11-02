@@ -318,6 +318,8 @@ export interface Store {
   noteLoginNotDeleted(studentId: string, site: string, entry: NewActivityEntry): void;
   loginDeleted(studentId: string, site: string, entry: NewActivityEntry): void;
   listConnectionEvents(studentId: string, connection: string): StoredConnectionEvent[];
+  /** Which of this Connection's facts the Student deleted, by key. They stay deleted however often they're read. */
+  deletedFactKeys(studentId: string, connection: string): string[];
   /**
    * Brings this Connection's facts into line with a read, all together, and keeps the Student's
    * edits and deletions. If this Read Permission no longer stands, only the Activity entry is
@@ -1084,6 +1086,10 @@ export function openStore(databasePath: string): Store {
         data: row.data ? JSON.parse(row.data) : null,
         at: new Date(row.at),
       }));
+    },
+
+    deletedFactKeys(studentId, connection) {
+      return selectDeletedFacts.all(studentId, connection).map((row: any) => row.origin_key);
     },
 
     saveConnectionReading(studentId, permissionId, facts, readAt, entry, news = {}) {
