@@ -38,7 +38,7 @@ export function loginChecked(siteName: string, at: Date): NewActivityEntry {
 /** What goes into the record of how Buddy decided a reply, as the turn goes on. */
 export interface TurnRecord {
   tools: string[];
-  /** Always empty until Buddy has pages to look at: the Guidebook (#9) adds them here. */
+  /** The pages behind whatever Buddy found in the Guidebook this turn. */
   sources: DecisionSource[];
   facts: Map<number, DecisionFact>;
 }
@@ -61,6 +61,13 @@ export function noteFactsGiven(turn: TurnRecord, facts: ProfileFact[]): void {
   }
 }
 
+/** Each page once, however many items came from it. */
+export function noteSourcesLookedAt(turn: TurnRecord, sources: DecisionSource[]): void {
+  for (const { title, url } of sources) {
+    if (!turn.sources.some((source) => source.url === url)) turn.sources.push({ title, url });
+  }
+}
+
 export function replyDecided(reply: string, turn: TurnRecord, at: Date): NewActivityEntry {
   return {
     kind: "reply",
@@ -73,6 +80,29 @@ export function replyDecided(reply: string, turn: TurnRecord, at: Date): NewActi
 /** A turn that ended without a saved reply still did things, and the Student saw this message. */
 export function replyFailed(shown: string, turn: TurnRecord, at: Date): NewActivityEntry {
   return { ...replyDecided(shown, turn, at), kind: "reply_failed", title: "Buddy couldn't finish a reply" };
+}
+
+export function guidebookItemReported(name: string, at: Date): NewActivityEntry {
+  return { kind: "guidebook_report", title: `You reported ${name}`, detail: "Buddy no longer shows it to any Student.", at };
+}
+
+export function discoveryRead(pagesRead: number, pagesInAll: number, couldNotRead: string[], at: Date): NewActivityEntry {
+  const problems = couldNotRead.length > 0 ? ` Couldn't read: ${couldNotRead.join(", ")}` : "";
+  return {
+    kind: "discovery_read",
+    title: "Buddy read Temple's office pages",
+    detail: `Read ${pagesRead} of ${pagesInAll} pages.${problems}`,
+    at,
+  };
+}
+
+export function discoveryFailed(at: Date): NewActivityEntry {
+  return {
+    kind: "discovery_read_failed",
+    title: "Buddy couldn't read Temple's office pages",
+    detail: "None of them answered, so the Guidebook stays as it was. Buddy tries again each hour.",
+    at,
+  };
 }
 
 /** Why Buddy read a Connection. */

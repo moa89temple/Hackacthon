@@ -2,11 +2,13 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConnectionType } from "../../src/connections.ts";
+import type { Office } from "../../src/office-pages.ts";
 import { createDevices } from "../../src/devices.ts";
 import { googleCalendar } from "../../src/google-calendar.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
 import { openStore } from "../../src/store.ts";
 import { MovableClock } from "./movable-clock.ts";
+import { saveOfficePages, TEST_OFFICES } from "./office-pages.ts";
 import { readEvents } from "./read-events.ts";
 import { RecordingBrowser } from "./recording-browser.ts";
 import { SavedWeb } from "./saved-web.ts";
@@ -14,6 +16,7 @@ import { ScriptedClaude } from "./scripted-claude.ts";
 
 export const TEST_CHAT_MODEL = "test-chat-model";
 export const TEST_CRISIS_MODEL = "test-crisis-model";
+export const TEST_DISCOVERY_MODEL = "test-discovery-model";
 export const TEST_SITE = {
   name: "Canvas",
   homeUrl: "https://canvas.test/",
@@ -51,9 +54,12 @@ export class BackendHarness {
   #backend!: RunningBackend;
   /** The key of the phone every helper here acts as, paired the way the real app pairs. */
   deviceKey!: string;
+  #offices: Office[] = TEST_OFFICES;
 
-  static async start(): Promise<BackendHarness> {
+  static async start(options: { offices?: Office[] } = {}): Promise<BackendHarness> {
     const harness = new BackendHarness();
+    harness.#offices = options.offices ?? TEST_OFFICES;
+    saveOfficePages(harness.web, harness.#offices);
     await harness.browser.startLiveView();
     await harness.#boot();
     await harness.#pairPhone();
@@ -78,6 +84,7 @@ export class BackendHarness {
       databasePath: join(this.#directory, "buddy.sqlite"),
       chatModel: TEST_CHAT_MODEL,
       crisisCheck: { model: TEST_CRISIS_MODEL, timeoutMs: 50 },
+      discovery: { model: TEST_DISCOVERY_MODEL, offices: this.#offices },
       host: "127.0.0.1",
       port: 0,
       logger: false,
@@ -91,6 +98,21 @@ export class BackendHarness {
   /** The way the rest of the backend reads pages. */
   get browserAccess(): RunningBackend["browserAccess"] {
     return this.#backend.browserAccess;
+  }
+
+  /** What the rest of the backend sees of the Guidebook. */
+  get guidebook(): RunningBackend["guidebook"] {
+    return this.#backend.guidebook;
+  }
+
+  /** What the backend's timer calls each minute. */
+  get discovery(): RunningBackend["discovery"] {
+    return this.#backend.discovery;
+  }
+
+  /** The Student tapping Report on a card. */
+  report(id: unknown, key: Record<string, string> = this.deviceHeaders): Promise<Response> {
+    return fetch(`${this.url}/guidebook/items/${id}/report`, { method: "POST", headers: key });
   }
 
   get devices(): RunningBackend["devices"] {

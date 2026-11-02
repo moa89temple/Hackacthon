@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Opens a tel: or sms: address in the phone's own app. Returns false if it couldn't.
+/// Opens a tel:, sms:, mailto: or https: address in the phone's own app. Returns false if it couldn't.
 typedef PhoneOpener = Future<bool> Function(Uri address);
 
 Future<bool> openWithPhone(Uri address) => launchUrl(address);

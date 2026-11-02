@@ -10,12 +10,14 @@ const backend = await startBackend({
   databasePath: settings.databasePath,
   chatModel: settings.chatModel,
   crisisCheck: settings.crisisCheck,
+  discovery: settings.discovery,
   host: settings.host,
   port: settings.port,
   logger: true,
 });
 
 backend.connections.startSchedule();
+backend.discovery.startSchedule();
 
 if (!backend.devices.anyPaired()) {
   console.log("No phone is paired yet. In another terminal, run: npm run pair");

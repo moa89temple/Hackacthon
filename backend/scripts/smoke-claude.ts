@@ -75,6 +75,7 @@ const backend = await startBackend({
   databasePath: join(directory, "buddy.sqlite"),
   chatModel: settings.chatModel,
   crisisCheck: settings.crisisCheck,
+  discovery: settings.discovery,
   host: "127.0.0.1",
   port: 0,
   logger: true,

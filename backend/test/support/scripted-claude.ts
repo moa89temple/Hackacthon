@@ -40,6 +40,8 @@ export class ScriptedClaude implements Claude {
   /** The abort signal each request came with, by position. */
   readonly signals: (AbortSignal | undefined)[] = [];
   readonly #script: ScriptedReply[] = [];
+  /** Answers whatever the script has run out for, when a test has too many requests to list. */
+  whenScriptRunsOut: ScriptedReply | undefined;
 
   willReply(...replies: ScriptedReply[]): void {
     this.#script.push(...replies);
@@ -48,7 +50,7 @@ export class ScriptedClaude implements Claude {
   async *stream(request: ClaudeRequest, options?: { signal?: AbortSignal }): AsyncGenerator<ClaudeEvent> {
     this.requests.push(structuredClone(request));
     this.signals.push(options?.signal);
-    const reply = this.#script.shift();
+    const reply = this.#script.shift() ?? this.whenScriptRunsOut;
     if (!reply) throw new Error("ScriptedClaude: no reply scripted for this request");
 
     await reply.holdBeforeAnswering;

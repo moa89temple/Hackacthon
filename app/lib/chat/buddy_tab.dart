@@ -6,6 +6,7 @@ import '../connections/read_permission_card.dart';
 import '../widgets/buddy_avatar.dart';
 import 'chat_controller.dart';
 import 'crisis_card.dart';
+import 'guidebook_card.dart';
 
 class BuddyTab extends StatelessWidget {
   const BuddyTab({super.key, required this.chat, required this.connections, required this.openPhone});
@@ -88,6 +89,14 @@ class _MessageListState extends State<_MessageList> {
               connectionId: item.connectionId,
               connections: widget.connections,
               announce: identical(item, chat.newestReadPermissionCard),
+            ),
+          GuidebookCardItem() => GuidebookCard(
+              // Keeps each card's state with its own item as the list changes around it.
+              key: ObjectKey(item),
+              card: item,
+              chat: chat,
+              openPhone: widget.openPhone,
+              announce: chat.newestGuidebookCards.any((newest) => identical(newest, item)),
             ),
         },
     ];

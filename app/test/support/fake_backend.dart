@@ -52,6 +52,15 @@ class FakeBackend implements BuddyBackend {
     return updated;
   }
 
+  final List<int> reported = [];
+  Object? reportError;
+
+  @override
+  Future<void> reportGuidebookItem(int id) async {
+    if (reportError case final error?) throw error;
+    reported.add(id);
+  }
+
   List<ActivityEntry> activity = [];
   Object? activityError;
 

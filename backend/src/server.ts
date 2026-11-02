@@ -21,6 +21,9 @@ import {
 } from "./connections.ts";
 import { createConversation } from "./conversation.ts";
 import { createCrisisCheck } from "./crisis-check.ts";
+import { createDiscovery, type Discovery } from "./discovery.ts";
+import { createGuidebook, type Guidebook } from "./guidebook.ts";
+import type { Office } from "./office-pages.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { createLiveViewProxy } from "./live-view-proxy.ts";
 import { hiddenNote } from "./masking.ts";
@@ -39,6 +42,7 @@ export interface BackendOptions {
   databasePath: string;
   chatModel: string;
   crisisCheck: { model: string; timeoutMs: number };
+  discovery: { model: string; offices: Office[] };
   host: string;
   port: number;
   logger: boolean;
@@ -49,6 +53,8 @@ export interface RunningBackend {
   browserAccess: BrowserAccess;
   connections: Connections;
   devices: Devices;
+  guidebook: Guidebook;
+  discovery: Discovery;
   close(): Promise<void>;
 }
 
@@ -68,6 +74,15 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     profile,
     logError: (error) => app.log.error(error),
   });
+  const guidebook = createGuidebook({ store, clock: options.adapters.clock });
+  const discovery = createDiscovery({
+    claude: options.adapters.claude,
+    web: options.adapters.web,
+    clock: options.adapters.clock,
+    store,
+    ...options.discovery,
+    logError: (error) => app.log.error(error),
+  });
   const conversation = createConversation({
     claude: options.adapters.claude,
     clock: options.adapters.clock,
@@ -80,6 +95,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     }),
     profile,
     connections,
+    guidebook,
     logError: (error) => app.log.error(error),
   });
   const browserAccess = createBrowserAccess({
@@ -102,6 +118,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
 
   app.addHook("onClose", async () => {
     connections.stopSchedule();
+    discovery.stopSchedule();
     store.close();
   });
 
@@ -156,8 +173,10 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addBrowserRoutes(app, browserAccess);
   addConnectionRoutes(app, connections);
 
+  addGuidebookRoutes(app, guidebook);
+
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, connections, devices, close: () => app.close() };
+  return { url, browserAccess, connections, devices, guidebook, discovery, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {
@@ -168,21 +187,29 @@ function addProfileRoutes(app: FastifyInstance, profile: Profile): void {
     if (typeof text !== "string" || text.trim() === "") {
       return reply.code(400).send({ error: "text must be a non-empty string" });
     }
-    const fact = isFactId(request.params.id) ? profile.edit(Number(request.params.id), text) : null;
+    const fact = isStoredId(request.params.id) ? profile.edit(Number(request.params.id), text) : null;
     if (!fact) return reply.code(404).send({ error: "There's no such fact" });
     const note = hiddenNote(fact.text);
     return { fact, ...(note ? { hiddenNote: note } : {}) };
   });
 
   app.delete<{ Params: { id: string } }>("/profile/facts/:id", async (request, reply) => {
-    const removed = isFactId(request.params.id) && profile.remove(Number(request.params.id));
+    const removed = isStoredId(request.params.id) && profile.remove(Number(request.params.id));
     return removed ? reply.code(204).send() : reply.code(404).send({ error: "There's no such fact" });
   });
 }
 
-/** Longer than this, Number would round it and could land on a different fact. */
-function isFactId(id: string): boolean {
+/** Longer than this, Number would round it and could land on a different fact or item. */
+function isStoredId(id: string): boolean {
   return /^\d{1,15}$/.test(id);
+}
+
+/** A Report is a tap on a card, which never passes through the model, so that nothing Claude reads can hide an item. */
+function addGuidebookRoutes(app: FastifyInstance, guidebook: Guidebook): void {
+  app.post<{ Params: { id: string } }>("/guidebook/items/:id/report", async (request, reply) => {
+    const known = isStoredId(request.params.id) && guidebook.report(Number(request.params.id));
+    return known ? reply.code(204).send() : reply.code(404).send({ error: "There's no such item" });
+  });
 }
 
 /** The address travels in a request's body, because URLs end up in the logs. */

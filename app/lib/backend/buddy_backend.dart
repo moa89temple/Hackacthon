@@ -28,6 +28,76 @@ class ReadPermissionCardItem extends ConversationItem {
   final String connectionId;
 }
 
+/// A Guidebook card in the conversation. Not const, so that each is its own object and the newest
+/// can be told from earlier ones. With no item, the item has been reported or has left its Source.
+class GuidebookCardItem extends ConversationItem {
+  GuidebookCardItem(this.item, {this.reportedJustNow = false});
+
+  final GuidebookItem? item;
+
+  /// True when the Student has just reported it, so that they're told it worked.
+  final bool reportedJustNow;
+}
+
+/// The web page where Buddy found a Guidebook item.
+class GuidebookSource {
+  const GuidebookSource({required this.url, required this.title, required this.lastSeenAt});
+
+  factory GuidebookSource.fromJson(Map<String, dynamic> json) => GuidebookSource(
+        url: json['url'] as String,
+        title: json['title'] as String,
+        lastSeenAt: DateTime.parse(json['lastSeenAt'] as String),
+      );
+
+  final String url;
+  final String title;
+  final DateTime lastSeenAt;
+}
+
+/// A Resource or Contact, in the backend's words.
+class GuidebookItem {
+  const GuidebookItem({
+    required this.id,
+    required this.name,
+    required this.summary,
+    this.cost,
+    this.phone,
+    this.phoneToDial,
+    this.email,
+    this.place,
+    this.hours,
+    required this.sources,
+  });
+
+  factory GuidebookItem.fromJson(Map<String, dynamic> json) => GuidebookItem(
+        id: json['id'] as int,
+        name: json['name'] as String,
+        summary: json['summary'] as String,
+        cost: json['cost'] as String?,
+        phone: json['phone'] as String?,
+        phoneToDial: json['phoneToDial'] as String?,
+        email: json['email'] as String?,
+        place: json['place'] as String?,
+        hours: json['hours'] as String?,
+        sources: [
+          for (final source in json['sources'] as List<dynamic>) GuidebookSource.fromJson(source as Map<String, dynamic>),
+        ],
+      );
+
+  final int id;
+  final String name;
+  final String summary;
+  final String? cost;
+  final String? phone;
+
+  /// For the phone's dialer, when [phone] is a number it can use.
+  final String? phoneToDial;
+  final String? email;
+  final String? place;
+  final String? hours;
+  final List<GuidebookSource> sources;
+}
+
 class ChatMessage extends ConversationItem {
   const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote});
 
@@ -256,6 +326,12 @@ class ReplyReadPermissionCard extends ReplyEvent {
   final String connectionId;
 }
 
+/// Buddy is showing a Guidebook card.
+class ReplyGuidebookCard extends ReplyEvent {
+  const ReplyGuidebookCard(this.item);
+  final GuidebookItem item;
+}
+
 /// The turn ended. This is the reply as saved, and it replaces whatever streamed in.
 class ReplyDone extends ReplyEvent {
   const ReplyDone(this.reply);
@@ -348,6 +424,9 @@ abstract interface class BuddyBackend {
 
   /// Reads now. A read that fails shows in what comes back.
   Future<Connection> readConnection(String id);
+
+  /// Hides the item for every Student. Also succeeds if the item has already gone.
+  Future<void> reportGuidebookItem(int id);
 
   /// Newest first. There's nothing here to change or remove an entry, because nothing can.
   Future<List<ActivityEntry>> loadActivity();
@@ -524,6 +603,13 @@ class HttpBuddyBackend implements BuddyBackend {
   }
 
   @override
+  Future<void> reportGuidebookItem(int id) async {
+    final response = await _client.post(_baseUrl.replace(pathSegments: ['guidebook', 'items', '$id', 'report']), headers: _keyHeader);
+    if (response.statusCode == 204 || response.statusCode == 404) return;
+    _check(response.statusCode, 'Sending a Report');
+  }
+
+  @override
   Future<List<ActivityEntry>> loadActivity() async {
     final response = await _client.get(_activityUrl, headers: _keyHeader);
     _check(response.statusCode, 'Loading Activity');
@@ -591,6 +677,10 @@ class HttpBuddyBackend implements BuddyBackend {
   ConversationItem _parseItem(Map<String, dynamic> json) => switch (json['type']) {
         'crisis_card' => CrisisCardItem(),
         'read_permission_card' => ReadPermissionCardItem(json['connection'] as String),
+        'guidebook_card' => GuidebookCardItem(switch (json['item']) {
+            final Map<String, dynamic> item => GuidebookItem.fromJson(item),
+            _ => null,
+          }),
         _ => ChatMessage.fromJson(json),
       };
 
@@ -600,6 +690,7 @@ class HttpBuddyBackend implements BuddyBackend {
         'text' => ReplyText(json['text'] as String),
         'crisis_card' => const ReplyCrisisCard(),
         'read_permission_card' => ReplyReadPermissionCard(json['connection'] as String),
+        'guidebook_card' => ReplyGuidebookCard(GuidebookItem.fromJson(json['item'] as Map<String, dynamic>)),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),
         _ => null,

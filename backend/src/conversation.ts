@@ -1,16 +1,20 @@
-import { newTurnRecord, noteFactsGiven, replyDecided, replyFailed, type TurnRecord } from "./activity.ts";
+import { newTurnRecord, noteFactsGiven, noteSourcesLookedAt, replyDecided, replyFailed, type TurnRecord } from "./activity.ts";
 import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./claude.ts";
 import { describeInPhiladelphia, type Clock } from "./clock.ts";
 import { NoReadPermission, type Connections } from "./connections.ts";
 import type { CrisisCheck, CrisisOutcome } from "./crisis-check.ts";
 import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
+import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from "./guidebook.ts";
 import { hiddenNote, maskSecrets } from "./masking.ts";
 import { describeProfile, type Profile } from "./profile.ts";
 import {
   BUDDY_SYSTEM_PROMPT,
   CHECK_CALENDAR_TOOL,
   CRISIS_CARD_TOOL,
+  FIND_CONTACTS_TOOL,
   REMEMBER_TOOL,
+  SEARCH_GUIDEBOOK_TOOL,
+  SHOW_GUIDEBOOK_CARDS_TOOL,
   SUGGEST_CONNECTION_TOOL,
 } from "./system-prompt.ts";
 import { THE_STUDENT, type NewMessage, type Store, type StoredMessage } from "./store.ts";
@@ -38,6 +42,20 @@ const TURN_INSTRUCTIONS: Record<CrisisOutcome, string> = {
  */
 const QUESTIONS_REMINDER =
   "Any getting-to-know question you've already asked in this conversation is finished, whether or not the Student answered it. Don't ask it again unless they bring it up.";
+
+/** In every turn for the same reason as the reminder above. */
+const SOURCE_REMINDER =
+  "Anything specific to Temple has to come from the Guidebook, with its card shown, even if you said it earlier or feel sure of it. If it isn't there, say you couldn't find a Source.";
+
+/** By number, because Claude has seen the numbers and a system message shouldn't carry a page's words. */
+function reportedItemsNote(ids: number[]): string {
+  if (ids.length === 0) return "";
+  const items = ids.map((id) => `item ${id}`).join(", ");
+  return ` These Guidebook items were reported as wrong or out of date, so don't use or mention what you saw about them earlier in this conversation: ${items}.`;
+}
+
+const NOTHING_IN_THE_GUIDEBOOK =
+  "The Guidebook has nothing on that, so there's no Source for it. Tell the Student you couldn't find a Source, and don't answer from memory.";
 
 const COULD_NOT_SAVE_FACT = "Tried to save something to your Profile, but couldn't.";
 
@@ -72,12 +90,20 @@ export interface ReadPermissionCardEntry {
   sentAt: string;
 }
 
+/** A card as it should look now. Null once the item has been reported or has left its Source. */
+export interface GuidebookCardEntry {
+  type: "guidebook_card";
+  item: GuidebookItem | null;
+  sentAt: string;
+}
+
 export type ConversationEvent =
   /** The Student's message had something hidden. This is the message as Buddy kept it. */
   | { type: "hidden"; text: string; note: string }
   | { type: "text"; text: string }
   | { type: "crisis_card" }
   | { type: "read_permission_card"; connection: string }
+  | { type: "guidebook_card"; item: GuidebookItem }
   | { type: "done"; reply: ChatMessage }
   | { type: "error"; message: string };
 
@@ -88,7 +114,7 @@ export interface Conversation {
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
-  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry)[];
+  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry)[];
 }
 
 export interface ConversationDeps {
@@ -99,11 +125,12 @@ export interface ConversationDeps {
   crisisCheck: CrisisCheck;
   profile: Profile;
   connections: Connections;
+  guidebook: Guidebook;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, connections, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -201,8 +228,59 @@ export function createConversation(deps: ConversationDeps): Conversation {
     return { answer: onScreen, card: connection.id };
   }
 
+  function searchGuidebook(call: ToolCall, turn: TurnRecord, kind?: GuidebookKind) {
+    const query = (call.input as { query?: unknown } | null)?.query;
+    const lookedFor = kind === "contact" ? "Looked for Contacts" : "Searched the Guidebook";
+    if (typeof query !== "string" || query.trim() === "") {
+      turn.tools.push(`${lookedFor}, but with nothing to look for.`);
+      return toolFailure(call, "query must be a non-empty string.");
+    }
+    try {
+      const items = guidebook.search(query, kind ? { kind } : {});
+      turn.tools.push(`${lookedFor} for ${JSON.stringify(query)} and found ${items.length}.`);
+      noteSourcesLookedAt(turn, items.flatMap((item) => item.sources));
+      return toolAnswer(call, items.length > 0 ? guidebook.describeForClaude(items) : NOTHING_IN_THE_GUIDEBOOK);
+    } catch (error) {
+      logError(error);
+      turn.tools.push(`${lookedFor}, but something went wrong.`);
+      return toolFailure(call, "The Guidebook couldn't be searched, so you have no Source. Tell the Student, and don't answer from memory.");
+    }
+  }
+
+  /** Returns the cards the Student hasn't seen yet this turn, saved so that they come back with the conversation. */
+  function addCards(items: GuidebookItem[], shownThisTurn: Map<number, string>, afterMessageId: number, now: Date, turn: TurnRecord) {
+    const fresh = items.filter((item) => !shownThisTurn.has(item.id));
+    for (const item of fresh) {
+      shownThisTurn.set(item.id, item.name);
+      turn.tools.push(`Showed you the card for ${JSON.stringify(item.name)}.`);
+      noteSourcesLookedAt(turn, item.sources);
+      try {
+        store.addGuidebookCard(THE_STUDENT, { itemId: item.id, afterMessageId, createdAt: now });
+      } catch (error) {
+        logError(error);
+      }
+    }
+    return fresh;
+  }
+
+  function showGuidebookCards(call: ToolCall, shownThisTurn: Map<number, string>, afterMessageId: number, now: Date, turn: TurnRecord) {
+    const asked = (call.input as { item_ids?: unknown } | null)?.item_ids;
+    const ids = Array.isArray(asked) ? asked.filter((id): id is number => typeof id === "number") : [];
+    const items = guidebook.itemsWithIds(ids);
+    const cards = addCards(items, shownThisTurn, afterMessageId, now, turn);
+    if (items.length < new Set(ids).size || ids.length === 0) {
+      return {
+        cards,
+        answer: toolFailure(call, "At least one of those isn't in the Guidebook, because it was reported or has left its Source. Don't mention it."),
+      };
+    }
+    return { cards, answer: toolAnswer(call, "The cards are on the Student's screen, each with its Source. Now reply to them.") };
+  }
+
   async function answerCall(call: ToolCall, originMessageId: number, turn: TurnRecord) {
     if (call.name === CHECK_CALENDAR_TOOL.name) return checkCalendar(call, turn);
+    if (call.name === SEARCH_GUIDEBOOK_TOOL.name) return searchGuidebook(call, turn);
+    if (call.name === FIND_CONTACTS_TOOL.name) return searchGuidebook(call, turn, "contact");
     if (call.name === CRISIS_CARD_TOOL.name) {
       return toolAnswer(call, "The Crisis card is on the Student's screen. Now reply to them.");
     }
@@ -235,6 +313,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       let cardShown = false;
       let checkingIn = false;
       const suggestedThisTurn = new Set<string>();
+      const cardsThisTurn = new Map<number, string>();
       const turn = newTurnRecord();
       const noteIfClaudeCant = () => (cardShown ? CRISIS_NOTE : checkingIn ? CHECK_IN_NOTE : null);
 
@@ -276,7 +355,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
         noteFactsGiven(turn, factsGiven);
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${QUESTIONS_REMINDER}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}\n\n${QUESTIONS_REMINDER}`,
         };
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
@@ -325,6 +404,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   const { answer, card } = suggestConnection(call, suggestedThisTurn, studentMessageId!, now, turn);
                   if (card) yield { type: "read_permission_card", connection: card };
                   answers.push(answer);
+                } else if (call.name === SHOW_GUIDEBOOK_CARDS_TOOL.name) {
+                  const { answer, cards } = showGuidebookCards(call, cardsThisTurn, studentMessageId!, now, turn);
+                  for (const item of cards) yield { type: "guidebook_card", item };
+                  answers.push(answer);
                 } else {
                   answers.push(await answerCall(call, studentMessageId!, turn));
                 }
@@ -340,6 +423,18 @@ export function createConversation(deps: ConversationDeps): Conversation {
             const words = joinWords(wordsSoFar, textOf(message.content));
             if (words.trim() === "") {
               throw new Error(`Claude's reply had no text (stop reason: ${message.stop_reason})`);
+            }
+            // Whatever Claude did about cards, an item the reply names is shown with its Source. Next
+            // to the Crisis card, which has what the Student needs, more cards would only get in the way.
+            if (!cardShown) {
+              try {
+                const shownNames = [...cardsThisTurn.values()];
+                const unshown = guidebook.itemsNamedIn(words).filter((item) => !shownNames.some((name) => sameName(name, item.name)));
+                const named = addCards(unshown, cardsThisTurn, studentMessageId!, now, turn);
+                for (const item of named) yield { type: "guidebook_card", item };
+              } catch (error) {
+                logError(error);
+              }
             }
             // Saved together so a system message is always followed by an assistant
             // turn, as the API requires, even when a turn fails partway through.
@@ -368,6 +463,8 @@ export function createConversation(deps: ConversationDeps): Conversation {
     history() {
       const cards = store.listCrisisCards(THE_STUDENT);
       const readPermissionCards = store.listReadPermissionCards(THE_STUDENT);
+      const guidebookCards = store.listGuidebookCards(THE_STUDENT);
+      const itemsOnCards = guidebook.itemsWithIds(guidebookCards.map((card) => card.itemId));
       return store
         .listMessages(THE_STUDENT)
         .filter(isShownToStudent)
@@ -381,6 +478,13 @@ export function createConversation(deps: ConversationDeps): Conversation {
             .map((card) => ({
               type: "read_permission_card" as const,
               connection: card.connection,
+              sentAt: card.createdAt.toISOString(),
+            })),
+          ...guidebookCards
+            .filter((card) => card.afterMessageId === message.id)
+            .map((card) => ({
+              type: "guidebook_card" as const,
+              item: itemsOnCards.find((item) => item.id === card.itemId) ?? null,
               sentAt: card.createdAt.toISOString(),
             })),
         ]);
@@ -404,7 +508,15 @@ function chatRequest(model: string, messages: ClaudeMessageParam[]): ClaudeReque
     betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
     fallbacks: "default",
     system: BUDDY_SYSTEM_PROMPT,
-    tools: [CRISIS_CARD_TOOL, REMEMBER_TOOL, CHECK_CALENDAR_TOOL, SUGGEST_CONNECTION_TOOL],
+    tools: [
+      CRISIS_CARD_TOOL,
+      REMEMBER_TOOL,
+      CHECK_CALENDAR_TOOL,
+      SUGGEST_CONNECTION_TOOL,
+      SEARCH_GUIDEBOOK_TOOL,
+      FIND_CONTACTS_TOOL,
+      SHOW_GUIDEBOOK_CARDS_TOOL,
+    ],
     messages,
   };
 }

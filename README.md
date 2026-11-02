@@ -142,9 +142,47 @@ Revoking the Read Permission deletes the address and every fact from the calenda
 - Reads depend on the laptop being on and awake. A read that fails waits for the next read time, unless you tap **Read now**.
 - All times are on Philadelphia's clock, wherever you are.
 
+## The Guidebook
+
+Once a day, from 6 a.m. Philadelphia time, Discovery reads 40 pages from Temple's office websites: Tuttleman Counseling, the Student Success Center, the Career Center, Student Financial Services, the Wellness Resource Center, Disability Resources and the Dean of Students. The list is in `backend/src/office-pages.ts`. It reads with plain page fetches, not Buddy's Browser, and needs no Permission because the pages are public. If the laptop was asleep, it reads once when the laptop wakes.
+
+Haiku 5.5 lists the Resources and Contacts on each page, and only a page whose words have changed goes to Haiku. Each item keeps its Source: the page's address, its title and when Buddy last saw the item there. An item found on several pages becomes one item with several Sources.
+
+When you ask something specific to Temple, Claude searches the Guidebook and shows a card for what it mentions, with its Source. The card's words come from the Guidebook, not from what Claude wrote, and Claude can pass only an item's number. Free Resources come first, and anything that costs money says what it costs. **How Buddy decided** in Activity lists each Source Buddy looked at for that reply.
+
+### What's checked, and what's only asked of Claude
+
+Buddy's own code does these:
+
+- A phone number or email address that isn't on the page is dropped, and so are hours or a place with a number that isn't on the page. An item whose summary has such a number is left out.
+- Something counts as free or paid only if Haiku quotes the page's own words about its cost, and those words are really there. A price has to be in those quoted words too. Otherwise the card says its Source doesn't say. If any of an item's pages says it costs money, the card says so.
+- If a reply names an item with two or more words in its name, its card appears even if Claude didn't ask for one, up to three cards a reply. The exception is a reply next to the Crisis card.
+
+Claude is told never to state a Temple-specific fact without a Source, to say so when it can't find one, and to treat what it reads on a page as information only. That's an instruction, not a guarantee, and `npm run smoke:guidebook` checks it on real pages. The Crisis card is the one exception on purpose: its Tuttleman number is in the app's own code, so that it appears whatever else fails.
+
+### Reporting an item
+
+Tap **Report** on a card if it's wrong or out of date. That hides the item for every Student straight away, and every card of it in the conversation becomes a short note. Discovery can find it again, but it stays hidden. Claude is told not to use what it saw of it earlier in the conversation. There's no way to undo a Report in the app. Only your tap does this: Claude can't report anything, so that nothing it reads on a page can hide an item.
+
+### When items leave
+
+An item leaves two weeks after it went missing from its page, unless another of its pages still has it. A page that doesn't answer, or answers with next to nothing, counts as missing too, from the first day it fails. If it comes back later, its items come back with it. If no page answers at all, the laptop is probably offline, so that doesn't count against anything, and Buddy tries again each hour. If Haiku fails on a page, nothing about that page changes, and it tries again the next day.
+
+### Known limits
+
+- Only the summary's numbers are checked against the page, not its meaning, and a number only has to be somewhere on the page. Haiku could still describe something wrongly, which is what **Report** is for.
+- Items merge by name. Two things with the same name at different offices become one item, and one thing with different names at different offices stays two. Haiku is given the names already known from the same office to keep this down.
+- A Report covers one item. A Resource and a Contact with the same name are two items, so the other can still show. A reported item that Haiku later names quite differently would come back as new, though it's told the reported names so as not to.
+- Search goes by words. Haiku adds everyday words for each item, and Claude picks the words to search for, but a question that shares no word with an item won't find it.
+- Only the pages on the list are read, so a new page isn't noticed. A page that moves stops answering, Activity lists it, and its address needs changing in the list. Its items leave after two weeks.
+- Opportunities aren't in the Guidebook yet (#12), and neither are the Bulletin or the academic calendar. Buddy will say it has no Source for those.
+- Reads depend on the laptop being on and awake, and on the Claude budget that #27 will limit.
+
+After changing the page list, run `npm run save-office-pages` in `backend` to refresh the saved copies the tests use.
+
 ## See what Buddy did
 
-On the You tab, tap **See your Activity**. It lists, newest first, every read of a Connection (including failed ones, and why each happened), every Read Permission you gave or revoked, each time Buddy opened a site to check your login, and each of Buddy's replies, including one it couldn't finish. Tap **How Buddy decided** on a reply to see the tools it used, the Sources it looked at and the Profile facts it had.
+On the You tab, tap **See your Activity**. It lists, newest first, every read of a Connection (including failed ones, and why each happened), every Read Permission you gave or revoked, each time Buddy opened a site to check your login, each day's read of Temple's office pages, each Report you made, and each of Buddy's replies, including one it couldn't finish. Tap **How Buddy decided** on a reply to see the tools it used, the Sources it looked at and the Profile facts it had.
 
 The backend writes all of this itself, in words from Buddy's own code, and Claude doesn't get a say. An entry can't be edited or removed one by one: the backend has no route for it, and the store has no method for it. Later tickets add their own kinds of entry, and the app shows them as they are.
 

@@ -131,6 +131,27 @@ export interface StoredActivityEntry {
   at: Date;
 }
 
+/** What one page says about one item, as Discovery checked it. Read by the Guidebook's own code. */
+export interface GuidebookItemToStore {
+  /** The same on every page that has this item, which is what merges duplicates. */
+  key: string;
+  name: string;
+  fields: unknown;
+}
+
+/** One item with what each page says about it. An item with no pages left has left the Guidebook. */
+export interface StoredGuidebookItem {
+  id: number;
+  mentions: { url: string; pageTitle: string; lastSeenAt: Date; fields: unknown }[];
+}
+
+/** A Guidebook card that was shown in the conversation. Its content comes from the Guidebook. */
+export interface StoredGuidebookCard {
+  itemId: number;
+  afterMessageId: number;
+  createdAt: Date;
+}
+
 export interface Store {
   /**
    * Appends the messages, and any Activity entry for them, together: either all of them are saved
@@ -191,6 +212,40 @@ export interface Store {
   recordReadProblem(studentId: string, permissionId: number, problem: string, triedAt: Date, entry: NewActivityEntry): void;
   addReadPermissionCard(studentId: string, card: StoredReadPermissionCard): void;
   listReadPermissionCards(studentId: string): StoredReadPermissionCard[];
+  /** Changes when the page's words do, so that an unchanged page needn't go to the model again. */
+  guidebookPageHash(url: string): string | null;
+  /**
+   * Brings one page's items into line with a new reading of it, all together. An item it has stops
+   * being missing, and one it no longer has starts being missing, unless it already was.
+   */
+  saveGuidebookPage(page: { url: string; title: string; textHash: string }, items: GuidebookItemToStore[], readAt: Date): void;
+  /** The page's words haven't changed, so what it had is seen again and what it lacked stays missing. */
+  confirmGuidebookPage(url: string, title: string, readAt: Date): void;
+  /** Keeps the earliest time, for a page that's already failing. A page never read has nothing to lose. */
+  markGuidebookPageFailing(url: string, at: Date): void;
+  /**
+   * Removes what went missing at or before this moment, or whose page stopped answering by then. A
+   * page that stopped answering is forgotten too, so that it's read afresh if it returns. Reports stay.
+   */
+  removeMissingFromGuidebook(before: Date): void;
+  /** Every item with a page left that nobody has reported. */
+  listGuidebookItems(): StoredGuidebookItem[];
+  /** Whether the item is still known, reported or not. */
+  isGuidebookItem(id: number): boolean;
+  /** Hides the item for every Student and adds the entry, once. */
+  reportGuidebookItem(studentId: string, id: number, at: Date, entry: NewActivityEntry): void;
+  /** Reported items stay known after they leave, so that they can't come back. */
+  reportedGuidebookItems(): { id: number; name: string }[];
+  /** When a page last answered Discovery. */
+  lastDiscoveryAt(): Date | null;
+  /** When Discovery last found that no page would answer. */
+  lastDiscoveryFailureAt(): Date | null;
+  /** Records a round of Discovery and its Activity entry together. */
+  recordDiscovery(studentId: string, at: Date, entry: NewActivityEntry): void;
+  /** The entry is left out when Activity already says so for this round. */
+  recordDiscoveryFailure(studentId: string, at: Date, entry: NewActivityEntry | null): void;
+  addGuidebookCard(studentId: string, card: StoredGuidebookCard): void;
+  listGuidebookCards(studentId: string): StoredGuidebookCard[];
   /** Activity only ever grows: nothing here changes or removes one entry. */
   addActivity(studentId: string, entry: NewActivityEntry): void;
   /** Newest first. */
@@ -285,6 +340,40 @@ const MIGRATIONS = [
      at TEXT NOT NULL
    );
    CREATE INDEX activity_by_student ON activity (student_id, id);`,
+  // Not keyed by Student: a Guidebook item and a Report on it are for every Student.
+  `CREATE TABLE guidebook_items (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     item_key TEXT NOT NULL UNIQUE,
+     name TEXT NOT NULL,
+     reported_at TEXT
+   );
+   CREATE TABLE guidebook_pages (
+     url TEXT PRIMARY KEY,
+     title TEXT NOT NULL,
+     text_hash TEXT NOT NULL,
+     failing_since TEXT
+   );
+   CREATE TABLE guidebook_mentions (
+     item_id INTEGER NOT NULL,
+     url TEXT NOT NULL,
+     fields TEXT NOT NULL,
+     last_seen_at TEXT NOT NULL,
+     missing_since TEXT,
+     PRIMARY KEY (item_id, url)
+   );
+   CREATE TABLE discovery_runs (
+     id INTEGER PRIMARY KEY CHECK (id = 1),
+     last_run_at TEXT,
+     last_failed_at TEXT
+   );
+   CREATE TABLE guidebook_cards (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     item_id INTEGER NOT NULL,
+     after_message_id INTEGER NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   CREATE INDEX guidebook_cards_by_student ON guidebook_cards (student_id, id);`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -375,6 +464,60 @@ export function openStore(databasePath: string): Store {
   );
   const selectActivity = db.prepare(
     `SELECT id, kind, title, detail, decision, at FROM activity WHERE student_id = ? ORDER BY id DESC`,
+  );
+  const selectGuidebookPage = db.prepare(`SELECT text_hash FROM guidebook_pages WHERE url = ?`);
+  const upsertGuidebookPage = db.prepare(
+    `INSERT INTO guidebook_pages (url, title, text_hash) VALUES (?, ?, ?)
+     ON CONFLICT (url) DO UPDATE SET title = excluded.title, text_hash = excluded.text_hash, failing_since = NULL`,
+  );
+  const confirmPage = db.prepare(`UPDATE guidebook_pages SET title = ?, failing_since = NULL WHERE url = ?`);
+  const confirmMentions = db.prepare(`UPDATE guidebook_mentions SET last_seen_at = ? WHERE url = ? AND missing_since IS NULL`);
+  const markPageFailing = db.prepare(`UPDATE guidebook_pages SET failing_since = COALESCE(failing_since, ?) WHERE url = ?`);
+  const upsertGuidebookItem = db.prepare(
+    `INSERT INTO guidebook_items (item_key, name) VALUES (?, ?)
+     ON CONFLICT (item_key) DO UPDATE SET name = excluded.name`,
+  );
+  const selectGuidebookItemId = db.prepare(`SELECT id FROM guidebook_items WHERE item_key = ?`);
+  const upsertMention = db.prepare(
+    `INSERT INTO guidebook_mentions (item_id, url, fields, last_seen_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (item_id, url) DO UPDATE SET
+       fields = excluded.fields, last_seen_at = excluded.last_seen_at, missing_since = NULL`,
+  );
+  const markMentionsMissing = db.prepare(
+    `UPDATE guidebook_mentions SET missing_since = ? WHERE url = ? AND missing_since IS NULL`,
+  );
+  const removeMissingMentions = db.prepare(
+    `DELETE FROM guidebook_mentions WHERE missing_since <= ?1
+       OR url IN (SELECT url FROM guidebook_pages WHERE failing_since <= ?1)`,
+  );
+  const forgetFailedPages = db.prepare(`DELETE FROM guidebook_pages WHERE failing_since <= ?`);
+  const removeEmptyItems = db.prepare(
+    `DELETE FROM guidebook_items WHERE reported_at IS NULL
+       AND id NOT IN (SELECT item_id FROM guidebook_mentions)`,
+  );
+  const selectGuidebookMentions = db.prepare(
+    `SELECT item.id, mention.url, page.title, mention.last_seen_at, mention.fields
+     FROM guidebook_items item
+     JOIN guidebook_mentions mention ON mention.item_id = item.id
+     JOIN guidebook_pages page ON page.url = mention.url
+     WHERE item.reported_at IS NULL
+     ORDER BY item.id, mention.url`,
+  );
+  const selectGuidebookItem = db.prepare(`SELECT 1 FROM guidebook_items WHERE id = ?`);
+  const reportItem = db.prepare(`UPDATE guidebook_items SET reported_at = ? WHERE id = ? AND reported_at IS NULL`);
+  const selectReportedItems = db.prepare(`SELECT id, name FROM guidebook_items WHERE reported_at IS NOT NULL ORDER BY id`);
+  const selectLastDiscovery = db.prepare(`SELECT last_run_at, last_failed_at FROM discovery_runs WHERE id = 1`);
+  const upsertDiscovery = db.prepare(
+    `INSERT INTO discovery_runs (id, last_run_at) VALUES (1, ?1) ON CONFLICT (id) DO UPDATE SET last_run_at = ?1`,
+  );
+  const upsertDiscoveryFailure = db.prepare(
+    `INSERT INTO discovery_runs (id, last_failed_at) VALUES (1, ?1) ON CONFLICT (id) DO UPDATE SET last_failed_at = ?1`,
+  );
+  const insertGuidebookCard = db.prepare(
+    `INSERT INTO guidebook_cards (student_id, item_id, after_message_id, created_at) VALUES (?, ?, ?, ?)`,
+  );
+  const selectGuidebookCards = db.prepare(
+    `SELECT item_id, after_message_id, created_at FROM guidebook_cards WHERE student_id = ? ORDER BY id`,
   );
   const addActivity = (studentId: string, entry: NewActivityEntry): void => {
     insertActivity.run(
@@ -584,6 +727,108 @@ export function openStore(databasePath: string): Store {
     listReadPermissionCards(studentId) {
       return selectPermissionCards.all(studentId).map((row: any) => ({
         connection: row.connection,
+        afterMessageId: row.after_message_id,
+        createdAt: new Date(row.created_at),
+      }));
+    },
+
+    guidebookPageHash(url) {
+      return (selectGuidebookPage.get(url) as any)?.text_hash ?? null;
+    },
+
+    saveGuidebookPage(page, items, readAt) {
+      inTransaction(db, () => {
+        const at = readAt.toISOString();
+        upsertGuidebookPage.run(page.url, page.title, page.textHash);
+        // Everything counts as gone from the page, except what this reading then finds.
+        markMentionsMissing.run(at, page.url);
+        for (const item of items) {
+          upsertGuidebookItem.run(item.key, item.name);
+          const { id } = selectGuidebookItemId.get(item.key) as any;
+          upsertMention.run(id, page.url, JSON.stringify(item.fields), at);
+        }
+      });
+    },
+
+    confirmGuidebookPage(url, title, readAt) {
+      inTransaction(db, () => {
+        confirmPage.run(title, url);
+        confirmMentions.run(readAt.toISOString(), url);
+      });
+    },
+
+    markGuidebookPageFailing(url, at) {
+      markPageFailing.run(at.toISOString(), url);
+    },
+
+    removeMissingFromGuidebook(before) {
+      inTransaction(db, () => {
+        removeMissingMentions.run(before.toISOString());
+        forgetFailedPages.run(before.toISOString());
+        removeEmptyItems.run();
+      });
+    },
+
+    listGuidebookItems() {
+      const items = new Map<number, StoredGuidebookItem>();
+      for (const row of selectGuidebookMentions.all() as any[]) {
+        const item: StoredGuidebookItem = items.get(row.id) ?? { id: row.id, mentions: [] };
+        item.mentions.push({
+          url: row.url,
+          pageTitle: row.title,
+          lastSeenAt: new Date(row.last_seen_at),
+          fields: JSON.parse(row.fields),
+        });
+        items.set(row.id, item);
+      }
+      return [...items.values()];
+    },
+
+    isGuidebookItem(id) {
+      return selectGuidebookItem.get(id) !== undefined;
+    },
+
+    reportGuidebookItem(studentId, id, at, entry) {
+      inTransaction(db, () => {
+        if (reportItem.run(at.toISOString(), id).changes > 0) addActivity(studentId, entry);
+      });
+    },
+
+    reportedGuidebookItems() {
+      return selectReportedItems.all().map((row: any) => ({ id: row.id, name: row.name }));
+    },
+
+    lastDiscoveryAt() {
+      const at = (selectLastDiscovery.get() as any)?.last_run_at;
+      return at ? new Date(at) : null;
+    },
+
+    lastDiscoveryFailureAt() {
+      const at = (selectLastDiscovery.get() as any)?.last_failed_at;
+      return at ? new Date(at) : null;
+    },
+
+    recordDiscovery(studentId, at, entry) {
+      inTransaction(db, () => {
+        upsertDiscovery.run(at.toISOString());
+        addActivity(studentId, entry);
+      });
+    },
+
+    recordDiscoveryFailure(studentId, at, entry) {
+      inTransaction(db, () => {
+        upsertDiscoveryFailure.run(at.toISOString());
+        if (entry) addActivity(studentId, entry);
+      });
+    },
+
+    addGuidebookCard(studentId, card) {
+      insertGuidebookCard.run(studentId, card.itemId, card.afterMessageId, card.createdAt.toISOString());
+    },
+
+    listGuidebookCards(studentId) {
+      return selectGuidebookCards.all(studentId).map((row: any) => ({
+        itemId: row.item_id,
         afterMessageId: row.after_message_id,
         createdAt: new Date(row.created_at),
       }));

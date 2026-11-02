@@ -39,6 +39,10 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   ReadPermissionCardItem? newestReadPermissionCard;
 
+  /// The Guidebook cards from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  List<GuidebookCardItem> newestGuidebookCards = const [];
+
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
   Future<void> loadHistory() async {
@@ -63,6 +67,7 @@ class ChatController extends ChangeNotifier {
     newestHidden = null;
     newestCard = null;
     newestReadPermissionCard = null;
+    newestGuidebookCards = const [];
     _changed();
 
     ChatMessage? reply;
@@ -88,6 +93,11 @@ class ChatController extends ChangeNotifier {
             items = [...items, card];
             newestReadPermissionCard = card;
             _changed();
+          case ReplyGuidebookCard():
+            final card = GuidebookCardItem(event.item);
+            items = [...items, card];
+            newestGuidebookCards = [...newestGuidebookCards, card];
+            _changed();
           case ReplyDone():
             reply = event.reply;
           case ReplyFailed():
@@ -105,6 +115,20 @@ class ChatController extends ChangeNotifier {
       turnError = failure ?? _cutOff;
     }
     replyInProgress = null;
+    _changed();
+  }
+
+  /// Throws if the backend can't be reached, and then nothing changes. Every card of the item goes,
+  /// because the Student has just said it's wrong.
+  Future<void> report(GuidebookItem item) async {
+    await _backend.reportGuidebookItem(item.id);
+    items = [
+      for (final existing in items)
+        if (existing is GuidebookCardItem && existing.item?.id == item.id)
+          GuidebookCardItem(null, reportedJustNow: true)
+        else
+          existing,
+    ];
     _changed();
   }
 
