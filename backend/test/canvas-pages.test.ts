@@ -76,7 +76,7 @@ describe("reading the assignments list", () => {
   });
 
   it("says it couldn't understand rows it can't read a name from", () => {
-    expect(readAssignmentsPage('<li class="assignment" id="assignment_1"><a class="new-title">x</a></li>')).toBeNull();
+    expect(readAssignmentsPage('<li class="assignment"><div class="ig-row" id="assignment_1"><a class="new-title">x</a></div></li>')).toBeNull();
   });
 
   it("says it couldn't understand a page whose list never came", () => {

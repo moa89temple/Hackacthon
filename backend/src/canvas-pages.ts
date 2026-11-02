@@ -155,7 +155,8 @@ export function readCoursesPage(html: string): CourseOnPage[] | null {
 
 export function readAssignmentsPage(html: string): AssignmentOnList[] | null {
   const page = parse(html);
-  const rows = findAll(page, (element) => hasClass(element, "assignment") && /^assignment_\d+$/.test(attribute(element, "id") ?? ""));
+  // The id is on the row inside the list item, and a row holds everything read from it.
+  const rows = findAll(page, (element) => /^assignment_\d+$/.test(attribute(element, "id") ?? ""));
   if (rows.length === 0) return find(page, withClass("ig-empty-msg")) ? [] : null;
 
   const assignments = rows.flatMap((row) => {

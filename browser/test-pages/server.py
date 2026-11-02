@@ -143,8 +143,8 @@ CANVAS_ASSIGNMENTS = """
     const answer = await fetch('/api/v1/courses/101/assignment_groups');
     const assignments = await answer.json();
     document.getElementById('ag-list').innerHTML = assignments.map((one) =>
-      '<li class="assignment" id="assignment_' + one.id + '"><a class="ig-title" href="/courses/101/assignments/' + one.id + '">' + one.name + '</a>' +
-      '<div class="assignment-date-due"><time datetime="' + one.due + '">soon</time></div></li>').join('');
+      '<li class="assignment"><div class="ig-row" id="assignment_' + one.id + '"><a class="ig-title" href="/courses/101/assignments/' + one.id + '">' + one.name + '</a>' +
+      '<div class="assignment-date-due"><time datetime="' + one.due + '">soon</time></div></div></li>').join('');
   }, 200));
 </script>
 """

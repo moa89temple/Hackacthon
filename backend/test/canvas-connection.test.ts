@@ -306,8 +306,8 @@ describe("what's new since the last read", () => {
   it("makes an event for a new assignment, which records that it came from Canvas", async () => {
     await connectCanvas();
     changeSavedPage(backend.browser, coursePage("102", "assignments"), () =>
-      `<ul><li class="assignment" id="assignment_600"><a class="ig-title" href="/courses/102/assignments/600">Made-Up Essay</a>
-       <div class="assignment-date-due"><time datetime="2026-11-04T04:59:00Z">Nov 3</time></div></li></ul>`,
+      `<ul><li class="assignment"><div class="ig-row" id="assignment_600"><a class="ig-title" href="/courses/102/assignments/600">Made-Up Essay</a>
+       <div class="assignment-date-due"><time datetime="2026-11-04T04:59:00Z">Nov 3</time></div></div></li></ul>`,
     );
 
     await backend.readNow(CANVAS);
