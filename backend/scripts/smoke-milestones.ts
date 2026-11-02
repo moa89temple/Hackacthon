@@ -89,7 +89,8 @@ try {
   check("final exams begin December 9", has("2026-12-09", /final/i));
   check("priority registration for Fall 2027 begins March 29, 2027", has("2027-03-29", /registration/i));
   check("the FAFSA priority deadline is February 1, 2027", has("2027-02-01", /fafsa/i));
-  check("the last day to submit a 2026-27 FAFSA for Spring 2027 is April 19, 2027", has("2027-04-19", /fafsa/i));
+  // By "2026-27", because the page itself leaves out the word FAFSA on this line.
+  check("the last day to submit a 2026-27 FAFSA for Spring 2027 is April 19, 2027", has("2027-04-19", /2026-27/));
   check("there's nothing for grading", !milestones.some((milestone) => /grading/i.test(milestone.name)));
   check("there's nothing for a holiday", !milestones.some((milestone) => /thanksgiving|labor day/i.test(milestone.name)));
 

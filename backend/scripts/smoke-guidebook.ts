@@ -73,7 +73,7 @@ try {
 
   const [read] = await activity();
   console.log(`${read.title}: ${read.detail}`);
-  const pages = settings.discovery.offices.flatMap((office) => office.pages).length;
+  const pages = [...settings.discovery.offices, ...settings.discovery.milestoneOffices].flatMap((office) => office.pages).length;
   check("every office page answered", read.detail.startsWith(`Read ${pages} of ${pages} pages.`));
 
   for (const term of ["writing", "tutoring", "counseling", "career", "financial aid", "disability", "dean", "wellness"]) {

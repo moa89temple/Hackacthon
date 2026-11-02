@@ -39,6 +39,20 @@ const DATE_WORDS = new Set(["when", "whens", "date", "dates", "deadline", "deadl
 const ORDINAL = "(?:st|nd|rd|th)?";
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+/**
+ * A Milestone has the same name each year, and its days can overlap: December 14 is in finals in both
+ * 2026 and 2027. So it's the years the reply gives, or if it gives none, the soonest.
+ */
+function theRightYears(milestones: StandardMilestone[], reply: string): StandardMilestone[] {
+  const years = new Set(reply.match(/\b20\d{2}\b/g));
+  return milestones.filter((milestone, _, all) => {
+    const sameName = all.filter((other) => other.name === milestone.name);
+    const inYearsGiven = sameName.filter((other) => years.has(other.date.slice(0, 4)));
+    if (inYearsGiven.length > 0) return inYearsGiven.includes(milestone);
+    return sameName.every((other) => milestone.date <= other.date);
+  });
+}
+
 function dayInWords(iso: string): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", dateStyle: "full" }).format(new Date(`${iso}T12:00:00Z`));
 }
@@ -130,8 +144,11 @@ export function createStandardMilestones(deps: { store: Store; clock: Clock }): 
     },
 
     inReply(reply, lookedUp) {
-      const dated = lookedUp.filter(
-        (milestone) => saysMonthAndDay(reply, milestone.date) || (milestone.endDate !== null && saysMonthAndDay(reply, milestone.endDate)),
+      const dated = theRightYears(
+        lookedUp.filter(
+          (milestone) => saysMonthAndDay(reply, milestone.date) || (milestone.endDate !== null && saysMonthAndDay(reply, milestone.endDate)),
+        ),
+        reply,
       );
       // In another language the month's name won't match, so the day's number is what's left to go on.
       // It isn't one if it's the 7 in "7-week".

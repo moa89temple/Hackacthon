@@ -419,6 +419,50 @@ describe("each shape of date on the real pages", () => {
     expect(deadline).toMatchObject({ when: "Monday, February 1, 2027" });
   });
 
+  it("takes a deadline whose description quotes its date too, which is how real Haiku writes it", async () => {
+    const [deadline] = await fromRealPage("https://sfs.temple.edu/apply/2027-28-fafsa", {
+      name: "Temple University's priority deadline",
+      date: "2027-02-01",
+      date_quote: "February 1",
+      what_quote: "Temple University's priority deadline is February 1, so please make sure to submit the application as soon as possible!",
+    });
+
+    expect(deadline).toMatchObject({ name: "Temple University's priority deadline", when: "Monday, February 1, 2027" });
+  });
+
+  it("takes a name that has its date in it, because the date is backed up by the date itself", async () => {
+    const [deadline] = await fromRealPage("https://sfs.temple.edu/apply/current-undergraduate", {
+      name: "February 1 priority deadline",
+      date: "2027-02-01",
+      date_quote: "February 1",
+      what_quote: "to ensure you meet the February 1 priority deadline",
+    });
+
+    expect(deadline).toMatchObject({ when: "Monday, February 1, 2027" });
+  });
+
+  it("drops a description holding another date, which may be the one it's about", async () => {
+    const milestones = await fromRealPage("https://sfs.temple.edu/apply/2027-28-fafsa", {
+      name: "Pennsylvania's state deadline",
+      date: "2027-02-01",
+      date_quote: "February 1",
+      what_quote: "Pennsylvania's state deadline is May 1 for PHEAA's programs - so by filing in time for Temple's February 1 deadline",
+    });
+
+    expect(milestones).toEqual([]);
+  });
+
+  it("doesn't let the number of a date in the description back up a name", async () => {
+    const milestones = await fromRealPage("https://sfs.temple.edu/apply/2027-28-fafsa", {
+      name: "1 priority deadline",
+      date: "2027-02-01",
+      date_quote: "February 1",
+      what_quote: "Temple University's priority deadline is February 1, so please",
+    });
+
+    expect(milestones).toEqual([]);
+  });
+
   it("copes with a curly apostrophe in a quote", async () => {
     const [deadline] = await fromRealPage("https://sfs.temple.edu/apply/current-undergraduate", {
       name: "Temple University's FAFSA priority deadline",

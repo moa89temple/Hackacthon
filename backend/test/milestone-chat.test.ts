@@ -53,6 +53,58 @@ function lastToolAnswer(): any {
 const cardsIn = (events: any[]) => events.filter((event) => event.type === "milestone_card").map((event) => event.milestone);
 const latestDecision = async () => (await backend.activity()).find((entry) => entry.decision).decision;
 
+describe("the same Milestone in two years", () => {
+  const FINALS_NAME = "Days 4 & 5 of Final Exams for Full Term 16-week Courses (1)";
+  const finals = (date: string, endDate: string, quote: string) => ({
+    name: FINALS_NAME,
+    date,
+    end_date: endDate,
+    date_quote: quote,
+    what_quote: FINALS_NAME,
+    search_terms: ["finals"],
+  });
+
+  beforeEach(async () => {
+    await backend.stop();
+    backend = await BackendHarness.start({
+      offices: [],
+      milestoneOffices: [
+        {
+          name: "Registrar",
+          pages: [
+            "https://registrar.temple.edu/academic-calendar/2026-2027-academic-calendar",
+            "https://registrar.temple.edu/academic-calendar/2027-2028-academic-calendar",
+          ],
+        },
+      ],
+    });
+    backend.claude.willReply(
+      haikuFindsDates(finals("2026-12-14", "2026-12-15", "Monday, December 14 - Tuesday, December 15")),
+      haikuFindsDates(finals("2027-12-13", "2027-12-14", "Monday, December 13 - Tuesday, December 14")),
+    );
+    await backend.discovery.run();
+  });
+
+  const cardsForReply = async (reply: string) => {
+    backend.claude.willReply(toolCall(FIND, { query: "finals" }), { chunks: [reply] });
+    return cardsIn(await backend.sendAndCollect("When are finals?")).map((milestone) => milestone.when);
+  };
+
+  it("doesn't show next year's when the reply's date is also a day of it, and the reply says which year", async () => {
+    expect(await cardsForReply("Monday, December 14 to Tuesday, December 15, 2026.")).toEqual([expect.stringContaining("2026")]);
+  });
+
+  it("shows the sooner one when the reply says no year", async () => {
+    expect(await cardsForReply("December 14 and 15.")).toEqual([expect.stringContaining("2026")]);
+  });
+
+  it("shows both when the reply gives both", async () => {
+    const cards = await cardsForReply("December 14, 2026 this year and December 13, 2027 next year.");
+
+    expect(cards).toEqual([expect.stringContaining("2026"), expect.stringContaining("2027")]);
+  });
+});
+
 describe("what Claude is told", () => {
   it("has tools to find Standard Milestones and show their cards, and the prompt says to use them", async () => {
     backend.claude.willReply({ chunks: ["Hi."] });
