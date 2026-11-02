@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { parse } from "parse5";
 import type { DefaultTreeAdapterTypes as Html } from "parse5";
-import { senderAddressIn } from "./tumail-rules.ts";
+import { bracketedAddressIn, senderAddressIn } from "./tumail-rules.ts";
 
 /**
  * Reads Outlook on the web's pages. There's no model here and no fetching: each function takes a page's
@@ -25,7 +25,7 @@ export interface RowOnPage {
   /** When it came, as the page writes it. */
   shownAt: string | null;
   /** Changes when what the row shows changes, such as when a reply arrives. It holds no words. */
-  print: string;
+  fingerprint: string;
 }
 
 export type MessageOnPage =
@@ -37,6 +37,9 @@ export type MessageOnPage =
   | { outcome: "not_recognized" };
 
 type Node = Html.ChildNode | Html.Document;
+
+/** Says whether something changed, and holds none of what it's made from. */
+export const shortHash = (text: string) => createHash("sha256").update(text).digest("base64url").slice(0, 22);
 
 const NOT_WORDS_ON_THE_PAGE = new Set(["script", "style", "template", "noscript", "head"]);
 const KEPT_OUT_OF_SIGHT = /display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(?![.\d])/i;
@@ -103,10 +106,7 @@ function readRow(row: Html.Element): RowOnPage | null {
     address,
     unread: label === undefined ? null : /^unread\b/i.test(label.trim()),
     shownAt,
-    print: createHash("sha256")
-      .update(JSON.stringify([address, shownAt, wordsIn(row).replace(dated ? wordsIn(dated) : "", "")]))
-      .digest("base64url")
-      .slice(0, 22),
+    fingerprint: shortHash(JSON.stringify([address, shownAt, wordsIn(row).replace(dated ? wordsIn(dated) : "", "")])),
   };
 }
 
@@ -128,8 +128,7 @@ export function readInboxPage(html: string): RowOnPage[] | null {
 
 /** The message open in the reading pane, and only it. */
 export function readMessagePage(html: string): MessageOnPage {
-  const inPane = elementsIn(parse(html));
-  const pane = [...inPane].find((element) => attribute(element, "id") === "ReadingPaneContainerId" || withLabel(element, /^reading pane$/i));
+  const pane = [...elementsIn(parse(html))].find((element) => attribute(element, "id") === "ReadingPaneContainerId" || withLabel(element, /^reading pane$/i));
   if (!pane) return { outcome: "not_recognized" };
 
   const elements = [...elementsIn(pane)];
@@ -143,10 +142,11 @@ export function readMessagePage(html: string): MessageOnPage {
   const inBody = new Set(elementsIn(body));
   const fromHeader = beforeBody.findLast((element) => withLabel(element, /^from\b/i) && !inBody.has(element));
   const shownFrom = fromHeader ? wordsIn(fromHeader) : "";
-  const address = fromHeader ? (senderAddressIn(attribute(fromHeader, "title") ?? "") ?? senderAddressIn(shownFrom)) : null;
+  // In the words it must be in brackets: an address on its own there could be a display name that looks like one.
+  const address = fromHeader ? (senderAddressIn(attribute(fromHeader, "title") ?? "") ?? bracketedAddressIn(shownFrom)) : null;
   if (!address) return { outcome: "no_sender" };
 
-  const when = elements.find((element) => attribute(element, "data-testid") === "SentReceivedSavedTime");
+  const when = beforeBody.find((element) => attribute(element, "data-testid") === "SentReceivedSavedTime");
   const heading = beforeBody.find((element) => attribute(element, "role") === "heading");
   return {
     outcome: "read",

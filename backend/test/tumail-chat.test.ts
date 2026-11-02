@@ -291,7 +291,20 @@ describe("Claude doing what an email says", () => {
     const answers = lastToolAnswers();
     expect(answers.slice(0, 4).every((answer) => answer.is_error === true && /Refused by Buddy's code/.test(answer.content))).toBe(true);
     const reply = (await backend.activity()).find((entry) => entry.kind === "reply");
-    expect(reply.decision.tools.join(" ")).toMatch(/stopped the AI using remember/);
+    const tools = reply.decision.tools.join(" ");
+    expect(tools).toMatch(/stopped the AI saving a fact to your Profile, because it had just read your email/);
+    expect(tools).toMatch(/writing a Draft/);
+    expect(tools).not.toMatch(/make_handoff|request_action|suggest_connection/);
+  });
+
+  it("leaves everything allowed when there was no email to read, as before the first read", async () => {
+    expireTumailLogin(backend.browser);
+    await connect();
+    backend.claude.willReply(lookAtMail(), calls(["remember", { fact: "Works 20 hours a week." }]), { chunks: ["You need to log in."] });
+
+    await backend.sendAndCollect("I work 20 hours a week. Any mail?");
+
+    expect((await backend.profileFacts()).filter((fact) => fact.origin.type === "conversation")).toHaveLength(1);
   });
 
   it("is only stopped after reading mail: the same things work in a turn that hasn't", async () => {

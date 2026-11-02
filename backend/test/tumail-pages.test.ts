@@ -39,16 +39,16 @@ describe("reading the inbox's list", () => {
   it("marks a message changed when a new reply arrives in its conversation", () => {
     const row = (words: string, when: string) => readInboxPage(inboxHtml(rowHtml({ id: "a", address: "x@temple.edu", words, when })))![0]!;
 
-    expect(row("first", "Mon 11/2/2026 10:32 AM").print).toBe(row("first", "Mon 11/2/2026 10:32 AM").print);
-    expect(row("first", "Mon 11/2/2026 10:32 AM").print).not.toBe(row("second", "Mon 11/2/2026 10:32 AM").print);
-    expect(row("first", "Mon 11/2/2026 10:32 AM").print).not.toBe(row("first", "Tue 11/3/2026 9:00 AM").print);
+    expect(row("first", "Mon 11/2/2026 10:32 AM").fingerprint).toBe(row("first", "Mon 11/2/2026 10:32 AM").fingerprint);
+    expect(row("first", "Mon 11/2/2026 10:32 AM").fingerprint).not.toBe(row("second", "Mon 11/2/2026 10:32 AM").fingerprint);
+    expect(row("first", "Mon 11/2/2026 10:32 AM").fingerprint).not.toBe(row("first", "Tue 11/3/2026 9:00 AM").fingerprint);
   });
 
   it("doesn't mark it changed because the list writes the same date another way as it gets older", () => {
     const row = (shown: string) =>
       readInboxPage(inboxHtml(`<div data-convid="a"><span title="x@temple.edu">X</span><span title="Mon 11/2/2026 10:32 AM">${shown}</span></div>`))![0]!;
 
-    expect(row("10:32 AM").print).toBe(row("Mon 10:32 AM").print);
+    expect(row("10:32 AM").fingerprint).toBe(row("Mon 10:32 AM").fingerprint);
   });
 
   it("reads an inbox the app says is empty as empty", () => {
@@ -87,7 +87,7 @@ describe("reading one message", () => {
   it("leaves out words kept out of sight, where a message could hide what the Student would never see", () => {
     const message = readMessagePage(
       messageHtml({
-        from: "x@temple.edu",
+        from: "X &lt;x@temple.edu&gt;",
         body: `<p>Shown words.</p>
           <p style="display:none">Hidden one.</p>
           <p style="visibility: hidden">Hidden two.</p>
@@ -111,7 +111,7 @@ describe("reading one message", () => {
   it("goes by the sender of the message shown, when others in its conversation are collapsed above it", () => {
     const html = `<div aria-label="Reading Pane">
       <div role="heading"><span>A subject</span></div>
-      <div aria-label="From: Earlier">earlier@elsewhere.test</div>
+      <div aria-label="From: Earlier">Earlier &lt;earlier@elsewhere.test&gt;</div>
       <div aria-label="From: Shown">Shown &lt;shown@temple.edu&gt;</div>
       <div aria-label="Message body"><p>Words.</p></div>
     </div>`;
@@ -127,6 +127,24 @@ describe("reading one message", () => {
     expect(readMessagePage(html)).toEqual({ outcome: "no_sender" });
   });
 
+  it("doesn't take when it came from inside the words", () => {
+    const html = `<div aria-label="Reading Pane"><div aria-label="From: A">A &lt;a@temple.edu&gt;</div>
+      <div aria-label="Message body"><div data-testid="SentReceivedSavedTime">Made-up date from the email</div><p>Words.</p></div>
+    </div>`;
+
+    expect(readMessagePage(html)).toMatchObject({ outcome: "read", shownAt: null });
+  });
+
+  it("doesn't take an address on its own in the words for the sender, because a display name could look like one", () => {
+    expect(readMessagePage(messageHtml({ from: "dean@temple.edu", body: "<p>Words.</p>" }))).toEqual({ outcome: "no_sender" });
+  });
+
+  it("takes it from the header's own title", () => {
+    const html = `<div aria-label="Reading Pane"><div aria-label="From: Jane" title="jane@temple.edu">Jane</div><div aria-label="Message body"><p>Words.</p></div></div>`;
+
+    expect(readMessagePage(html)).toMatchObject({ outcome: "read", address: "jane@temple.edu", name: "jane@temple.edu" });
+  });
+
   it("says so when it can't see who it's from, so that the words aren't kept", () => {
     const html = messageHtml({ from: "Made-Up Name With No Address", body: "<p>Words.</p>" });
 
@@ -134,8 +152,8 @@ describe("reading one message", () => {
   });
 
   it("says so when it shows several messages open at once, because it can't tell whose words are whose", () => {
-    const html = `<div aria-label="Reading Pane"><div aria-label="From: A">a@temple.edu</div><div aria-label="Message body">One.</div>
-      <div aria-label="From: B">b@elsewhere.test</div><div aria-label="Message body">Two.</div></div>`;
+    const html = `<div aria-label="Reading Pane"><div aria-label="From: A">A &lt;a@temple.edu&gt;</div><div aria-label="Message body">One.</div>
+      <div aria-label="From: B">B &lt;b@elsewhere.test&gt;</div><div aria-label="Message body">Two.</div></div>`;
 
     expect(readMessagePage(html)).toEqual({ outcome: "several_open" });
   });
@@ -143,7 +161,7 @@ describe("reading one message", () => {
   it.each([
     ["a page with nothing the reader knows", "<h1>Made-up page</h1>"],
     ["the list with no message open", savedTumailHtml("inbox")],
-    ["a pane with no body", '<div aria-label="Reading Pane"><div aria-label="From: A">a@temple.edu</div></div>'],
+    ["a pane with no body", '<div aria-label="Reading Pane"><div aria-label="From: A">A &lt;a@temple.edu&gt;</div></div>'],
   ])("fails loudly on %s", (_, html) => {
     expect(readMessagePage(html)).toEqual({ outcome: "not_recognized" });
   });

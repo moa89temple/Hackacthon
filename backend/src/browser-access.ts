@@ -44,6 +44,8 @@ export interface Site {
   loginHosts: string[];
   /** Other hosts a logged-in home page can end up on, for a site that moves between them. */
   appHosts?: string[];
+  /** What to wait for when reading the home page to check a login, for an app built by script. */
+  loginCheckWait?: PageWait;
   /** What the network guard lets through for this site without an Action Permission. See network-guard.ts. */
   readOnlyRequests?: KnownRequest[];
   /**
@@ -240,7 +242,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
   const readToCheckLogin = async (id: string) => {
     const site = siteWithId(id);
     if (lacksReadPermission(id, site)) throw new PageBlocked(`There's no Read Permission for ${site.name}`);
-    return readUnderGuard(site.homeUrl, keepToReadablePages(guards.forLoginCheck(id), sites));
+    return readUnderGuard(site.homeUrl, keepToReadablePages(guards.forLoginCheck(id), sites), site.loginCheckWait);
   };
 
   /**

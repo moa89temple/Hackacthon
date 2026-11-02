@@ -9,7 +9,7 @@ import { createGuardPolicy, type RequestGuard, type RequestToCheck } from "./net
 import { createProfile } from "./profile.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { readInboxPage, readMessagePage, type MessageOnPage, type RowOnPage } from "./tumail-pages.ts";
-import { INBOX_IS_READY, isTempleAddress, senderAddressIn, TUMAIL_APP_HOSTS } from "./tumail-rules.ts";
+import { INBOX_IS_READY, INBOX_PATH, isTempleAddress, senderAddressIn, TUMAIL_APP_HOSTS } from "./tumail-rules.ts";
 
 /**
  * Checks the TUmail reader against a real login, for someone who must not see the Student's mail. It
@@ -89,6 +89,20 @@ export function cleanTumailRequest(address: string, appHosts: string[]): string 
     return `${host} /${segments.join("/")}${named}`;
   }
   return KNOWN_HOSTS.some((known) => host === known || host.endsWith(`.${known}`)) ? host : "(another host)";
+}
+
+/** The list shows only one of these at a time, and the reader can't click the other. Only fixed words go out. */
+function hasFocusedInboxTabs(html: string): boolean {
+  const visit = (node: Html.ChildNode | Html.Document): boolean => {
+    if ("attrs" in node && attributeOf(node, "role") === "tab" && /^focused\b/i.test(attributeOf(node, "aria-label") ?? wordsDirectlyIn(node))) return true;
+    return "childNodes" in node && node.childNodes.some(visit);
+  };
+  return visit(parse(html));
+}
+
+function wordsDirectlyIn(element: Html.Element): string {
+  const words = (node: Html.ChildNode): string => (node.nodeName === "#text" ? (node as Html.TextNode).value : "childNodes" in node ? node.childNodes.map(words).join(" ") : "");
+  return element.childNodes.map(words).join(" ").trim();
 }
 
 function normalized(text: string): string {
@@ -195,7 +209,7 @@ function shapeLines(element: Html.Element, pageWords: string, depth: number, isT
 }
 
 /** A page's roles, kinds of label and data attribute names, with nothing a page's words could be in. No classes: Outlook's mean nothing, and an email's could. */
-export function shapeOf(html: string): string[] {
+export function tumailStructureOf(html: string): string[] {
   const page = parse(html);
   const pageWords = wordsOfPage(page);
   const find = (node: Html.Document | Html.ChildNode): Html.Element | null => {
@@ -394,6 +408,7 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
     print(`  from temple.edu addresses: ${rows.filter((row) => row.address !== null && isTempleAddress(row.address)).length}`);
     print(`  with a date: ${rows.filter((row) => row.shownAt !== null).length}`);
     print(`  saying whether they're unread: ${rows.filter((row) => row.unread !== null).length}`);
+    print(`  Focused Inbox tabs on the page: ${firstInboxHtml !== null && hasFocusedInboxTabs(firstInboxHtml) ? "yes, so the reader may be seeing only the Focused tab, and mail under Other is missed" : "no"}`);
   }
   print("  from Contacts: the check has no Contacts, so it opens only temple.edu addresses");
   print(`  opened: ${messageVisits.length}`);
@@ -440,18 +455,18 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
 
   const shapes: { path: string; why: string; html: string }[] = [];
   if (!status.needsLogin && firstInboxHtml !== null) {
-    if (rows === null) shapes.push({ path: "/mail/inbox", why: WHY_NOT_RECOGNIZED, html: firstInboxHtml });
-    else if (rows.length > 0 && rows.every((row) => row.address === null)) shapes.push({ path: "/mail/inbox", why: WHY_NO_SENDERS, html: firstInboxHtml });
+    if (rows === null) shapes.push({ path: INBOX_PATH, why: WHY_NOT_RECOGNIZED, html: firstInboxHtml });
+    else if (rows.length > 0 && rows.every((row) => row.address === null)) shapes.push({ path: INBOX_PATH, why: WHY_NO_SENDERS, html: firstInboxHtml });
   }
   const firstUnclear = messageVisits.find((visit) => visit.html !== null && readMessagePage(visit.html).outcome !== "read");
-  if (firstUnclear && !status.needsLogin) shapes.push({ path: "/mail/inbox/id/:id", why: WHY_NOT_RECOGNIZED, html: firstUnclear.html! });
+  if (firstUnclear && !status.needsLogin) shapes.push({ path: `${INBOX_PATH}/id/:id`, why: WHY_NOT_RECOGNIZED, html: firstUnclear.html! });
   if (shapes.length > 0) {
     print("");
     print("Structure of the pages the reader had trouble with (the first of each kind):");
     for (const { path, why, html } of shapes) {
       print("");
       print(`Structure of ${path}  (${why})`);
-      for (const line of shapeOf(html)) print(line);
+      for (const line of tumailStructureOf(html)) print(line);
     }
   }
 

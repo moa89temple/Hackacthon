@@ -3,7 +3,7 @@ import type { Site } from "../src/browser-access.ts";
 import { EXIT_FAILED, EXIT_LOGIN_NEEDED, EXIT_NO_READ_PERMISSION, EXIT_OLD_LOGIN_REMAINS, EXIT_OK, EXIT_TAKEOVER_UNDER_WAY } from "../src/canvas-check.ts";
 import { settings } from "../src/settings.ts";
 import { tumail } from "../src/tumail.ts";
-import { cleanTumailRequest, EXIT_MARKED_READ, runTumailCheck, shapeOf } from "../src/tumail-check.ts";
+import { cleanTumailRequest, EXIT_MARKED_READ, runTumailCheck, tumailStructureOf } from "../src/tumail-check.ts";
 import { RecordingBrowser } from "./support/recording-browser.ts";
 import {
   ADVISOR,
@@ -139,6 +139,19 @@ describe("what the check prints", () => {
     expectNoLeaks(output);
   });
 
+  it("says whether the list has Focused Inbox's tabs, since mail under Other wouldn't be seen", async () => {
+    const browser = browserWithPages();
+    expect((await check(browser)).output).toContain("Focused Inbox tabs on the page: no");
+
+    const withTabs = browserWithPages();
+    withTabs.savedPages.set(
+      INBOX_PAGE,
+      outlookPage(inboxHtml(`<div role="tab" aria-selected="true">Focused</div><div role="tab">Other</div>`, rowHtml({ id: ADVISOR, address: "made.up.advisor@temple.edu", words: "Words" }))),
+    );
+
+    expect((await check(withTabs)).output).toContain("Focused Inbox tabs on the page: yes");
+  });
+
   it("shows nothing about a page's structure when everything was understood", async () => {
     const { output } = await check(browserWithPages());
 
@@ -185,9 +198,9 @@ describe("when the reader doesn't recognize a page", () => {
   });
 });
 
-describe("shapeOf", () => {
+describe("tumailStructureOf", () => {
   it("gives roles, kinds of label and data attribute names, and folds identical rows", () => {
-    const lines = shapeOf(inboxHtml(rowHtml({ id: "a", address: "x@temple.edu", words: "One", unread: true }), rowHtml({ id: "b", address: "y@temple.edu", words: "Two", unread: true })));
+    const lines = tumailStructureOf(inboxHtml(rowHtml({ id: "a", address: "x@temple.edu", words: "One", unread: true }), rowHtml({ id: "b", address: "y@temple.edu", words: "Two", unread: true })));
 
     const text = lines.join("\n");
     expect(text).toContain("role=listbox aria-label=message list");
@@ -198,7 +211,7 @@ describe("shapeOf", () => {
   });
 
   it("drops plain elements, which only say how deep the app nests things", () => {
-    const lines = shapeOf(`<body><div><div><div><section role="main"><div><span title="x@temple.edu">X</span></div></section></div></div></div></body>`);
+    const lines = tumailStructureOf(`<body><div><div><div><section role="main"><div><span title="x@temple.edu">X</span></div></section></div></div></div></body>`);
 
     expect(lines.join("\n")).toBe(["body", "  section role=main", "    span title=:address"].join("\n"));
   });

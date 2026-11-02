@@ -1,4 +1,5 @@
 import type { KnownRequest, PagePattern } from "./browser-access.ts";
+import type { ContactAddress } from "./guidebook.ts";
 
 /**
  * Everything Buddy assumes about Outlook on the web, as data in one place, because none of it has been
@@ -81,6 +82,11 @@ export function senderAddressIn(written: string): string | null {
   return WHOLE_ADDRESS.test(candidate) ? candidate : null;
 }
 
+/** The address only if it's written in brackets after a name, as in "Jane Doe <jdoe@temple.edu>". */
+export function bracketedAddressIn(written: string): string | null {
+  return IN_BRACKETS_AT_THE_END.test(written.trim()) ? senderAddressIn(written) : null;
+}
+
 export function isTempleAddress(address: string): boolean {
   if (!WHOLE_ADDRESS.test(address)) return false;
   const domain = address.slice(address.lastIndexOf("@") + 1);
@@ -92,12 +98,6 @@ export function addressesIn(written: string): string[] {
   return written.toLowerCase().match(new RegExp(ADDRESS, "g")) ?? [];
 }
 
-/** A Contact as far as email goes. */
-export interface ContactAddress {
-  name: string;
-  email: string | null;
-}
-
-export function contactWithAddress<T extends ContactAddress>(address: string, contacts: T[]): T | null {
+export function contactWithAddress(address: string, contacts: ContactAddress[]): ContactAddress | null {
   return contacts.find((contact) => contact.email !== null && addressesIn(contact.email).includes(address)) ?? null;
 }

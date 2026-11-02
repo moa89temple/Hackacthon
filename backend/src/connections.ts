@@ -9,6 +9,7 @@ import {
 } from "./activity.ts";
 import { BrowserUnreachable, TakeoverInProgress, type BrowserAccess } from "./browser-access.ts";
 import { describeInPhiladelphia, philadelphiaClock, type Clock } from "./clock.ts";
+import type { ContactAddress } from "./guidebook.ts";
 import type { FactFromConnection, Profile } from "./profile.ts";
 import {
   THE_STUDENT,
@@ -18,7 +19,6 @@ import {
   type StoredConnectionEvent,
   type StoredReadPermission,
 } from "./store.ts";
-import type { ContactAddress } from "./tumail-rules.ts";
 import type { Web } from "./web.ts";
 
 /** The Read Permission card. All of it comes from Buddy's code, never from the model. */

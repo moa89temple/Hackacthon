@@ -62,6 +62,8 @@ describe("the Read Permission card", () => {
     expect(reads).toMatch(/Contacts/);
     expect(reads).toMatch(/1,500 characters/);
     expect(reads).toMatch(/keeps only how many/);
+    expect(reads).toMatch(/its subject, its first words/);
+    expect(reads).toMatch(/up to 30 days/);
   });
 
   it("says what Buddy never does, and how the login goes", async () => {
@@ -131,7 +133,9 @@ describe("reading the inbox", () => {
     expect(everything).not.toContain("evil.test");
     expect(backend.storageContains("MARKERNOTOPENEDSUBJECT")).toBe(false);
     expect(backend.storageContains("stranger@elsewhere.test")).toBe(false);
-    expect((await fact("Recent TUmail"))?.text).toContain("5 messages in the list, 3 of them not from");
+    expect((await fact("Recent TUmail"))?.text).toBe(
+      "Recent TUmail: 5 messages in the list. Buddy opens only those from temple.edu addresses and Contacts, and left the other 3 unopened, keeping nothing about them.",
+    );
   });
 
   it("opens mail from a Contact too, from the same list a Handoff uses, whatever the case of the address", async () => {
@@ -184,7 +188,7 @@ describe("reading the inbox", () => {
   it("hides a password or a number in an email, as for anything else that's kept", async () => {
     backend.browser.savedPages.set(
       messagePage(CLINIC),
-      outlookPage(messageHtml({ from: "clinic@tuhs.temple.edu", body: "<p>Your password is hunter2hunter and your SSN is 123-45-6789.</p>" })),
+      outlookPage(messageHtml({ from: "Clinic &lt;clinic@tuhs.temple.edu&gt;", body: "<p>Your password is hunter2hunter and your SSN is 123-45-6789.</p>" })),
     );
 
     await connect();
@@ -198,7 +202,7 @@ describe("reading the inbox", () => {
   it("keeps only the start of a long email", async () => {
     backend.browser.savedPages.set(
       messagePage(CLINIC),
-      outlookPage(messageHtml({ from: "clinic@tuhs.temple.edu", body: `<p>${"long ".repeat(1000)}</p>` })),
+      outlookPage(messageHtml({ from: "Clinic &lt;clinic@tuhs.temple.edu&gt;", body: `<p>${"long ".repeat(1000)}</p>` })),
     );
 
     await connect();
@@ -312,6 +316,14 @@ describe("the login", () => {
     expect(pagesOpened()).toEqual([INBOX_PAGE]);
   });
 
+  it("doesn't ask for a Takeover that couldn't help when Outlook moves the inbox to a page not on Buddy's list", async () => {
+    backend.browser.savedPages.set(INBOX_PAGE, { ...backend.browser.savedPages.get(INBOX_PAGE)!, finalUrl: "https://outlook.office.com/mail/somewhere-new" });
+
+    await connect();
+
+    expect(await statusOf()).toMatchObject({ needsLogin: false, lastReadProblem: expect.stringContaining("couldn't make sense") });
+  });
+
   it("asks for a Takeover when the guard won't go where Outlook sends it", async () => {
     backend.browser.savedPages.set(INBOX_PAGE, { ...backend.browser.savedPages.get(INBOX_PAGE)!, finalUrl: "https://signin.elsewhere.test/" });
 
@@ -340,6 +352,21 @@ describe("the login", () => {
     const response = await backend.finishTakeover();
 
     expect(await response.json()).toMatchObject({ signedIn: true });
+  });
+
+  it("waits for the app when checking the login, because it may never finish loading", async () => {
+    await connect();
+    const waits: unknown[] = [];
+    const read = backend.browser.read.bind(backend.browser);
+    backend.browser.read = (url, guard, wait) => {
+      waits.push(wait);
+      return read(url, guard, wait);
+    };
+    await backend.startTakeover(TUMAIL_ID);
+
+    await backend.finishTakeover();
+
+    expect(waits[0]).toEqual({ until: expect.stringContaining("data-convid") });
   });
 
   it("isn't taken to be working when the check ends up at Microsoft's sign-in", async () => {
@@ -397,7 +424,7 @@ describe("reading again", () => {
       INBOX_PAGE,
       outlookPage(inboxHtml(rowHtml({ id: "AAQkNew", address: "new@temple.edu", words: "Words" }), rowHtml({ id: ADVISOR, address: "made.up.advisor@temple.edu", words: "Happy to meet on Thursday" }))),
     );
-    backend.browser.savedPages.set(messagePage("AAQkNew"), outlookPage(messageHtml({ from: "new@temple.edu", subject: "MARKERSUBJECT", body: "<p>MARKERWORDS</p>" })));
+    backend.browser.savedPages.set(messagePage("AAQkNew"), outlookPage(messageHtml({ from: "New &lt;new@temple.edu&gt;", subject: "MARKERSUBJECT", body: "<p>MARKERWORDS</p>" })));
 
     await backend.readNow(TUMAIL_ID);
 
@@ -418,6 +445,59 @@ describe("reading again", () => {
     expect(await fact("Made-Up Advisor")).toBeDefined();
   });
 
+  it("doesn't lose an email, or call it new again, because one read couldn't see who it's from", async () => {
+    await connect();
+    backend.browser.savedPages.set(
+      INBOX_PAGE,
+      outlookPage(inboxHtml(`<div data-convid="${ADVISOR}"><span title="Only A Name">Only A Name</span></div>`, rowHtml({ id: CLINIC, address: "clinic@tuhs.temple.edu", words: "Words" }))),
+    );
+
+    await backend.readNow(TUMAIL_ID);
+
+    expect(await fact("Made-Up Advisor")).toBeDefined();
+    expect((await backend.connectionEvents(TUMAIL_ID)).map((event) => event.kind)).not.toContain("new_email");
+  });
+
+  it("lets go of an email from a Contact who's been reported, once the list shows it again", async () => {
+    await addContact("Made-Up Partner Office", "partner@elsewhere.test");
+    await connect();
+    expect(await fact("partner@elsewhere.test")).toBeDefined();
+
+    const contact = backend.guidebook.search("visit", { kind: "contact" })[0]!;
+    await backend.report(contact.id);
+    await backend.readNow(TUMAIL_ID);
+
+    expect(await fact("partner@elsewhere.test")).toBeUndefined();
+  });
+
+  it("opens what's new before trying again what it couldn't read last time", async () => {
+    const stuck = Array.from({ length: 10 }, (_, index) => `AAQkStuck${index}`);
+    const stuckRows = stuck.map((id) => rowHtml({ id, address: `${id.toLowerCase()}@temple.edu`, words: "Words" }));
+    backend.browser.savedPages.set(INBOX_PAGE, outlookPage(inboxHtml(...stuckRows)));
+    for (const id of stuck) backend.browser.savedPages.set(messagePage(id), outlookPage("<h1>Not a message</h1>"));
+    await connect();
+    backend.browser.actions.length = 0;
+    backend.browser.savedPages.set(INBOX_PAGE, outlookPage(inboxHtml(...stuckRows, rowHtml({ id: "AAQkOlderButNew", address: "new@temple.edu", words: "Words" }))));
+    backend.browser.savedPages.set(messagePage("AAQkOlderButNew"), outlookPage(messageHtml({ from: "New &lt;new@temple.edu&gt;", body: "<p>Words.</p>" })));
+
+    await backend.readNow(TUMAIL_ID);
+
+    expect(pagesOpened()[1]).toBe(messagePage("AAQkOlderButNew"));
+    expect(await fact("new@temple.edu")).toBeDefined();
+  });
+
+  it("says each thing that went wrong, not only the last", async () => {
+    const ids = Array.from({ length: 11 }, (_, index) => `AAQk${index}`);
+    backend.browser.savedPages.set(INBOX_PAGE, outlookPage(inboxHtml(...ids.map((id) => rowHtml({ id, address: `${id.toLowerCase()}@temple.edu`, words: "Words" })))));
+    for (const id of ids) backend.browser.savedPages.set(messagePage(id), outlookPage("<h1>Not a message</h1>"));
+
+    await connect();
+
+    const { lastReadProblem } = await statusOf();
+    expect(lastReadProblem).toMatch(/couldn't read some/);
+    expect(lastReadProblem).toMatch(/opened only your newest/);
+  });
+
   it("lets it go after a month", async () => {
     await connect();
     backend.clock.moveForward(31 * 24 * 3_600_000);
@@ -431,7 +511,7 @@ describe("reading again", () => {
   it("opens only the newest ten at a time, says so, and comes back for the rest", async () => {
     const ids = Array.from({ length: 12 }, (_, index) => `AAQk${index}`);
     backend.browser.savedPages.set(INBOX_PAGE, outlookPage(inboxHtml(...ids.map((id) => rowHtml({ id, address: `${id.toLowerCase()}@temple.edu`, words: "Words" })))));
-    for (const id of ids) backend.browser.savedPages.set(messagePage(id), outlookPage(messageHtml({ from: `${id.toLowerCase()}@temple.edu`, body: "<p>Words.</p>" })));
+    for (const id of ids) backend.browser.savedPages.set(messagePage(id), outlookPage(messageHtml({ from: `Someone &lt;${id.toLowerCase()}@temple.edu&gt;`, body: "<p>Words.</p>" })));
 
     await connect();
     expect(pagesOpened()).toHaveLength(11);

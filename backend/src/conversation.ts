@@ -589,7 +589,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
                     if (card) yield { type: "read_permission_card", connection: card };
                   }
                   if (call.name === CHECK_TUMAIL_TOOL.name) {
-                    if (!("is_error" in answer)) mailTurn.noteRead(call.id);
+                    if (!("is_error" in answer) && factsFromConnection(profile, TUMAIL_ID).length > 0) mailTurn.noteRead(call.id);
                     const card = askForLoginIfNeeded(TUMAIL_ID, suggestedThisTurn, studentMessageId!, now);
                     if (card) yield { type: "read_permission_card", connection: card };
                   }

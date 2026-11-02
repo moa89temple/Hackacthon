@@ -7,7 +7,7 @@ import { googleCalendar } from "./google-calendar.ts";
 import { MILESTONE_OFFICES } from "./milestone-pages.ts";
 import { OFFICES } from "./office-pages.ts";
 import { tumail } from "./tumail.ts";
-import { TUMAIL_APP_HOSTS, TUMAIL_HOME, TUMAIL_ID, TUMAIL_LOGIN_HOSTS, TUMAIL_READ_ONLY_REQUESTS, TUMAIL_READABLE_PAGES } from "./tumail-rules.ts";
+import { INBOX_IS_READY, TUMAIL_APP_HOSTS, TUMAIL_HOME, TUMAIL_ID, TUMAIL_LOGIN_HOSTS, TUMAIL_READ_ONLY_REQUESTS, TUMAIL_READABLE_PAGES } from "./tumail-rules.ts";
 
 const secretsPath = fileURLToPath(new URL("../../.env.local", import.meta.url));
 
@@ -75,6 +75,7 @@ export const settings = {
       name: "TUmail",
       homeUrl: TUMAIL_HOME,
       appHosts: TUMAIL_APP_HOSTS,
+      loginCheckWait: { until: INBOX_IS_READY },
       loginHosts: TUMAIL_LOGIN_HOSTS,
       isConnection: true,
       readablePages: TUMAIL_READABLE_PAGES,

@@ -42,6 +42,9 @@ export interface GuidebookItem {
   sources: GuidebookSource[];
 }
 
+/** A Contact as far as email goes. */
+export type ContactAddress = Pick<GuidebookItem, "name" | "email">;
+
 export interface Guidebook {
   /** The best matches, with free Resources first and anything that costs money last. */
   search(query: string, options?: { kind?: GuidebookKind }): GuidebookItem[];
