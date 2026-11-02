@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import '../backend/buddy_backend.dart';
 import '../widgets/buddy_avatar.dart';
 import 'chat_controller.dart';
+import 'crisis_card.dart';
 
 class BuddyTab extends StatelessWidget {
-  const BuddyTab({super.key, required this.chat});
+  const BuddyTab({super.key, required this.chat, required this.openPhone});
 
   final ChatController chat;
+  final PhoneOpener openPhone;
 
   @override
   Widget build(BuildContext context) {
@@ -28,25 +30,59 @@ class BuddyTab extends StatelessWidget {
     }
     if (chat.couldNotLoad) return _CouldNotLoad(onRetry: chat.loadHistory);
     if (chat.isEmptyConversation) return const _Welcome();
-    return _MessageList(chat: chat);
+    return _MessageList(chat: chat, openPhone: openPhone);
   }
 }
 
-class _MessageList extends StatelessWidget {
-  const _MessageList({required this.chat});
+class _MessageList extends StatefulWidget {
+  const _MessageList({required this.chat, required this.openPhone});
 
   final ChatController chat;
+  final PhoneOpener openPhone;
+
+  @override
+  State<_MessageList> createState() => _MessageListState();
+}
+
+class _MessageListState extends State<_MessageList> {
+  final _scroll = ScrollController();
+  CrisisCardItem? _cardScrolledTo;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// A new Crisis card must not appear somewhere the Student has scrolled away from.
+  void _scrollToNewCard() {
+    final card = widget.chat.newestCard;
+    if (card == null || identical(card, _cardScrolledTo)) return;
+    _cardScrolledTo = card;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) _scroll.jumpTo(0);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final chat = widget.chat;
+    _scrollToNewCard();
     final items = <Widget>[
       if (chat.turnError case final error?) _TurnError(message: error),
       if (chat.replyInProgress case final text?) _ReplyInProgress(text: text),
-      for (final message in chat.messages.reversed)
-        _SavedMessage(message: message, announce: identical(message, chat.newestReply)),
+      for (final item in chat.items.reversed)
+        switch (item) {
+          ChatMessage() => _SavedMessage(message: item, announce: identical(item, chat.newestReply)),
+          CrisisCardItem() => CrisisCard(
+              announce: identical(item, chat.newestCard),
+              openPhone: widget.openPhone,
+            ),
+        },
     ];
     // Reversed, so the newest message stays at the bottom as the reply grows.
     return ListView.builder(
+      controller: _scroll,
       reverse: true,
       padding: const EdgeInsets.all(12),
       itemCount: items.length,

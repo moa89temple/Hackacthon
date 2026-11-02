@@ -10,6 +10,8 @@ export interface NewMessage {
   /** Exactly what Claude was sent or returned, kept as JSON. */
   content: unknown;
   stopReason?: string | null;
+  /** What the Student sees in place of the content, when that isn't what Claude wrote. */
+  shownText?: string | null;
   createdAt: Date;
 }
 
@@ -18,6 +20,13 @@ export interface StoredMessage {
   role: NewMessage["role"];
   content: unknown;
   stopReason: string | null;
+  shownText: string | null;
+  createdAt: Date;
+}
+
+/** A Crisis card that was shown. Its content comes from the app's code, so only its place is kept. */
+export interface StoredCrisisCard {
+  afterMessageId: number;
   createdAt: Date;
 }
 
@@ -39,6 +48,8 @@ export interface Store {
   /** Appends the messages together: either all of them are saved or none are. Messages never change once saved. */
   appendMessages(studentId: string, messages: NewMessage[]): StoredMessage[];
   listMessages(studentId: string): StoredMessage[];
+  addCrisisCard(studentId: string, card: StoredCrisisCard): void;
+  listCrisisCards(studentId: string): StoredCrisisCard[];
   currentTakeover(studentId: string): StoredTakeover | null;
   beginTakeover(studentId: string, takeover: StoredTakeover): void;
   endTakeover(studentId: string): void;
@@ -81,6 +92,14 @@ const MIGRATIONS = [
      expires_at TEXT NOT NULL,
      wrong_tries INTEGER NOT NULL
    );`,
+  `ALTER TABLE messages ADD COLUMN shown_text TEXT;
+   CREATE TABLE crisis_cards (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     after_message_id INTEGER NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   CREATE INDEX crisis_cards_by_student ON crisis_cards (student_id, id);`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -90,11 +109,17 @@ export function openStore(databasePath: string): Store {
   migrate(db);
 
   const insert = db.prepare(
-    `INSERT INTO messages (student_id, role, content, stop_reason, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO messages (student_id, role, content, stop_reason, shown_text, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   const select = db.prepare(
-    `SELECT id, role, content, stop_reason, created_at FROM messages WHERE student_id = ? ORDER BY id`,
+    `SELECT id, role, content, stop_reason, shown_text, created_at FROM messages WHERE student_id = ? ORDER BY id`,
+  );
+  const insertCrisisCard = db.prepare(
+    `INSERT INTO crisis_cards (student_id, after_message_id, created_at) VALUES (?, ?, ?)`,
+  );
+  const selectCrisisCards = db.prepare(
+    `SELECT after_message_id, created_at FROM crisis_cards WHERE student_id = ? ORDER BY id`,
   );
   const selectTakeover = db.prepare(
     `SELECT site, live_view_token, started_at FROM takeovers WHERE student_id = ?`,
@@ -120,14 +145,16 @@ export function openStore(databasePath: string): Store {
       return inTransaction(db, () =>
         messages.map((message) => {
           const stopReason = message.stopReason ?? null;
+          const shownText = message.shownText ?? null;
           const { lastInsertRowid } = insert.run(
             studentId,
             message.role,
             JSON.stringify(message.content),
             stopReason,
+            shownText,
             message.createdAt.toISOString(),
           );
-          return { ...message, id: Number(lastInsertRowid), stopReason };
+          return { ...message, id: Number(lastInsertRowid), stopReason, shownText };
         }),
       );
     },
@@ -138,6 +165,18 @@ export function openStore(databasePath: string): Store {
         role: row.role,
         content: JSON.parse(row.content),
         stopReason: row.stop_reason,
+        shownText: row.shown_text,
+        createdAt: new Date(row.created_at),
+      }));
+    },
+
+    addCrisisCard(studentId, card) {
+      insertCrisisCard.run(studentId, card.afterMessageId, card.createdAt.toISOString());
+    },
+
+    listCrisisCards(studentId) {
+      return selectCrisisCards.all(studentId).map((row: any) => ({
+        afterMessageId: row.after_message_id,
         createdAt: new Date(row.created_at),
       }));
     },

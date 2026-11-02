@@ -9,7 +9,18 @@ import '../device/pairing_details.dart';
 /// A pairing request gets this long. Without Tailscale on, the phone would otherwise wait minutes.
 const _pairingTimeout = Duration(seconds: 20);
 
-class ChatMessage {
+/// One thing in the conversation, in the order the Student sees them.
+sealed class ConversationItem {
+  const ConversationItem();
+}
+
+/// A Crisis card that was shown. The card's content lives in the app, in crisis_card.dart.
+/// Not const, so that each card is its own object and the newest can be told from earlier ones.
+class CrisisCardItem extends ConversationItem {
+  CrisisCardItem();
+}
+
+class ChatMessage extends ConversationItem {
   const ChatMessage({required this.isFromBuddy, required this.text});
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -29,6 +40,11 @@ sealed class ReplyEvent {
 class ReplyText extends ReplyEvent {
   const ReplyText(this.text);
   final String text;
+}
+
+/// Buddy is showing the Crisis card. It comes as soon as the backend knows, ahead of any reply.
+class ReplyCrisisCard extends ReplyEvent {
+  const ReplyCrisisCard();
 }
 
 /// The turn ended. This is the reply as saved, and it replaces whatever streamed in.
@@ -94,7 +110,7 @@ class FinishedTakeover {
 
 /// What the app needs from the backend.
 abstract interface class BuddyBackend {
-  Future<List<ChatMessage>> loadHistory();
+  Future<List<ConversationItem>> loadHistory();
 
   /// Sends the Student's message. The stream carries Buddy's turn.
   Stream<ReplyEvent> send(String text);
@@ -178,13 +194,12 @@ class HttpBuddyBackend implements BuddyBackend {
   }
 
   @override
-  Future<List<ChatMessage>> loadHistory() async {
+  Future<List<ConversationItem>> loadHistory() async {
     final response = await _client.get(_messagesUrl, headers: _keyHeader);
     _check(response.statusCode, 'Loading history');
     final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     return [
-      for (final message in body['messages'] as List<dynamic>)
-        ChatMessage.fromJson(message as Map<String, dynamic>),
+      for (final item in body['messages'] as List<dynamic>) _parseItem(item as Map<String, dynamic>),
     ];
   }
 
@@ -243,9 +258,13 @@ class HttpBuddyBackend implements BuddyBackend {
           liveViewHeaders: _keyHeader,
         );
 
+  ConversationItem _parseItem(Map<String, dynamic> json) =>
+      json['type'] == 'crisis_card' ? CrisisCardItem() : ChatMessage.fromJson(json);
+
   /// Returns null for event types added after this version of the app.
   ReplyEvent? _parseEvent(Map<String, dynamic> json) => switch (json['type']) {
         'text' => ReplyText(json['text'] as String),
+        'crisis_card' => const ReplyCrisisCard(),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),
         _ => null,

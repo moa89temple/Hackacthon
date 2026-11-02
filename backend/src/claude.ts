@@ -10,14 +10,19 @@ export type ClaudeEvent =
 
 /** Runs one streamed Claude request. The last event is always the complete message. */
 export interface Claude {
-  stream(request: ClaudeRequest): AsyncIterable<ClaudeEvent>;
+  stream(request: ClaudeRequest, options?: { signal?: AbortSignal }): AsyncIterable<ClaudeEvent>;
+}
+
+/** The words in a message, leaving out thinking, tool calls and the rest. */
+export function textOf(blocks: ClaudeMessage["content"]): string {
+  return blocks.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
 }
 
 export function anthropicClaude(apiKey: string): Claude {
   const client = new Anthropic({ apiKey });
   return {
-    async *stream(request) {
-      const stream = client.beta.messages.stream(request);
+    async *stream(request, options) {
+      const stream = client.beta.messages.stream(request, options);
       for await (const event of stream) {
         if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
           yield { type: "text", text: event.delta.text };

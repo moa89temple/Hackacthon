@@ -118,6 +118,10 @@ _Avoid_: Referral target, staff, office (alone)
 A conversation that clearly suggests a Student's safety may be at risk; everyday exaggeration such as "this exam is killing me" isn't one. In a Crisis, Buddy immediately shows crisis Resources and asks for Action Permission to contact someone, and never contacts anyone without it.
 _Avoid_: Emergency, red flag, escalation
 
+**Crisis card**:
+The card that shows crisis Resources in the conversation, each of which the Student can tap to start a call or a text. Its content comes from Buddy's own code, never from the model.
+_Avoid_: Crisis banner, hotline list
+
 **Handoff**:
 Buddy connecting a Student to one specific Contact and preparing a Draft for them, such as an email. Buddy then offers two other routes if the Student wants them: explaining the issue itself, or contacting the Contact for the Student, which needs an Action Permission. Anything Buddy sends goes out from the Student's own TUmail, in the Student's name and voice.
 _Avoid_: Escalation, referral, transfer

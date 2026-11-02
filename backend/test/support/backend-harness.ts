@@ -10,6 +10,7 @@ import { RecordingBrowser } from "./recording-browser.ts";
 import { ScriptedClaude } from "./scripted-claude.ts";
 
 export const TEST_CHAT_MODEL = "test-chat-model";
+export const TEST_CRISIS_MODEL = "test-crisis-model";
 export const TEST_SITE = {
   name: "Canvas",
   homeUrl: "https://canvas.test/",
@@ -55,6 +56,7 @@ export class BackendHarness {
       allowedHosts: ["127.0.0.1"],
       databasePath: join(this.#directory, "buddy.sqlite"),
       chatModel: TEST_CHAT_MODEL,
+      crisisCheck: { model: TEST_CRISIS_MODEL, timeoutMs: 50 },
       host: "127.0.0.1",
       port: 0,
       logger: false,

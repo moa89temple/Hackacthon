@@ -5,18 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/fake_backend.dart';
 import 'support/test_app.dart';
 
-ChatMessage student(String text) => ChatMessage(isFromBuddy: false, text: text);
-ChatMessage buddy(String text) => ChatMessage(isFromBuddy: true, text: text);
-
 VoidCallback? sendButtonAction(WidgetTester tester) =>
     tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send)).onPressed;
-
-Future<void> sendMessage(WidgetTester tester, String text) async {
-  await tester.enterText(find.byType(TextField), text);
-  await tester.pump();
-  await tester.tap(find.byTooltip('Send'));
-  await tester.pump();
-}
 
 void main() {
   group('the four tabs', () {

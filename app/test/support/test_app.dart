@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:buddy/app.dart';
 import 'package:buddy/backend/buddy_backend.dart';
+import 'package:buddy/chat/crisis_card.dart';
 import 'package:buddy/device/app_lock.dart';
 import 'package:buddy/device/device_store.dart';
 import 'package:buddy/device/pairing_details.dart';
@@ -78,12 +79,16 @@ Widget stubLiveView(Uri url, Map<String, String> headers) => Text('live view of 
 
 Widget noScanner(BuildContext context, ValueChanged<String> onScanned) => const Text('camera');
 
+/// A widget test can't open the phone app, so by default this pretends it did.
+Future<bool> pretendToOpenPhone(Uri address) async => true;
+
 BuddyApp testApp({
   required DeviceStore store,
   required AppLock lock,
   required BackendAccess access,
   LiveViewBuilder liveViewBuilder = stubLiveView,
   QrScannerBuilder scannerBuilder = noScanner,
+  PhoneOpener openPhone = pretendToOpenPhone,
 }) =>
     BuddyApp(
       deviceStore: store,
@@ -91,7 +96,18 @@ BuddyApp testApp({
       access: access,
       liveViewBuilder: liveViewBuilder,
       qrScannerBuilder: scannerBuilder,
+      openPhone: openPhone,
     );
+
+ChatMessage student(String text) => ChatMessage(isFromBuddy: false, text: text);
+ChatMessage buddy(String text) => ChatMessage(isFromBuddy: true, text: text);
+
+Future<void> sendMessage(WidgetTester tester, String text) async {
+  await tester.enterText(find.byType(TextField), text);
+  await tester.pump();
+  await tester.tap(find.byTooltip('Send'));
+  await tester.pump();
+}
 
 /// Enough frames for the app to read the device, ask for the unlock and load its first screen.
 Future<void> settleApp(WidgetTester tester) async {
@@ -101,9 +117,18 @@ Future<void> settleApp(WidgetTester tester) async {
 }
 
 /// The app on a phone that's already paired, opened with the fingerprint.
-Future<void> openUnlockedApp(WidgetTester tester, FakeBackend backend) async {
+Future<void> openUnlockedApp(
+  WidgetTester tester,
+  FakeBackend backend, {
+  PhoneOpener openPhone = pretendToOpenPhone,
+}) async {
   await tester.pumpWidget(
-    testApp(store: FakeDeviceStore(testDevice), lock: FakeAppLock(), access: FakeBackendAccess(backend)),
+    testApp(
+      store: FakeDeviceStore(testDevice),
+      lock: FakeAppLock(),
+      access: FakeBackendAccess(backend),
+      openPhone: openPhone,
+    ),
   );
   await settleApp(tester);
 }

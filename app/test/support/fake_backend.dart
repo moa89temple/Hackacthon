@@ -5,13 +5,16 @@ import 'package:buddy/backend/buddy_backend.dart';
 /// Stands in for the backend. A test decides what the history holds and pushes
 /// reply events whenever it wants, so it can look at a reply mid-stream.
 class FakeBackend implements BuddyBackend {
-  FakeBackend({List<ChatMessage>? history}) : history = history ?? [];
+  FakeBackend({List<ConversationItem>? history}) : history = history ?? [];
 
-  List<ChatMessage> history;
+  List<ConversationItem> history;
   Object? historyError;
   int historyLoads = 0;
   final List<String> sent = [];
-  final StreamController<ReplyEvent> reply = StreamController<ReplyEvent>();
+  StreamController<ReplyEvent> reply = StreamController<ReplyEvent>();
+
+  /// Gets ready for the Student's next message, once the last reply has been closed.
+  void nextReply() => reply = StreamController<ReplyEvent>();
 
   Takeover? takeoverUnderWay;
   Takeover? takeoverToStart;
@@ -26,7 +29,7 @@ class FakeBackend implements BuddyBackend {
   void releaseFinish() => _finishGate.complete();
 
   @override
-  Future<List<ChatMessage>> loadHistory() async {
+  Future<List<ConversationItem>> loadHistory() async {
     historyLoads++;
     if (historyError case final error?) throw error;
     return history;

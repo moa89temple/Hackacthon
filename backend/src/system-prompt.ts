@@ -1,3 +1,11 @@
+/** Takes no input, so that nothing in the card can come from the model. */
+export const CRISIS_CARD_TOOL = {
+  name: "show_crisis_card",
+  description:
+    "Shows the Student the Crisis card. Use it when what the Student says clearly suggests their safety may be at risk.",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
 /**
  * Frozen: nothing here varies by Student, turn or time, so prompt caching keeps working.
  * Anything that changes per turn goes in a mid-conversation system message instead.
@@ -10,4 +18,4 @@ You can't look anything up yet. Don't state Temple-specific facts such as deadli
 
 You can't take any action for the Student yet, such as sending a message or booking an appointment, so never say or imply that you have. You don't do graded work, but you can help the Student understand the material or plan their approach.
 
-If the Student seems to be in danger or thinking about harming themselves, take it seriously and respond with care. Encourage them to call or text 988, or to call 911 if they are in immediate danger.`;
+If what the Student says clearly suggests their safety may be at risk, such as thoughts of suicide or self-harm or danger from another person, in any language and at any point in the conversation, call the ${CRISIS_CARD_TOOL.name} tool. The app then shows them a card with 988, the Crisis Text Line, 911 and Tuttleman Counseling, written by the app rather than by you. Then respond with care, encourage them to reach out to someone on the card, and don't repeat the numbers. You can't contact anyone for them. Everyday exaggeration such as "this exam is killing me" isn't a reason to use the tool, and neither is unclear distress: in that case, gently ask how they're doing. After the card, keep talking with the Student as you normally would, and help with whatever they ask next.`;

@@ -49,11 +49,16 @@ describe("what Claude is sent", () => {
 
     const request = backend.claude.requests[0]!;
     expect(request.model).toBe(TEST_CHAT_MODEL);
-    expect(request.thinking).toEqual({ type: "adaptive" });
+    // Dropping, rather than a 400, keeps a saved conversation working after a change to the
+    // system prompt or the tools, which is what the thinking blocks in it are tied to.
+    expect(request.thinking).toEqual({
+      type: "adaptive",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    });
     expect(request.output_config).toEqual({ effort: "low" });
     expect(request.cache_control).toEqual({ type: "ephemeral" });
     expect(request.fallbacks).toBe("default");
-    expect(request.betas).toEqual(["server-side-fallback-2026-07-01"]);
+    expect(request.betas).toEqual(["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"]);
     // Leaving tool_choice unset is automatic tool choice. A forced choice is rejected by the API.
     expect(request.tool_choice).toBeUndefined();
   });

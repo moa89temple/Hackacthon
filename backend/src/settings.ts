@@ -7,6 +7,8 @@ const secretsPath = fileURLToPath(new URL("../../.env.local", import.meta.url));
 export const settings = {
   /** The model for conversations. Change it here and nowhere else. */
   chatModel: "claude-sonnet-5-5",
+  /** The classifier for unclear messages. The Student's reply waits on it, so it gets little time. */
+  crisisCheck: { model: "claude-haiku-5-5", timeoutMs: 3000 },
   databasePath: fileURLToPath(new URL("../data/buddy.sqlite", import.meta.url)),
   /**
    * Only this laptop can connect. The Android emulator reaches it as 10.0.2.2, and a real phone

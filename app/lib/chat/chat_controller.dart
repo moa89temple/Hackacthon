@@ -13,7 +13,7 @@ class ChatController extends ChangeNotifier {
   final BuddyBackend _backend;
   bool _disposed = false;
 
-  List<ChatMessage> messages = const [];
+  List<ConversationItem> items = const [];
   bool isLoading = true;
   bool couldNotLoad = false;
 
@@ -27,7 +27,11 @@ class ChatController extends ChangeNotifier {
   /// Replies loaded from history are never announced.
   ChatMessage? newestReply;
 
-  bool get isEmptyConversation => messages.isEmpty && replyInProgress == null && turnError == null;
+  /// The Crisis card from the latest turn, which should be read out and brought into view.
+  /// Cards loaded from history are never announced.
+  CrisisCardItem? newestCard;
+
+  bool get isEmptyConversation => items.isEmpty && replyInProgress == null && turnError == null;
 
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
@@ -36,7 +40,7 @@ class ChatController extends ChangeNotifier {
     couldNotLoad = false;
     _changed();
     try {
-      messages = await _backend.loadHistory();
+      items = await _backend.loadHistory();
     } on Exception {
       couldNotLoad = true;
     }
@@ -45,10 +49,11 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> send(String text) async {
-    messages = [...messages, ChatMessage(isFromBuddy: false, text: text)];
+    items = [...items, ChatMessage(isFromBuddy: false, text: text)];
     replyInProgress = '';
     turnError = null;
     newestReply = null;
+    newestCard = null;
     _changed();
 
     ChatMessage? reply;
@@ -58,6 +63,11 @@ class ChatController extends ChangeNotifier {
         switch (event) {
           case ReplyText():
             replyInProgress = replyInProgress! + event.text;
+            _changed();
+          case ReplyCrisisCard():
+            final card = CrisisCardItem();
+            items = [...items, card];
+            newestCard = card;
             _changed();
           case ReplyDone():
             reply = event.reply;
@@ -70,7 +80,7 @@ class ChatController extends ChangeNotifier {
     }
 
     if (reply != null) {
-      messages = [...messages, reply];
+      items = [...items, reply];
       newestReply = reply;
     } else {
       turnError = failure ?? _cutOff;

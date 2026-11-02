@@ -40,8 +40,9 @@ void main() {
 
     final history = await backend.loadHistory();
 
-    expect(history.map((message) => message.text), ['Hello', 'Hi there']);
-    expect(history.map((message) => message.isFromBuddy), [false, true]);
+    final messages = history.cast<ChatMessage>();
+    expect(messages.map((message) => message.text), ['Hello', 'Hi there']);
+    expect(messages.map((message) => message.isFromBuddy), [false, true]);
   });
 
   test('fails loudly when the history cannot be loaded', () async {
@@ -123,6 +124,51 @@ void main() {
     final events = await backend.send('Hello').toList();
 
     expect((events.single as ReplyText).text, 'Hi');
+  });
+
+  test('reads the Crisis card event, wherever it comes in the turn', () async {
+    final backend = HttpBuddyBackend(
+      baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
+      client: MockClient.streaming((request, body) async {
+        return http.StreamedResponse(
+          Stream.value(utf8.encode('data: {"type":"crisis_card"}\n\ndata: {"type":"text","text":"Hi"}\n\n')),
+          200,
+        );
+      }),
+    );
+
+    final events = await backend.send('Hello').toList();
+
+    expect(events[0], isA<ReplyCrisisCard>());
+    expect((events[1] as ReplyText).text, 'Hi');
+  });
+
+  test('loads a Crisis card from the history in its place', () async {
+    final backend = HttpBuddyBackend(
+      baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'messages': [
+              {'id': 1, 'role': 'student', 'text': 'Help', 'sentAt': '2026-11-02T14:00:00.000Z'},
+              {'type': 'crisis_card', 'sentAt': '2026-11-02T14:00:00.000Z'},
+              {'id': 3, 'role': 'buddy', 'text': 'I am here.', 'sentAt': '2026-11-02T14:00:00.000Z'},
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+
+    final history = await backend.loadHistory();
+
+    expect(history[0], isA<ChatMessage>());
+    expect(history[1], isA<CrisisCardItem>());
+    expect((history[2] as ChatMessage).text, 'I am here.');
   });
 
   test('fails when the backend rejects the message', () async {

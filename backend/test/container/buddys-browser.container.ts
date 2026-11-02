@@ -89,6 +89,7 @@ async function bootBackend(): Promise<void> {
     allowedHosts: ["127.0.0.1"],
     databasePath: join(directory, "buddy.sqlite"),
     chatModel: "unused",
+    crisisCheck: { model: "unused", timeoutMs: 0 },
     host: "127.0.0.1",
     port: 0,
     logger: false,

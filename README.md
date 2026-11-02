@@ -76,6 +76,23 @@ The phone reaches the backend over Tailscale. Tailscale Serve gives the laptop a
 
 If you lose the phone, remove it from your [Tailscale machines](https://login.tailscale.com/admin/machines) so that it can't reach the backend.
 
+## When a Student may be at risk
+
+Every message goes through a check before Claude sees it (`backend/src/crisis-check.ts`):
+
+- **Clear risk signals** show the Crisis card at once, before Claude is called. Claude then writes its reply below the card. If Claude fails or refuses, Buddy adds a note of its own, and the card stays.
+- **Unclear messages** go to a Haiku 5.5 classifier, which has 3 seconds to answer nothing, a check-in or a Crisis. If it fails, refuses or runs out of time, Buddy checks in.
+- **Everyday exaggeration** such as "this exam is killing me", and every other message, goes straight to Claude.
+
+Claude can also raise the card itself at any point in a conversation, through its `show_crisis_card` tool. The tool takes no input, and the card's words and numbers are in the app (`app/lib/chat/crisis_card.dart`), so none of it can come from the model. Tapping a button opens the phone's dialer or messaging app with the number filled in, and the Student taps once more to call or send.
+
+### Known limits of the check
+
+- The word lists read English only. In other languages, the card depends on Claude using its tool, so it won't appear if Claude fails or refuses.
+- Each message is checked by itself. Noticing a risk that builds up over several messages is left to Claude.
+- The check runs on the backend, so if the app can't reach the backend, no card appears.
+- The app locks when it goes into the background, so coming back from a call means unlocking it again.
+
 ## Log in to a site
 
 On the You tab, tap **Log in to Canvas**. The live view opens on the site's sign-in page. Tap the field you want, tap **Keyboard** to type, approve Duo on your phone, then tap **Done**. The app then tells you whether Buddy could open the site.
@@ -123,7 +140,7 @@ cd backend
 npm test
 npm run typecheck
 npm run test:browser   # checks against the real container, on local test pages. Needs Docker Desktop.
-npm run smoke          # makes one real Claude call, which costs real money
+npm run smoke          # makes a few real Claude calls, including a Crisis test, which cost real money
 
 cd app
 flutter test

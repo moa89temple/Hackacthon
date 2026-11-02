@@ -13,6 +13,7 @@ export function startLocalBackend(): Promise<RunningBackend> {
     allowedHosts: settings.allowedHosts,
     databasePath: settings.databasePath,
     chatModel: settings.chatModel,
+    crisisCheck: settings.crisisCheck,
     host: "127.0.0.1",
     port: 0,
     logger: false,

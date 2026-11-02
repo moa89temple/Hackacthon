@@ -10,6 +10,7 @@ import {
   type Site,
 } from "./browser-access.ts";
 import { createConversation } from "./conversation.ts";
+import { createCrisisCheck } from "./crisis-check.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { createLiveViewProxy } from "./live-view-proxy.ts";
 import { openStore } from "./store.ts";
@@ -23,6 +24,7 @@ export interface BackendOptions {
   allowedHosts: string[];
   databasePath: string;
   chatModel: string;
+  crisisCheck: { model: string; timeoutMs: number };
   host: string;
   port: number;
   logger: boolean;
@@ -43,6 +45,11 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     clock: options.adapters.clock,
     store,
     chatModel: options.chatModel,
+    crisisCheck: createCrisisCheck({
+      claude: options.adapters.claude,
+      ...options.crisisCheck,
+      logError: (error) => app.log.error(error),
+    }),
     logError: (error) => app.log.error(error),
   });
   const browserAccess = createBrowserAccess({

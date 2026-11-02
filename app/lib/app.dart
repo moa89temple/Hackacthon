@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'backend/buddy_backend.dart';
 import 'chat/buddy_tab.dart';
 import 'chat/chat_controller.dart';
+import 'chat/crisis_card.dart';
 import 'device/app_lock.dart';
 import 'device/device_store.dart';
 import 'device/lock_screen.dart';
@@ -24,6 +25,7 @@ class BuddyApp extends StatefulWidget {
     required this.access,
     this.liveViewBuilder = webLiveView,
     this.qrScannerBuilder = cameraQrScanner,
+    this.openPhone = openWithPhone,
   });
 
   final DeviceStore deviceStore;
@@ -31,6 +33,7 @@ class BuddyApp extends StatefulWidget {
   final BackendAccess access;
   final LiveViewBuilder liveViewBuilder;
   final QrScannerBuilder qrScannerBuilder;
+  final PhoneOpener openPhone;
 
   @override
   State<BuddyApp> createState() => _BuddyAppState();
@@ -156,7 +159,7 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
     }
     // Until the first unlock nothing exists behind the lock, not even the conversation.
     if (!_unlockedOnce) return const Scaffold();
-    return _Tabs(backend: backend, liveViewBuilder: widget.liveViewBuilder);
+    return _Tabs(backend: backend, liveViewBuilder: widget.liveViewBuilder, openPhone: widget.openPhone);
   }
 
   @override
@@ -193,10 +196,11 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
 }
 
 class _Tabs extends StatefulWidget {
-  const _Tabs({required this.backend, required this.liveViewBuilder});
+  const _Tabs({required this.backend, required this.liveViewBuilder, required this.openPhone});
 
   final BuddyBackend backend;
   final LiveViewBuilder liveViewBuilder;
+  final PhoneOpener openPhone;
 
   @override
   State<_Tabs> createState() => _TabsState();
@@ -205,8 +209,19 @@ class _Tabs extends StatefulWidget {
 class _TabsState extends State<_Tabs> {
   static const _titles = ['Buddy', 'Today', 'Roadmap', 'You'];
 
-  late final ChatController _chat = ChatController(widget.backend)..loadHistory();
+  late final ChatController _chat = ChatController(widget.backend)
+    ..loadHistory()
+    ..addListener(_showNewCrisisCard);
+  CrisisCardItem? _cardShown;
   int _selected = 0;
+
+  /// A Crisis card can arrive while the Student is on another tab, and they mustn't miss it.
+  void _showNewCrisisCard() {
+    final card = _chat.newestCard;
+    if (card == null || identical(card, _cardShown)) return;
+    _cardShown = card;
+    setState(() => _selected = 0);
+  }
 
   @override
   void dispose() {
@@ -225,7 +240,7 @@ class _TabsState extends State<_Tabs> {
       body: IndexedStack(
         index: _selected,
         children: [
-          BuddyTab(chat: _chat),
+          BuddyTab(chat: _chat, openPhone: widget.openPhone),
           const TodayTab(),
           const RoadmapTab(),
           YouTab(backend: widget.backend, liveViewBuilder: widget.liveViewBuilder),

@@ -8,6 +8,7 @@ const backend = await startBackend({
   allowedHosts: allowedHostsWithTailscale(),
   databasePath: settings.databasePath,
   chatModel: settings.chatModel,
+  crisisCheck: settings.crisisCheck,
   host: settings.host,
   port: settings.port,
   logger: true,

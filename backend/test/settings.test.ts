@@ -26,6 +26,6 @@ describe("the Tailscale address", () => {
   });
 
   it("leaves those names alone when there isn't one", () => {
-    expect(allowedHostsWithTailscale(undefined)).toEqual(settings.allowedHosts);
+    expect(allowedHostsWithTailscale("")).toEqual(settings.allowedHosts);
   });
 });
