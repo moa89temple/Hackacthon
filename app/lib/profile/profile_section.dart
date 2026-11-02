@@ -105,9 +105,17 @@ class _FactRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(fact.text),
-          if (fact.detail case final detail?) Text(detail),
-          Text(_origin(context), style: theme.textTheme.bodySmall),
+          // One item, because on Android the facts otherwise run together with the heading.
+          MergeSemantics(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(fact.text),
+                if (fact.detail case final detail?) Text(detail),
+                Text(_origin(context), style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
           // A Wrap, so that the buttons go on two lines when the text is large.
           Wrap(
             children: [

@@ -106,13 +106,21 @@ class _ConnectionRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Semantics(
-            header: true,
-            child: Text(connection.name, style: theme.textTheme.titleSmall),
+          // One item, because on Android the status otherwise joins the sentence above the list.
+          MergeSemantics(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text(connection.name, style: theme.textTheme.titleSmall),
+                ),
+                Text(_status(context)),
+                if (connection.lastReadProblem case final problem?)
+                  Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+              ],
+            ),
           ),
-          Text(_status(context)),
-          if (connection.lastReadProblem case final problem?)
-            Text(problem, style: TextStyle(color: theme.colorScheme.error)),
           const SizedBox(height: 4),
           // A Wrap, so that the buttons go on two lines when the text is large.
           Wrap(

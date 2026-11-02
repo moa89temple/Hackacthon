@@ -507,6 +507,47 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('a screen reader hears each Connection with its own status and any problem', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openYouTab(
+        tester,
+        FakeBackend()..connections = [calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 7), problem: 'It failed.')],
+      );
+
+      expect(
+        find.bySemanticsLabel('Google Calendar\nOn. Last read Monday, November 2, 2026 at 7:00 AM.\nIt failed.'),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a screen reader hears each calendar fact as one item, with its times', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openYouTab(
+        tester,
+        FakeBackend()
+          ..facts = [
+            ProfileFact(
+              id: 1,
+              text: 'Shift at CVS',
+              detail: 'Tue, Nov 3, 2:00 PM–5:00 PM',
+              connectionName: 'Google Calendar',
+              isFromConversation: false,
+              savedAt: DateTime(2026, 11, 2, 12),
+              wasEdited: false,
+            ),
+          ],
+      );
+
+      expect(
+        find.bySemanticsLabel(
+          'Shift at CVS\nTue, Nov 3, 2:00 PM–5:00 PM\nFrom Google Calendar, read on Monday, November 2, 2026.',
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
     testWidgets('the result of a read is announced', (tester) async {
       final handle = tester.ensureSemantics();
       final backend = FakeBackend()
@@ -543,8 +584,7 @@ void main() {
       useOrdinaryPhone(tester);
       final handle = tester.ensureSemantics();
       await openYouTab(tester, FakeBackend()..connections = [calendar()]);
-      // By its own label, so that a heading merged in with other text doesn't pass.
-      expect(tester.getSemantics(find.bySemanticsLabel('Google Calendar')).flagsCollection.isHeader, isTrue);
+      expect(tester.getSemantics(find.bySemanticsLabel('Google Calendar\nOff')).flagsCollection.isHeader, isTrue);
 
       await openCard(tester);
 
