@@ -23,6 +23,7 @@ import { createConversation } from "./conversation.ts";
 import { createCrisisCheck } from "./crisis-check.ts";
 import { createDiscovery, type Discovery } from "./discovery.ts";
 import { createGuidebook, type Guidebook } from "./guidebook.ts";
+import { createStandardMilestones, type StandardMilestones } from "./standard-milestones.ts";
 import type { Office } from "./office-pages.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { createLiveViewProxy } from "./live-view-proxy.ts";
@@ -42,7 +43,7 @@ export interface BackendOptions {
   databasePath: string;
   chatModel: string;
   crisisCheck: { model: string; timeoutMs: number };
-  discovery: { model: string; offices: Office[] };
+  discovery: { model: string; offices: Office[]; milestoneOffices: Office[] };
   host: string;
   port: number;
   logger: boolean;
@@ -54,6 +55,7 @@ export interface RunningBackend {
   connections: Connections;
   devices: Devices;
   guidebook: Guidebook;
+  milestones: StandardMilestones;
   discovery: Discovery;
   close(): Promise<void>;
 }
@@ -75,6 +77,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     logError: (error) => app.log.error(error),
   });
   const guidebook = createGuidebook({ store, clock: options.adapters.clock });
+  const milestones = createStandardMilestones({ store, clock: options.adapters.clock });
   const discovery = createDiscovery({
     claude: options.adapters.claude,
     web: options.adapters.web,
@@ -96,6 +99,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     profile,
     connections,
     guidebook,
+    milestones,
     logError: (error) => app.log.error(error),
   });
   const browserAccess = createBrowserAccess({
@@ -174,9 +178,10 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addConnectionRoutes(app, connections);
 
   addGuidebookRoutes(app, guidebook);
+  app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, connections, devices, guidebook, discovery, close: () => app.close() };
+  return { url, browserAccess, connections, devices, guidebook, milestones, discovery, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {

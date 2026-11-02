@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { googleCalendar } from "./google-calendar.ts";
+import { MILESTONE_OFFICES } from "./milestone-pages.ts";
 import { OFFICES } from "./office-pages.ts";
 
 const secretsPath = fileURLToPath(new URL("../../.env.local", import.meta.url));
@@ -12,7 +13,7 @@ export const settings = {
   /** The classifier for unclear messages. The Student's reply waits on it, so it gets little time. */
   crisisCheck: { model: "claude-haiku-5-5", timeoutMs: 5000 },
   /** What reads Temple's office pages for the Guidebook, and the pages it reads. */
-  discovery: { model: "claude-haiku-5-5", offices: OFFICES },
+  discovery: { model: "claude-haiku-5-5", offices: OFFICES, milestoneOffices: MILESTONE_OFFICES },
   databasePath: fileURLToPath(new URL("../data/buddy.sqlite", import.meta.url)),
   /**
    * Only this laptop can connect. The Android emulator reaches it as 10.0.2.2, and a real phone

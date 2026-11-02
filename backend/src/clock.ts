@@ -22,6 +22,12 @@ export function philadelphiaClock(moment: Date): { year: number; month: number; 
   return { year: part("year"), month: part("month"), day: part("day"), hour: part("hour") };
 }
 
+/** Today on Philadelphia's clock, as YYYY-MM-DD. */
+export function todayInPhiladelphia(moment: Date): string {
+  const { year, month, day } = philadelphiaClock(moment);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 /** Such as "Monday, November 2, 2026 at 9:00 AM", on Philadelphia's clock. */
 export function describeInPhiladelphia(moment: Date): string {
   return new Intl.DateTimeFormat("en-US", {

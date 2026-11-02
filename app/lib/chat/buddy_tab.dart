@@ -7,6 +7,7 @@ import '../widgets/buddy_avatar.dart';
 import 'chat_controller.dart';
 import 'crisis_card.dart';
 import 'guidebook_card.dart';
+import '../milestones/milestone_card.dart';
 
 class BuddyTab extends StatelessWidget {
   const BuddyTab({super.key, required this.chat, required this.connections, required this.openPhone});
@@ -98,6 +99,14 @@ class _MessageListState extends State<_MessageList> {
               openPhone: widget.openPhone,
               announce: chat.newestGuidebookCards.any((newest) => identical(newest, item)),
             ),
+          MilestoneCardItem(milestone: final milestone?) => MilestoneCard(
+              // Keeps each card's state with its own item as the list changes around it.
+              key: ObjectKey(item),
+              milestone: milestone,
+              openPhone: widget.openPhone,
+              announce: chat.newestMilestoneCards.any((newest) => identical(newest, item)),
+            ),
+          MilestoneCardItem() => const GoneMilestoneNote(),
         },
     ];
     // Reversed, so the newest message stays at the bottom as the reply grows.

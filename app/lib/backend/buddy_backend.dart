@@ -98,6 +98,46 @@ class GuidebookItem {
   final List<GuidebookSource> sources;
 }
 
+/// A date every Temple Student faces, in the backend's words.
+class StandardMilestone {
+  const StandardMilestone({
+    required this.id,
+    required this.name,
+    this.term,
+    required this.when,
+    required this.passed,
+    required this.sources,
+  });
+
+  factory StandardMilestone.fromJson(Map<String, dynamic> json) => StandardMilestone(
+        id: json['id'] as int,
+        name: json['name'] as String,
+        term: json['term'] as String?,
+        when: json['when'] as String,
+        passed: json['passed'] as bool,
+        sources: [
+          for (final source in json['sources'] as List<dynamic>) GuidebookSource.fromJson(source as Map<String, dynamic>),
+        ],
+      );
+
+  final int id;
+  final String name;
+  final String? term;
+
+  /// The date in words.
+  final String when;
+  final bool passed;
+  final List<GuidebookSource> sources;
+}
+
+/// A Standard Milestone's card in the conversation. Not const, so that each is its own object and
+/// the newest can be told from earlier ones. With no Milestone, its date has gone from its Source.
+class MilestoneCardItem extends ConversationItem {
+  MilestoneCardItem(this.milestone);
+
+  final StandardMilestone? milestone;
+}
+
 class ChatMessage extends ConversationItem {
   const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote});
 
@@ -326,6 +366,12 @@ class ReplyReadPermissionCard extends ReplyEvent {
   final String connectionId;
 }
 
+/// Buddy is showing a Standard Milestone's card.
+class ReplyMilestoneCard extends ReplyEvent {
+  const ReplyMilestoneCard(this.milestone);
+  final StandardMilestone milestone;
+}
+
 /// Buddy is showing a Guidebook card.
 class ReplyGuidebookCard extends ReplyEvent {
   const ReplyGuidebookCard(this.item);
@@ -427,6 +473,9 @@ abstract interface class BuddyBackend {
 
   /// Hides the item for every Student. Also succeeds if the item has already gone.
   Future<void> reportGuidebookItem(int id);
+
+  /// The Standard Milestones still to come, soonest first.
+  Future<List<StandardMilestone>> loadUpcomingMilestones();
 
   /// Newest first. There's nothing here to change or remove an entry, because nothing can.
   Future<List<ActivityEntry>> loadActivity();
@@ -610,6 +659,16 @@ class HttpBuddyBackend implements BuddyBackend {
   }
 
   @override
+  Future<List<StandardMilestone>> loadUpcomingMilestones() async {
+    final response = await _client.get(_baseUrl.replace(pathSegments: ['milestones', 'upcoming']), headers: _keyHeader);
+    _check(response.statusCode, 'Loading the dates coming up');
+    return [
+      for (final milestone in _decode(response)['milestones'] as List<dynamic>)
+        StandardMilestone.fromJson(milestone as Map<String, dynamic>),
+    ];
+  }
+
+  @override
   Future<List<ActivityEntry>> loadActivity() async {
     final response = await _client.get(_activityUrl, headers: _keyHeader);
     _check(response.statusCode, 'Loading Activity');
@@ -681,6 +740,10 @@ class HttpBuddyBackend implements BuddyBackend {
             final Map<String, dynamic> item => GuidebookItem.fromJson(item),
             _ => null,
           }),
+        'milestone_card' => MilestoneCardItem(switch (json['milestone']) {
+            final Map<String, dynamic> milestone => StandardMilestone.fromJson(milestone),
+            _ => null,
+          }),
         _ => ChatMessage.fromJson(json),
       };
 
@@ -691,6 +754,7 @@ class HttpBuddyBackend implements BuddyBackend {
         'crisis_card' => const ReplyCrisisCard(),
         'read_permission_card' => ReplyReadPermissionCard(json['connection'] as String),
         'guidebook_card' => ReplyGuidebookCard(GuidebookItem.fromJson(json['item'] as Map<String, dynamic>)),
+        'milestone_card' => ReplyMilestoneCard(StandardMilestone.fromJson(json['milestone'] as Map<String, dynamic>)),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),
         _ => null,

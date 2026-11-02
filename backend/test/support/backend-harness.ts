@@ -55,11 +55,13 @@ export class BackendHarness {
   /** The key of the phone every helper here acts as, paired the way the real app pairs. */
   deviceKey!: string;
   #offices: Office[] = TEST_OFFICES;
+  #milestoneOffices: Office[] = [];
 
-  static async start(options: { offices?: Office[] } = {}): Promise<BackendHarness> {
+  static async start(options: { offices?: Office[]; milestoneOffices?: Office[] } = {}): Promise<BackendHarness> {
     const harness = new BackendHarness();
     harness.#offices = options.offices ?? TEST_OFFICES;
-    saveOfficePages(harness.web, harness.#offices);
+    harness.#milestoneOffices = options.milestoneOffices ?? [];
+    saveOfficePages(harness.web, [...harness.#offices, ...harness.#milestoneOffices]);
     await harness.browser.startLiveView();
     await harness.#boot();
     await harness.#pairPhone();
@@ -84,7 +86,7 @@ export class BackendHarness {
       databasePath: join(this.#directory, "buddy.sqlite"),
       chatModel: TEST_CHAT_MODEL,
       crisisCheck: { model: TEST_CRISIS_MODEL, timeoutMs: 50 },
-      discovery: { model: TEST_DISCOVERY_MODEL, offices: this.#offices },
+      discovery: { model: TEST_DISCOVERY_MODEL, offices: this.#offices, milestoneOffices: this.#milestoneOffices },
       host: "127.0.0.1",
       port: 0,
       logger: false,
@@ -108,6 +110,12 @@ export class BackendHarness {
   /** What the backend's timer calls each minute. */
   get discovery(): RunningBackend["discovery"] {
     return this.#backend.discovery;
+  }
+
+  /** What the Today tab asks for. */
+  async upcomingMilestones(): Promise<any[]> {
+    const response = await fetch(`${this.url}/milestones/upcoming`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { milestones: any[] }).milestones;
   }
 
   /** The Student tapping Report on a card. */

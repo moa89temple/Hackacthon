@@ -64,14 +64,14 @@ const COST_NOT_STATED = "Its Source doesn't say what this costs.";
 const NO_AMOUNT = "There's a fee, but its Source doesn't say how much. Ask before you sign up.";
 
 /** Words that would match nearly everything. A question made only of these finds nothing. */
-const FILLER = new Set(
+export const FILLER = new Set(
   "a about an and any are at can center do does find for from get give help how i im in is it me my need of office on or some student students temple the to university want what where who with you your".split(
     " ",
   ),
 );
 
 /** Enough to match "essays" with "essay" and "tutors" with "tutoring", which is all a list this small needs. */
-function stem(word: string): string {
+export function stem(word: string): string {
   let current = word;
   for (;;) {
     const stripped = current.replace(/(ings?|ers?|ors?|es|ed|s|e)$/, "");
@@ -80,7 +80,7 @@ function stem(word: string): string {
   }
 }
 
-function wordsIn(text: string): string[] {
+export function wordsIn(text: string): string[] {
   return (text.normalize("NFKC").toLowerCase().match(/\p{L}[\p{L}\p{N}'’-]*|\p{N}+/gu) ?? []).map((word) =>
     word.replace(/['’]/g, ""),
   );
