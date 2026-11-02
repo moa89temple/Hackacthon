@@ -3,6 +3,7 @@ import {
   THE_STUDENT,
   type DecisionFact,
   type DecisionSource,
+  type DraftWords,
   type NewActivityEntry,
   type Store,
   type StoredActivityEntry,
@@ -87,15 +88,15 @@ export function guidebookItemReported(name: string, at: Date): NewActivityEntry 
 }
 
 /** Keeps all the words as they were at the time, because the Student can change the Draft afterwards. */
-function draftDetail(words: { subject: string; body: string }): string {
+function draftDetail(words: DraftWords): string {
   return `Subject: ${words.subject}\n\n${words.body}`;
 }
 
-export function draftWritten(contactName: string, words: { subject: string; body: string }, at: Date): NewActivityEntry {
+export function draftWritten(contactName: string, words: DraftWords, at: Date): NewActivityEntry {
   return { kind: "draft_written", title: `Buddy wrote a Draft to ${contactName}`, detail: draftDetail(words), at };
 }
 
-export function draftEdited(contactName: string, words: { subject: string; body: string }, at: Date): NewActivityEntry {
+export function draftEdited(contactName: string, words: DraftWords, at: Date): NewActivityEntry {
   return { kind: "draft_edited", title: `You edited the Draft to ${contactName}`, detail: draftDetail(words), at };
 }
 

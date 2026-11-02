@@ -81,7 +81,7 @@ export const MAKE_HANDOFF_TOOL = {
   input_schema: {
     type: "object" as const,
     properties: {
-      contact_id: { type: "integer", description: "The id of one Contact that find_contacts gave you." },
+      contact_id: { type: "integer", description: `The id of one Contact that ${FIND_CONTACTS_TOOL.name} gave you.` },
       why: {
         type: "string",
         description: "One short sentence, to the Student and in the language they write in, on who this Contact is and why they're the right one for this.",

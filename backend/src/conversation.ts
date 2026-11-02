@@ -3,7 +3,7 @@ import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./c
 import { describeInPhiladelphia, type Clock } from "./clock.ts";
 import { NoReadPermission, type Connections } from "./connections.ts";
 import type { CrisisCheck, CrisisOutcome } from "./crisis-check.ts";
-import { createDrafts, type Draft } from "./drafts.ts";
+import type { Draft, Drafts } from "./drafts.ts";
 import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from "./guidebook.ts";
 import { hiddenNote, maskSecrets } from "./masking.ts";
@@ -60,7 +60,7 @@ const NOTHING_IN_THE_GUIDEBOOK =
   `The Guidebook has nothing on that, so there's no Source for it. Tell the Student you couldn't find a Source, and don't answer from memory. Then use ${FIND_CONTACTS_TOOL.name} and offer a Handoff to whoever is most likely to know.`;
 
 const NO_CONTACT_IN_THE_GUIDEBOOK =
-  "The Guidebook has no Contact for those words. Try wider words, such as the office most likely to know. A Handoff needs a Contact from the Guidebook, so if none fits, tell the Student you couldn't find one, and don't name one from memory.";
+  "The Guidebook has no Contact for those words. Try wider words, for whoever is most likely to know. A Handoff needs a Contact from the Guidebook, so if none fits, tell the Student you couldn't find one, and don't name one from memory.";
 
 const HANDOFF_MADE =
   "The Contact's card and the Draft card are on the Student's screen. The Draft hasn't been sent, and only the Student can send it. The card says why you picked this Contact and that you can explain the issue yourself instead. Now reply in a sentence or two, without repeating the Draft.";
@@ -142,12 +142,12 @@ export interface ConversationDeps {
   profile: Profile;
   connections: Connections;
   guidebook: Guidebook;
+  drafts: Drafts;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, logError } = deps;
-  const drafts = createDrafts({ store, clock, guidebook });
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, drafts, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -400,9 +400,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
 
         const factsGiven = factsToldToBuddy(profile);
         noteFactsGiven(turn, factsGiven);
+        const lastReply = store.listMessages(THE_STUDENT).findLast((message) => message.role === "assistant");
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${drafts.newestEditNote()}\n\n${QUESTIONS_REMINDER}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${drafts.newestEditNote(lastReply?.createdAt)}\n\n${QUESTIONS_REMINDER}`,
         };
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];

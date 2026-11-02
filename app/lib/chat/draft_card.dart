@@ -6,7 +6,7 @@ import 'chat_controller.dart';
 import 'draft_edit_screen.dart';
 import 'outlook.dart';
 
-const _otherRoute = "Rather not write to them? Ask me and I'll explain the issue myself.";
+const _otherRoute = 'Rather not write to anyone? Ask Buddy, and it will explain the issue itself.';
 const _noAddress = "Buddy doesn't have an email address for them, so add it in Outlook.";
 const _contactGone =
     "Buddy no longer shows who this was for, because they were reported or they've gone from their Source. Add who it's to in Outlook.";
@@ -82,7 +82,7 @@ class _DraftCardState extends State<DraftCard> {
   }
 
   Future<void> _edit() async {
-    final saved = await Navigator.of(context).push<SavedDraft>(
+    final saved = await Navigator.of(context).push<DraftSaved>(
       MaterialPageRoute(
         builder: (context) => DraftEditScreen(
           draft: _draft,
@@ -104,13 +104,11 @@ class _DraftCardState extends State<DraftCard> {
     final name = draft.contact?.name;
     final email = draft.contact?.email;
     final title = name == null ? 'Draft' : 'Draft to $name';
-    final subject = 'Subject: ${draft.subject}';
-    final why = 'Why them: ${draft.why}';
-    final lines = [
+    final theDraft = name == null ? 'the Draft' : 'the Draft to $name';
+    final details = [
       if (name == null) _contactGone else if (email == null) _noAddress else 'To: $email',
-      why,
-      subject,
-      draft.body,
+      if (draft.why case final why?) 'Why them: $why',
+      'Subject: ${draft.subject}',
     ];
     return Card(
       // It holds several controls, so it's a set of separate nodes rather than one.
@@ -125,13 +123,13 @@ class _DraftCardState extends State<DraftCard> {
             Semantics(
               container: true,
               liveRegion: widget.announce,
-              label: '$title. ${lines.join('\n')}',
+              label: '$title. ${[...details, draft.body].join('\n')}',
               excludeSemantics: true,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title, style: theme.textTheme.titleMedium),
-                  for (final line in lines.take(3)) Padding(padding: const EdgeInsets.only(top: 4), child: Text(line)),
+                  for (final line in details) Padding(padding: const EdgeInsets.only(top: 4), child: Text(line)),
                   const Divider(height: 20),
                   Text(draft.body),
                 ],
@@ -141,21 +139,9 @@ class _DraftCardState extends State<DraftCard> {
             // Wraps onto new lines rather than running off the edge when text is large.
             Wrap(
               children: [
-                _button(
-                  'Edit',
-                  semanticsLabel: name == null ? 'Edit the Draft' : 'Edit the Draft to $name',
-                  onPressed: _edit,
-                ),
-                _button(
-                  'Open in Outlook',
-                  semanticsLabel: name == null ? 'Open the Draft in Outlook' : 'Open the Draft to $name in Outlook',
-                  onPressed: _openInOutlook,
-                ),
-                _button(
-                  'Copy',
-                  semanticsLabel: name == null ? 'Copy the Draft' : 'Copy the Draft to $name',
-                  onPressed: _copy,
-                ),
+                _button('Edit', semanticsLabel: 'Edit $theDraft', onPressed: _edit),
+                _button('Open in Outlook', semanticsLabel: 'Open $theDraft in Outlook', onPressed: _openInOutlook),
+                _button('Copy', semanticsLabel: 'Copy $theDraft', onPressed: _copy),
               ],
             ),
             if (_status case final status?)

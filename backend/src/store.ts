@@ -152,15 +152,19 @@ export interface StoredGuidebookCard {
   createdAt: Date;
 }
 
+/** The part of a Draft the Student can change. */
+export interface DraftWords {
+  subject: string;
+  body: string;
+}
+
 /** A Draft for the Student to send. Who it's to comes from the Guidebook, by number. */
-export interface StoredDraft {
+export interface StoredDraft extends DraftWords {
   id: number;
   contactId: number;
   /** The Contact's name when Buddy wrote it, for Activity, which keeps it even after the Contact goes. */
   contactName: string;
   why: string;
-  subject: string;
-  body: string;
   afterMessageId: number;
   createdAt: Date;
   editedAt: Date | null;
@@ -268,7 +272,7 @@ export interface Store {
   editDraft(
     studentId: string,
     id: number,
-    words: { subject: string; body: string },
+    words: DraftWords,
     editedAt: Date,
     entry: NewActivityEntry,
   ): StoredDraft | null;

@@ -101,7 +101,7 @@ class GuidebookItem {
 /// A message Buddy prepared for the Student to send to a Contact. With no contact, the Contact has
 /// been reported or has left its Source.
 class Draft {
-  const Draft({required this.id, this.contact, required this.why, required this.subject, required this.body});
+  const Draft({required this.id, this.contact, this.why, required this.subject, required this.body});
 
   factory Draft.fromJson(Map<String, dynamic> json) => Draft(
         id: json['id'] as int,
@@ -109,7 +109,7 @@ class Draft {
           final Map<String, dynamic> contact => GuidebookItem.fromJson(contact),
           _ => null,
         },
-        why: json['why'] as String,
+        why: json['why'] as String?,
         subject: json['subject'] as String,
         body: json['body'] as String,
       );
@@ -117,12 +117,12 @@ class Draft {
   final int id;
   final GuidebookItem? contact;
 
-  /// Why Buddy picked this Contact.
-  final String why;
+  /// Why Buddy picked this Contact. It can name them, so it goes when they do.
+  final String? why;
   final String subject;
   final String body;
 
-  Draft withoutContact() => Draft(id: id, why: why, subject: subject, body: body);
+  Draft withoutContact() => Draft(id: id, subject: subject, body: body);
 }
 
 /// A Draft after the Student's edit, which may differ from what they typed.

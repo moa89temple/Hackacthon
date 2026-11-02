@@ -4,9 +4,9 @@ import '../backend/buddy_backend.dart';
 
 const _couldNotSave = "Buddy couldn't save your changes. Check that the backend is running, then try again.";
 
-/// What came of saving, for the card to say.
-class SavedDraft {
-  const SavedDraft({this.hiddenNote});
+/// What this screen hands back once it has saved, for the card to say.
+class DraftSaved {
+  const DraftSaved({this.hiddenNote});
 
   /// What to tell the Student if something they typed was hidden.
   final String? hiddenNote;
@@ -29,7 +29,7 @@ class _DraftEditScreenState extends State<DraftEditScreen> {
   late final _subject = TextEditingController(text: widget.draft.subject);
   late final _message = TextEditingController(text: widget.draft.body);
   bool _saving = false;
-  bool _couldNot = false;
+  bool _saveFailed = false;
 
   @override
   void dispose() {
@@ -41,16 +41,16 @@ class _DraftEditScreenState extends State<DraftEditScreen> {
   Future<void> _save() async {
     setState(() {
       _saving = true;
-      _couldNot = false;
+      _saveFailed = false;
     });
     try {
       final hiddenNote = await widget.onSave(_subject.text.trim(), _message.text.trim());
-      if (mounted) Navigator.of(context).pop(SavedDraft(hiddenNote: hiddenNote));
+      if (mounted) Navigator.of(context).pop(DraftSaved(hiddenNote: hiddenNote));
     } on Exception {
       if (mounted) {
         setState(() {
           _saving = false;
-          _couldNot = true;
+          _saveFailed = true;
         });
       }
     }
@@ -96,7 +96,7 @@ class _DraftEditScreenState extends State<DraftEditScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_couldNot)
+                  if (_saveFailed)
                     Semantics(
                       container: true,
                       liveRegion: true,

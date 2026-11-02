@@ -76,6 +76,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     logError: (error) => app.log.error(error),
   });
   const guidebook = createGuidebook({ store, clock: options.adapters.clock });
+  const drafts = createDrafts({ store, clock: options.adapters.clock, guidebook });
   const discovery = createDiscovery({
     claude: options.adapters.claude,
     web: options.adapters.web,
@@ -97,6 +98,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     profile,
     connections,
     guidebook,
+    drafts,
     logError: (error) => app.log.error(error),
   });
   const browserAccess = createBrowserAccess({
@@ -175,9 +177,9 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addConnectionRoutes(app, connections);
 
   addGuidebookRoutes(app, guidebook);
-  addDraftRoutes(app, createDrafts({ store, clock: options.adapters.clock, guidebook }));
+  addDraftRoutes(app, drafts);
 
-  const url =await app.listen({ host: options.host, port: options.port });
+  const url = await app.listen({ host: options.host, port: options.port });
   return { url, browserAccess, connections, devices, guidebook, discovery, close: () => app.close() };
 }
 

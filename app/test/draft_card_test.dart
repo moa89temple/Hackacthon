@@ -32,7 +32,7 @@ GuidebookItem advising({String? email = 'advising@temple.test'}) => GuidebookIte
 Draft aDraft({GuidebookItem? contact, String subject = 'Hold on my account', String words = body}) => Draft(
       id: 3,
       contact: contact,
-      why: 'They help Students with holds.',
+      why: contact == null ? null : 'They help Students with holds.',
       subject: subject,
       body: words,
     );
@@ -109,7 +109,7 @@ void main() {
     testWidgets('offers the other route, of Buddy explaining the issue itself', (tester) async {
       await showDraft(tester, aDraft(contact: advising()));
 
-      expect(find.text("Rather not write to them? Ask me and I'll explain the issue myself."), findsOneWidget);
+      expect(find.text('Rather not write to anyone? Ask Buddy, and it will explain the issue itself.'), findsOneWidget);
     });
 
     testWidgets('says so when Buddy has no address for the Contact', (tester) async {
@@ -144,6 +144,7 @@ void main() {
 
       expect(find.text('Draft'), findsOneWidget);
       expect(find.textContaining('advising@temple.test'), findsNothing);
+      expect(find.textContaining('Why them'), findsNothing);
     });
 
     testWidgets('appears during a reply and is read out', (tester) async {
@@ -512,7 +513,7 @@ void main() {
                 {'type': 'draft_card', 'draft': draftJson, 'sentAt': '2026-11-02T14:00:00.000Z'},
                 {
                   'type': 'draft_card',
-                  'draft': {...draftJson, 'contact': null},
+                  'draft': {...draftJson, 'contact': null, 'why': null},
                   'sentAt': '2026-11-02T14:00:00.000Z',
                 },
               ],
@@ -530,6 +531,7 @@ void main() {
       expect(first.draft.subject, 'Hold');
       expect(first.draft.body, body);
       expect(second.draft.contact, isNull);
+      expect(second.draft.why, isNull);
     });
 
     test('reads a Draft as it arrives in a reply', () async {

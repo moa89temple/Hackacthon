@@ -31,8 +31,8 @@ Uri outlookWebAddress(OutlookEmail email) {
   final to = [if (email.to case final to?) ('to', to)];
   final subject = ('subject', email.subject);
   final body = ('body', email.body);
-  final longest = address([...to, subject, body]);
-  if (longest.length <= mostCharactersInWebAddress) return Uri.parse(longest);
+  final withEverything = address([...to, subject, body]);
+  if (withEverything.length <= mostCharactersInWebAddress) return Uri.parse(withEverything);
   final withoutBody = address([...to, subject]);
   if (withoutBody.length <= mostCharactersInWebAddress) return Uri.parse(withoutBody);
   return Uri.parse(address(to));
