@@ -5,6 +5,7 @@ import { describeInPhiladelphia, type Clock } from "./clock.ts";
 import { NoReadPermission, type Connections } from "./connections.ts";
 import type { CrisisCheck, CrisisOutcome } from "./crisis-check.ts";
 import type { Draft, Drafts } from "./drafts.ts";
+import { CANVAS_ID } from "./canvas-rules.ts";
 import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from "./guidebook.ts";
 import { hiddenNote, maskSecrets } from "./masking.ts";
@@ -14,6 +15,7 @@ import type { StandardMilestone, StandardMilestones } from "./standard-milestone
 import {
   BUDDY_SYSTEM_PROMPT,
   CHECK_CALENDAR_TOOL,
+  CHECK_CANVAS_TOOL,
   CRISIS_CARD_TOOL,
   FIND_CONTACTS_TOOL,
   MAKE_HANDOFF_TOOL,
@@ -211,32 +213,52 @@ export function createConversation(deps: ConversationDeps): Conversation {
     }
   }
 
-  async function checkCalendar(call: ToolCall, turn: TurnRecord) {
+  /** A Connection's tool: what Buddy has from it, read again first if that's what was asked. */
+  async function lookAtConnection(
+    call: ToolCall,
+    turn: TurnRecord,
+    id: string,
+    name: string,
+    couldNotCheck: string,
+  ) {
     try {
-      let looked = "Looked at what Buddy has from your Google Calendar.";
+      let looked = `Looked at what Buddy has from your ${name}.`;
       if ((call.input as { read_again?: unknown } | null)?.read_again === true) {
         // A read that fails shows in the description, which falls back on the last reading.
-        const { lastReadProblem } = await connections.read(GOOGLE_CALENDAR_ID, "conversation");
+        const { lastReadProblem } = await connections.read(id, "conversation");
         looked = lastReadProblem
-          ? "Tried to read your Google Calendar again but couldn't, so looked at the last reading."
-          : "Read your Google Calendar again and looked at it.";
+          ? `Tried to read your ${name} again but couldn't, so looked at the last reading.`
+          : `Read your ${name} again and looked at it.`;
       }
-      const description = connections.describeForClaude(GOOGLE_CALENDAR_ID);
+      const description = connections.describeForClaude(id);
       turn.tools.push(looked);
-      noteFactsGiven(turn, factsFromCalendar(profile));
+      noteFactsGiven(turn, factsFromConnection(profile, id));
       return toolAnswer(call, description);
     } catch (error) {
       if (error instanceof NoReadPermission) {
-        turn.tools.push("Tried to look at your Google Calendar, but it isn't connected.");
+        turn.tools.push(`Tried to look at your ${name}, but it isn't connected.`);
         return toolFailure(
           call,
-          `The Student hasn't given Google Calendar a Read Permission, so you can't see it. Use ${SUGGEST_CONNECTION_TOOL.name} if it would help.`,
+          `The Student hasn't given ${name} a Read Permission, so you can't see it. Use ${SUGGEST_CONNECTION_TOOL.name} if it would help.`,
         );
       }
       logError(error);
-      turn.tools.push("Tried to look at your Google Calendar, but something went wrong.");
-      return toolFailure(call, "The calendar couldn't be checked. Tell the Student, and don't guess at their schedule.");
+      turn.tools.push(`Tried to look at your ${name}, but something went wrong.`);
+      return toolFailure(call, couldNotCheck);
     }
+  }
+
+  /** The card that asks for a Takeover is the Read Permission card, which follows the Connection's state. */
+  function askForLoginIfNeeded(id: string, suggestedThisTurn: Set<string>, afterMessageId: number, now: Date): string | null {
+    const connection = connections.list().find((candidate) => candidate.id === id);
+    if (!connection?.on || !connection.needsLogin || suggestedThisTurn.has(id)) return null;
+    suggestedThisTurn.add(id);
+    try {
+      store.addReadPermissionCard(THE_STUDENT, { connection: id, afterMessageId, createdAt: now });
+    } catch (error) {
+      logError(error);
+    }
+    return id;
   }
 
   /** The card appears only for a Connection Buddy has that's still off. */
@@ -370,7 +392,24 @@ export function createConversation(deps: ConversationDeps): Conversation {
   }
 
   async function answerCall(call: ToolCall, originMessageId: number, turn: TurnRecord) {
-    if (call.name === CHECK_CALENDAR_TOOL.name) return checkCalendar(call, turn);
+    if (call.name === CHECK_CALENDAR_TOOL.name) {
+      return lookAtConnection(
+        call,
+        turn,
+        GOOGLE_CALENDAR_ID,
+        "Google Calendar",
+        "The calendar couldn't be checked. Tell the Student, and don't guess at their schedule.",
+      );
+    }
+    if (call.name === CHECK_CANVAS_TOOL.name) {
+      return lookAtConnection(
+        call,
+        turn,
+        CANVAS_ID,
+        "Canvas",
+        "Canvas couldn't be checked. Tell the Student, and don't guess at what's due or what their grades are.",
+      );
+    }
     if (call.name === SEARCH_GUIDEBOOK_TOOL.name) return searchGuidebook(call, turn);
     if (call.name === FIND_CONTACTS_TOOL.name) return searchGuidebook(call, turn, "contact");
     if (call.name === CRISIS_CARD_TOOL.name) {
@@ -526,6 +565,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   answers.push(toolResultFrom(call, outcome));
                 } else {
                   answers.push(await answerCall(call, studentMessageId!, turn));
+                  if (call.name === CHECK_CANVAS_TOOL.name) {
+                    const card = askForLoginIfNeeded(CANVAS_ID, suggestedThisTurn, studentMessageId!, now);
+                    if (card) yield { type: "read_permission_card", connection: card };
+                  }
                 }
               }
               toolRounds.push(reply, { role: "user", content: answers, createdAt: now });
@@ -654,6 +697,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       CRISIS_CARD_TOOL,
       REMEMBER_TOOL,
       CHECK_CALENDAR_TOOL,
+      CHECK_CANVAS_TOOL,
       SUGGEST_CONNECTION_TOOL,
       SEARCH_GUIDEBOOK_TOOL,
       FIND_CONTACTS_TOOL,
@@ -743,15 +787,13 @@ function describeCurrentTime(now: Date): string {
   return `The current time in Philadelphia is ${describeInPhiladelphia(now)}.`;
 }
 
-/** A calendar can run to dozens of lines, so Claude gets those from its tool, when it needs them. */
+/** A calendar or a term of Canvas can run to dozens of lines, so Claude gets those from a tool, when it needs them. */
 function factsToldToBuddy(profile: Profile) {
   return profile.list().filter((fact) => fact.origin.type === "conversation");
 }
 
-function factsFromCalendar(profile: Profile) {
-  return profile
-    .list()
-    .filter((fact) => fact.origin.type === "connection" && fact.origin.connection === GOOGLE_CALENDAR_ID);
+function factsFromConnection(profile: Profile, id: string) {
+  return profile.list().filter((fact) => fact.origin.type === "connection" && fact.origin.connection === id);
 }
 
 function wordsShownFor(message: NewMessage): string {

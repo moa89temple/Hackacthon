@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../chat/crisis_card.dart';
+import '../connections/connections_controller.dart';
+import '../connections/login_request.dart';
 import '../milestones/milestone_card.dart';
 import '../milestones/milestones_controller.dart';
 
@@ -8,9 +10,12 @@ const _shownAtATime = 10;
 
 /// The Standard Milestones coming up, soonest first, each from its Source.
 class TodayTab extends StatefulWidget {
-  const TodayTab({super.key, required this.milestones, required this.openPhone});
+  const TodayTab({super.key, required this.milestones, required this.connections, required this.openPhone});
 
   final MilestonesController milestones;
+
+  /// Buddy asks here for any login it needs, because this is the tab the Student looks at each day.
+  final ConnectionsController connections;
   final PhoneOpener openPhone;
 
   @override
@@ -39,6 +44,15 @@ class _TodayTabState extends State<TodayTab> {
 
   @override
   Widget build(BuildContext context) {
+    return Column(
+      children: [
+        LoginRequests(connections: widget.connections),
+        Expanded(child: _comingUp(context)),
+      ],
+    );
+  }
+
+  Widget _comingUp(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.milestones,
       builder: (context, _) {

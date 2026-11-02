@@ -15,6 +15,9 @@ export interface SavedPage {
   accessibilitySnapshot: string;
   /** Where the page ends up, for pages that redirect. Defaults to the page's own address. */
   finalUrl?: string;
+  html?: string;
+  /** What the page loads for itself, which the guard is asked about in turn. */
+  alsoRequests?: { url: string; method: string }[];
 }
 
 /**
@@ -88,11 +91,13 @@ export class RecordingBrowser implements BuddysBrowser {
       const decision = guard.check({ url: page.finalUrl, method: "GET", opensPage: true });
       if (!decision.allowed) throw new PageBlocked(decision.why);
     }
+    for (const request of page.alsoRequests ?? []) guard.check({ ...request, opensPage: false });
     return {
       url: page.finalUrl ?? url,
       title: page.title,
       text: page.text,
       accessibilitySnapshot: page.accessibilitySnapshot,
+      html: page.html ?? "",
     };
   }
 

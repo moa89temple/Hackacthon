@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
 import 'connections_controller.dart';
+import 'login_request.dart';
 
 /// Says exactly what Buddy will read. Everything on it comes from Buddy's code by way of the
 /// backend, never from the model, and only a tap here gives the Read Permission.
@@ -173,10 +174,12 @@ class ConversationReadPermissionCard extends StatelessWidget {
           container: true,
           liveRegion: announce,
           child: connection.on
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text('${connection.name} is connected. You can revoke this on the You tab.'),
-                )
+              ? connection.needsLogin
+                  ? LoginRequest(connection: connection, connections: connections)
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text('${connection.name} is connected. You can revoke this on the You tab.'),
+                    )
               : ReadPermissionCard(connection: connection, connections: connections),
         );
       },

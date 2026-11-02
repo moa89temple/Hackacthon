@@ -5,7 +5,7 @@ import '../backend/buddy_backend.dart';
 /// Lives as long as the app, because both the You tab and a card in the conversation show a
 /// Connection, and each has to see what the other did.
 class ConnectionsController extends ChangeNotifier {
-  ConnectionsController(this._backend, {required this.onFactsChanged});
+  ConnectionsController(this._backend, {required this.onFactsChanged, required this.openTakeover});
 
   static const couldNotReach = "The app couldn't reach the backend. Check that it's running, then try again.";
 
@@ -13,6 +13,9 @@ class ConnectionsController extends ChangeNotifier {
 
   /// A read or a revoke changes which Profile facts there are.
   final VoidCallback onFactsChanged;
+
+  /// Puts the live view on the screen. Finishes with the result of Done, or nothing if the Student left.
+  final Future<FinishedTakeover?> Function(Takeover takeover) openTakeover;
   bool _disposed = false;
 
   /// Each load or change takes the next number, so that an older answer arriving late is ignored.
@@ -24,6 +27,12 @@ class ConnectionsController extends ChangeNotifier {
 
   /// The Connections being read right now.
   final Set<String> reading = {};
+
+  /// The Connection a Takeover is under way for. Buddy stays out until the Student taps Done.
+  String? takeoverSite;
+
+  /// A Takeover is being opened, or is on the screen.
+  bool openingLogin = false;
 
   /// What happened the last time the Student did something, for them to read.
   String? note;
@@ -49,19 +58,66 @@ class ConnectionsController extends ChangeNotifier {
       couldNotLoad = connections == null;
     }
     _changed();
+    await _checkForTakeover();
   }
 
-  Future<void> read(Connection connection) async {
-    reading.add(connection.id);
+  Future<void> _checkForTakeover() async {
+    try {
+      takeoverSite = (await _backend.currentTakeover())?.site;
+      _changed();
+    } on Exception {
+      // Starting a Takeover returns any Takeover under way, so the button still works.
+    }
+  }
+
+  /// The Student logging in through a Takeover. A login that worked gets read straight away.
+  Future<void> logIn(Connection connection) async {
+    openingLogin = true;
     note = null;
+    _changed();
+
+    final Takeover takeover;
+    try {
+      takeover = await _backend.startTakeover(connection.id);
+    } on Exception {
+      openingLogin = false;
+      _setNote("Buddy couldn't open its browser. Check that Buddy's Browser is running, then try again.", isProblem: true);
+      return;
+    }
+
+    final finished = await openTakeover(takeover);
+    openingLogin = false;
+    await _checkForTakeover();
+    if (_disposed) return;
+    if (finished == null) {
+      _changed();
+      return;
+    }
+    if (!finished.signedIn) {
+      _setNote(
+        "Buddy couldn't confirm you're logged in to ${finished.siteName}. You can try logging in again.",
+        isProblem: true,
+      );
+      return;
+    }
+    _setNote('You\'re logged in to ${finished.siteName}. Buddy opened "${finished.title}" to check.', isProblem: false);
+    await read(connection, sayWhenDone: false);
+  }
+
+  /// The row says what's happening anyway. Only the Student's own tap needs words of its own.
+  Future<void> read(Connection connection, {bool sayWhenDone = true}) async {
+    reading.add(connection.id);
+    if (sayWhenDone) note = null;
     _changed();
     try {
       final updated = await _backend.readConnection(connection.id);
       _replace(updated);
-      _setNote(
-        updated.lastReadProblem == null ? 'Buddy read ${updated.name}.' : "Buddy couldn't read ${updated.name}.",
-        isProblem: updated.lastReadProblem != null,
-      );
+      if (sayWhenDone) {
+        _setNote(
+          updated.lastReadProblem == null ? 'Buddy read ${updated.name}.' : "Buddy couldn't read ${updated.name}.",
+          isProblem: updated.lastReadProblem != null,
+        );
+      }
       onFactsChanged();
     } on Exception {
       _setNote(couldNotReach, isProblem: true);
@@ -83,19 +139,36 @@ class ConnectionsController extends ChangeNotifier {
       rethrow;
     }
     _replace(updated);
-    _setNote(
-      updated.lastReadProblem == null
-          ? '${updated.name} is connected. Buddy read it just now.'
-          : "${updated.name} is connected, but Buddy couldn't read it.",
-      isProblem: updated.lastReadProblem != null,
-    );
+    if (updated.needsLogin) {
+      _setNote('${updated.name} is connected. Log in so that Buddy can read it.', isProblem: false);
+    } else {
+      _setNote(
+        updated.lastReadProblem == null
+            ? '${updated.name} is connected. Buddy read it just now.'
+            : "${updated.name} is connected, but Buddy couldn't read it.",
+        isProblem: updated.lastReadProblem != null,
+      );
+    }
     onFactsChanged();
   }
 
   Future<void> revoke(Connection connection) async {
     try {
-      _replace(await _backend.revokeReadPermission(connection.id));
-      _setNote("Buddy can't read ${connection.name} any more, and deleted the facts it saved from it.", isProblem: false);
+      final updated = await _backend.revokeReadPermission(connection.id);
+      _replace(updated);
+      if (updated.loginNotDeletedYet) {
+        _setNote(
+          "Buddy can't read ${connection.name} any more, and deleted the facts it saved from it, but it couldn't delete your login yet. It will keep trying.",
+          isProblem: true,
+        );
+      } else {
+        _setNote(
+          connection.logsIn
+              ? "Buddy can't read ${connection.name} any more, and deleted the facts it saved from it and your login."
+              : "Buddy can't read ${connection.name} any more, and deleted the facts it saved from it.",
+          isProblem: false,
+        );
+      }
       onFactsChanged();
     } on Exception {
       _setNote(couldNotReach, isProblem: true);

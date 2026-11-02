@@ -20,6 +20,33 @@ final canvasTakeover = Takeover(
   liveViewUrl: Uri.parse('http://backend.test/takeover/live/token/takeover.html'),
 );
 
+/// The way the backend describes Canvas. The words on the card here are made up for these tests.
+Connection canvasConnection({
+  String id = 'canvas',
+  String name = 'Canvas',
+  bool on = false,
+  bool logsIn = true,
+  bool needsLogin = false,
+  bool loginNotDeletedYet = false,
+  String? problem,
+  DateTime? lastReadAt,
+}) =>
+    Connection(
+      id: id,
+      name: name,
+      on: on,
+      lastReadAt: lastReadAt,
+      lastReadProblem: problem,
+      logsIn: logsIn,
+      needsLogin: needsLogin,
+      loginNotDeletedYet: loginNotDeletedYet,
+      card: const ReadPermissionCardContent(
+        reads: ['Your courses this term.'],
+        notes: ['You log in yourself through a Takeover.'],
+        warning: "Canvas's own rules forbid this.",
+      ),
+    );
+
 final testDevice = PairedDevice(address: Uri.parse('https://laptop.test'), key: 'test-device-key');
 
 class FakeDeviceStore implements DeviceStore {

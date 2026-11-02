@@ -18,6 +18,7 @@ import 'tabs/simple_tabs.dart';
 import 'tabs/today_tab.dart';
 import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
+import 'takeover/takeover_screen.dart';
 import 'widgets/buddy_avatar.dart';
 
 const templeCherry = Color(0xFF9D2235);
@@ -229,8 +230,11 @@ class _TabsState extends State<_Tabs> {
     ..addListener(_showNewCrisisCard)
     ..addListener(_refreshProfileAfterTurn);
   late final ProfileController _profile = ProfileController(widget.backend)..load();
-  late final ConnectionsController _connections = ConnectionsController(widget.backend, onFactsChanged: _profile.load)
-    ..load();
+  late final ConnectionsController _connections = ConnectionsController(
+    widget.backend,
+    onFactsChanged: _profile.load,
+    openTakeover: _openTakeover,
+  )..load();
   late final MilestonesController _milestones = MilestonesController(widget.backend)..load();
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
@@ -246,7 +250,24 @@ class _TabsState extends State<_Tabs> {
   void _selectTab(int index) {
     setState(() => _selected = index);
     if (index == _youTab) _refreshYouTab();
-    if (index == _todayTab) _milestones.load();
+    if (index == _todayTab) {
+      _milestones.load();
+      // A read since the last look may have found that a login expired.
+      _connections.load();
+    }
+  }
+
+  /// The whole screen is the live view until the Student taps Done or leaves.
+  Future<FinishedTakeover?> _openTakeover(Takeover takeover) {
+    return Navigator.of(context).push<FinishedTakeover>(
+      MaterialPageRoute(
+        builder: (context) => TakeoverScreen(
+          backend: widget.backend,
+          takeover: takeover,
+          liveViewBuilder: widget.liveViewBuilder,
+        ),
+      ),
+    );
   }
 
   void _refreshYouTab() {
@@ -283,13 +304,12 @@ class _TabsState extends State<_Tabs> {
         index: _selected,
         children: [
           BuddyTab(chat: _chat, connections: _connections, openPhone: widget.openPhone, openDraft: widget.openDraft),
-          TodayTab(milestones: _milestones, openPhone: widget.openPhone),
+          TodayTab(milestones: _milestones, connections: _connections, openPhone: widget.openPhone),
           const RoadmapTab(),
           YouTab(
             backend: widget.backend,
             profile: _profile,
             connections: _connections,
-            liveViewBuilder: widget.liveViewBuilder,
           ),
         ],
       ),

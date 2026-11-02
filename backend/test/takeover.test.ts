@@ -211,6 +211,7 @@ describe("tapping Done", () => {
       title: "Dashboard",
       text: "Your courses",
       accessibilitySnapshot: '- heading "Dashboard"',
+      html: "",
     });
   });
 

@@ -8,6 +8,8 @@ export interface PageReading {
   text: string;
   /** The page's accessibility tree, as text. */
   accessibilitySnapshot: string;
+  /** The page as it stood once it had loaded, after its own scripts ran. */
+  html: string;
 }
 
 /** Exactly what the Student approved: one form, its fields and the one button to press. */

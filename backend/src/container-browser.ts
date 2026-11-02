@@ -6,6 +6,8 @@ import type { RequestGuard } from "./network-guard.ts";
 
 const PAGE_TIMEOUT_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 10_000;
+/** How long a page's own scripts get to finish loading what it shows, on top of the page itself. */
+const SETTLE_TIMEOUT_MS = 10_000;
 const BLOCKED_ERROR = "net::ERR_BLOCKED_BY_CLIENT";
 
 export interface ContainerBrowserSettings {
@@ -90,11 +92,14 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
         const page = await guardedPage(context, guarded);
         try {
           await page.goto(url, { timeout: PAGE_TIMEOUT_MS, waitUntil: "load" });
+          // Some pages only fetch their content once they've loaded. A page that never goes quiet is read as it stands.
+          await page.waitForLoadState("networkidle", { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
           return {
             url: page.url(),
             title: await page.title(),
             text: await page.locator("body").innerText({ timeout: PAGE_TIMEOUT_MS }),
             accessibilitySnapshot: await page.locator("body").ariaSnapshot({ timeout: PAGE_TIMEOUT_MS }),
+            html: await page.content(),
           };
         } catch (error) {
           throw blockedByGuard(error, guarded);
