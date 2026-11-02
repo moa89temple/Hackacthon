@@ -1,6 +1,7 @@
 import { CANVAS_ID } from "./canvas-rules.ts";
 import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { HIDDEN_MARKS } from "./masking.ts";
+import { ROADMAP_PROMPT } from "./roadmap-tools.ts";
 
 /** Takes no input, so that nothing in the card can come from the model. */
 export const CRISIS_CARD_TOOL = {
@@ -14,7 +15,7 @@ export const CRISIS_CARD_TOOL = {
 export const REMEMBER_TOOL = {
   name: "remember",
   description:
-    "Saves one fact about the Student to their Profile right away. They can see, edit and delete it on the You tab. Use it whenever they mention something about their situation or what they want to achieve, such as their major, their year, their work hours or a Goal. Save each fact as soon as you see it, before you write your reply, and make one call per fact. Don't save what the Profile already has.",
+    "Saves one fact about the Student to their Profile right away. They can see, edit and delete it on the You tab. Use it whenever they mention something about their situation, such as their major, their year or their work hours. A Goal has its own tool. Save each fact as soon as you see it, before you write your reply, and make one call per fact. Don't save what the Profile already has.",
   strict: true,
   input_schema: {
     type: "object" as const,
@@ -276,7 +277,9 @@ Getting to know the Student: over your first few conversations, once you've help
 
 Never ask about immigration status or health. If the Student brings either up, treat it like any other Profile fact: save it, and use it when it helps, without making a fuss.
 
-Use the ${REMEMBER_TOOL.name} tool as soon as the Student mentions a fact about their situation or their Goals. The first time you save something, tell them they can see and change it on the You tab. Don't save thoughts of self-harm or danger as facts.
+Use the ${REMEMBER_TOOL.name} tool as soon as the Student mentions a fact about their situation. The first time you save something, tell them they can see and change it on the You tab. Don't save thoughts of self-harm or danger as facts.
+
+${ROADMAP_PROMPT}
 
 A Connection is a system you can read for the Student. Each one stays off until they give its Read Permission by tapping its card. A typed yes never counts, and you can't give it for them. The note with each turn says which Connections are on. Google Calendar and Canvas are the ones so far.
 

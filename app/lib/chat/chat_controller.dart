@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../backend/buddy_backend.dart';
+import '../roadmap/roadmap_backend.dart';
 
 /// Lives as long as the app, so that a reply keeps streaming while the Student
 /// looks at another tab.
@@ -63,6 +64,10 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   List<MilestoneCardItem> newestMilestoneCards = const [];
 
+  /// The Roadmap cards from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  List<RoadmapCardItem> newestRoadmapCards = const [];
+
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
   Future<void> loadHistory() async {
@@ -93,6 +98,7 @@ class ChatController extends ChangeNotifier {
     newestActionCards = const [];
     newestDraftCard = null;
     newestMilestoneCards = const [];
+    newestRoadmapCards = const [];
     _changed();
 
     ChatMessage? reply;
@@ -137,6 +143,11 @@ class ChatController extends ChangeNotifier {
             final card = MilestoneCardItem(event.milestone);
             items = [...items, card];
             newestMilestoneCards = [...newestMilestoneCards, card];
+            _changed();
+          case ReplyRoadmapCard():
+            final card = RoadmapCardItem(event.card);
+            items = [...items, card];
+            newestRoadmapCards = [...newestRoadmapCards, card];
             _changed();
           case ReplyDone():
             reply = event.reply;
@@ -219,6 +230,15 @@ class ChatController extends ChangeNotifier {
     ];
     _changed();
     return edited.hiddenNote;
+  }
+
+  /// A Roadmap card as the backend says it stands, after a tap on it or a later one.
+  void showRoadmapCard(RoadmapCard card) {
+    items = [
+      for (final existing in items)
+        if (existing is RoadmapCardItem && existing.card.id == card.id) RoadmapCardItem(card) else existing,
+    ];
+    _changed();
   }
 
   void _changed() {

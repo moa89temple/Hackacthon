@@ -11,6 +11,9 @@ import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from
 import { hiddenNote, maskSecrets } from "./masking.ts";
 import { newMilestoneTurn, type ToolOutcome } from "./milestone-chat.ts";
 import { describeProfile, type Profile } from "./profile.ts";
+import { newRoadmapTurn } from "./roadmap-chat.ts";
+import { ROADMAP_TOOLS } from "./roadmap-tools.ts";
+import type { Roadmap, RoadmapCard } from "./roadmap.ts";
 import type { StandardMilestone, StandardMilestones } from "./standard-milestones.ts";
 import {
   BUDDY_SYSTEM_PROMPT,
@@ -134,6 +137,13 @@ export interface MilestoneCardEntry {
   sentAt: string;
 }
 
+/** A Roadmap card as it stands now. Accepting it takes one tap, and it isn't a Permission. */
+export interface RoadmapCardEntry {
+  type: "roadmap_card";
+  card: RoadmapCard;
+  sentAt: string;
+}
+
 export type ConversationEvent =
   /** The Student's message had something hidden. This is the message as Buddy kept it. */
   | { type: "hidden"; text: string; note: string }
@@ -144,6 +154,7 @@ export type ConversationEvent =
   | { type: "action_card"; card: ActionCard }
   | { type: "draft_card"; draft: Draft }
   | { type: "milestone_card"; milestone: StandardMilestone }
+  | { type: "roadmap_card"; card: RoadmapCard }
   | { type: "done"; reply: ChatMessage }
   | { type: "error"; message: string };
 
@@ -154,7 +165,7 @@ export interface Conversation {
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
-  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry | MilestoneCardEntry)[];
+  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry | MilestoneCardEntry | RoadmapCardEntry)[];
 }
 
 export interface ConversationDeps {
@@ -169,11 +180,12 @@ export interface ConversationDeps {
   actionCards: ActionCards;
   drafts: Drafts;
   milestones: StandardMilestones;
+  roadmap: Roadmap;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, roadmap, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -489,9 +501,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
         const lastReply = store.listMessages(THE_STUDENT).findLast((message) => message.role === "assistant");
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${drafts.newestEditNote(lastReply?.createdAt)}\n\n${QUESTIONS_REMINDER}${actionCards.noteForTurn()}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${roadmap.describeForTurn()}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${drafts.newestEditNote(lastReply?.createdAt)}\n\n${QUESTIONS_REMINDER}${actionCards.noteForTurn()}`,
         };
         const milestoneTurn = newMilestoneTurn({ milestones, store, logError, afterMessageId: studentMessageId!, now, turn });
+        const roadmapTurn = newRoadmapTurn({ roadmap, afterMessageId: studentMessageId!, turn, logError });
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
         // What Claude wrote before its tool calls this turn. The Student watched it arrive, so it
@@ -557,6 +570,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   if (draft) yield { type: "draft_card", draft };
                   handoffMade = draft !== undefined;
                   answers.push(answer);
+                } else if (roadmapTurn.handles(call.name)) {
+                  const { card, ...outcome } = await roadmapTurn.answer(call.name, call.input);
+                  if (card) yield { type: "roadmap_card", card };
+                  answers.push(toolResultFrom(call, outcome));
                 } else if (call.name === FIND_MILESTONES_TOOL.name) {
                   answers.push(toolResultFrom(call, milestoneTurn.find(call.input)));
                 } else if (call.name === SHOW_MILESTONE_CARDS_TOOL.name) {
@@ -632,6 +649,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const draftCards = drafts.list();
       const milestoneCards = store.listMilestoneCards(THE_STUDENT);
       const milestonesOnCards = milestones.withIds(milestoneCards.map((card) => card.milestoneId));
+      const roadmapCards = roadmap.cards();
       return store
         .listMessages(THE_STUDENT)
         .filter(isShownToStudent)
@@ -668,6 +686,9 @@ export function createConversation(deps: ConversationDeps): Conversation {
               card,
               sentAt: createdAt.toISOString(),
             })),
+          ...roadmapCards
+            .filter((card) => card.afterMessageId === message.id)
+            .map(({ afterMessageId: _, ...card }) => ({ type: "roadmap_card" as const, card, sentAt: card.createdAt })),
           // Last, so that a Draft follows its Contact's card, as it did when it first appeared.
           ...draftCards
             .filter((card) => card.afterMessageId === message.id)
@@ -706,6 +727,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       MAKE_HANDOFF_TOOL,
       FIND_MILESTONES_TOOL,
       SHOW_MILESTONE_CARDS_TOOL,
+      ...ROADMAP_TOOLS,
     ],
     messages,
   };

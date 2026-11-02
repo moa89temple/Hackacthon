@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../device/device_store.dart';
 import '../device/pairing_details.dart';
+import '../roadmap/roadmap_backend.dart';
 
 /// A pairing request gets this long. Without Tailscale on, the phone would otherwise wait minutes.
 const _pairingTimeout = Duration(seconds: 20);
@@ -262,6 +263,14 @@ class MilestoneCardItem extends ConversationItem {
   final StandardMilestone? milestone;
 }
 
+/// A Roadmap card in the conversation. Not const, so that each is its own object and the newest can
+/// be told from earlier ones.
+class RoadmapCardItem extends ConversationItem {
+  RoadmapCardItem(this.card);
+
+  final RoadmapCard card;
+}
+
 class ChatMessage extends ConversationItem {
   const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote});
 
@@ -511,6 +520,12 @@ class ReplyMilestoneCard extends ReplyEvent {
   final StandardMilestone milestone;
 }
 
+/// Buddy is showing a Roadmap card.
+class ReplyRoadmapCard extends ReplyEvent {
+  const ReplyRoadmapCard(this.card);
+  final RoadmapCard card;
+}
+
 /// Buddy is showing a Guidebook card.
 class ReplyGuidebookCard extends ReplyEvent {
   const ReplyGuidebookCard(this.item);
@@ -597,7 +612,7 @@ class FinishedTakeover {
 }
 
 /// What the app needs from the backend.
-abstract interface class BuddyBackend {
+abstract interface class BuddyBackend implements RoadmapBackend {
   Future<List<ConversationItem>> loadHistory();
 
   /// Sends the Student's message. The stream carries Buddy's turn.
@@ -696,7 +711,7 @@ class HttpBackendAccess implements BackendAccess {
       );
 }
 
-class HttpBuddyBackend implements BuddyBackend {
+class HttpBuddyBackend with HttpRoadmapCalls implements BuddyBackend {
   HttpBuddyBackend(
     Uri baseUrl, {
     required String deviceKey,
@@ -939,6 +954,18 @@ class HttpBuddyBackend implements BuddyBackend {
     return FinishedTakeover.fromJson(_decode(response));
   }
 
+  @override
+  Future<Map<String, dynamic>> roadmapCall(String method, String path, [Object? body]) async {
+    final request = http.Request(method, _baseUrl.resolve(path))..headers.addAll(_keyHeader);
+    if (body != null) {
+      request.headers['content-type'] = 'application/json';
+      request.body = jsonEncode(body);
+    }
+    final response = await http.Response.fromStream(await _client.send(request));
+    _check(response.statusCode, 'A Roadmap request');
+    return _decode(response);
+  }
+
   Map<String, dynamic> _decode(http.Response response) =>
       jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
 
@@ -964,6 +991,7 @@ class HttpBuddyBackend implements BuddyBackend {
             final Map<String, dynamic> milestone => StandardMilestone.fromJson(milestone),
             _ => null,
           }),
+        'roadmap_card' => RoadmapCardItem(RoadmapCard.fromJson(json['card'] as Map<String, dynamic>)),
         _ => ChatMessage.fromJson(json),
       };
 
@@ -977,6 +1005,7 @@ class HttpBuddyBackend implements BuddyBackend {
         'action_card' => ReplyActionCard(ActionCard.fromJson(json['card'] as Map<String, dynamic>)),
         'draft_card' => ReplyDraftCard(Draft.fromJson(json['draft'] as Map<String, dynamic>)),
         'milestone_card' => ReplyMilestoneCard(StandardMilestone.fromJson(json['milestone'] as Map<String, dynamic>)),
+        'roadmap_card' => ReplyRoadmapCard(RoadmapCard.fromJson(json['card'] as Map<String, dynamic>)),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),
         _ => null,
