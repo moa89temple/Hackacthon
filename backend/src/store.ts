@@ -152,6 +152,46 @@ export interface StoredGuidebookCard {
   createdAt: Date;
 }
 
+/**
+ * Where an Action card has got to. "running" means the Approve tap has been used up, so from there it
+ * only ever ends one of three ways, and none of them can run it again.
+ */
+export type ActionCardStatus =
+  | "waiting"
+  | "running"
+  | "done"
+  | "not_run"
+  | "unknown"
+  | "declined"
+  | "expired"
+  | "replaced"
+  | "invalid";
+
+export interface NewActionCard {
+  kind: string;
+  /** The step's exact content, as canonical JSON. This is what the fingerprint covers. */
+  content: string;
+  fingerprint: string;
+  afterMessageId: number;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface StoredActionCard extends NewActionCard {
+  id: number;
+  status: ActionCardStatus;
+  /** The fingerprint of what the Student saw when they tapped Approve. */
+  approvedFingerprint: string | null;
+  /** What happened in the end, in words for the Student. */
+  outcome: string | null;
+}
+
+export interface ActionCardMove {
+  status: ActionCardStatus;
+  approvedFingerprint?: string;
+  outcome?: string;
+}
+
 export interface Store {
   /**
    * Appends the messages, and any Activity entry for them, together: either all of them are saved
@@ -246,6 +286,30 @@ export interface Store {
   recordDiscoveryFailure(studentId: string, at: Date, entry: NewActivityEntry | null): void;
   addGuidebookCard(studentId: string, card: StoredGuidebookCard): void;
   listGuidebookCards(studentId: string): StoredGuidebookCard[];
+  /** Saves the card and its Activity entry together. */
+  addActionCard(studentId: string, card: NewActionCard, entry: NewActivityEntry): StoredActionCard;
+  actionCard(studentId: string, id: number): StoredActionCard | null;
+  listActionCards(studentId: string): StoredActionCard[];
+  /**
+   * Moves a card on only if it's still where the caller thinks, saving the Activity entries with it.
+   * Returns null if it wasn't, which is what stops two taps from both running a step.
+   */
+  moveActionCard(
+    studentId: string,
+    id: number,
+    from: ActionCardStatus,
+    move: ActionCardMove,
+    entries: NewActivityEntry[],
+  ): StoredActionCard | null;
+  /** Ends a waiting card and saves the one that replaces it, together. Null if it wasn't waiting. */
+  replaceActionCard(
+    studentId: string,
+    id: number,
+    card: NewActionCard,
+    entries: NewActivityEntry[],
+  ): StoredActionCard | null;
+  /** Lets a running step through to the browser, and only ever once. Returns whether this was that once. */
+  takeActionCardToBrowser(studentId: string, id: number, at: Date): boolean;
   /** Activity only ever grows: nothing here changes or removes one entry. */
   addActivity(studentId: string, entry: NewActivityEntry): void;
   /** Newest first. */
@@ -374,6 +438,21 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX guidebook_cards_by_student ON guidebook_cards (student_id, id);`,
+  `CREATE TABLE action_cards (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     content TEXT NOT NULL,
+     fingerprint TEXT NOT NULL,
+     status TEXT NOT NULL,
+     after_message_id INTEGER NOT NULL,
+     created_at TEXT NOT NULL,
+     expires_at TEXT NOT NULL,
+     approved_fingerprint TEXT,
+     at_browser_at TEXT,
+     outcome TEXT
+   );
+   CREATE INDEX action_cards_by_student ON action_cards (student_id, id);`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -519,6 +598,49 @@ export function openStore(databasePath: string): Store {
   const selectGuidebookCards = db.prepare(
     `SELECT item_id, after_message_id, created_at FROM guidebook_cards WHERE student_id = ? ORDER BY id`,
   );
+  const insertActionCard = db.prepare(
+    `INSERT INTO action_cards (student_id, kind, content, fingerprint, status, after_message_id, created_at, expires_at)
+     VALUES (?, ?, ?, ?, 'waiting', ?, ?, ?)`,
+  );
+  const selectActionCard = db.prepare(`SELECT * FROM action_cards WHERE student_id = ? AND id = ?`);
+  const selectActionCards = db.prepare(`SELECT * FROM action_cards WHERE student_id = ? ORDER BY id`);
+  const moveCard = db.prepare(
+    `UPDATE action_cards
+     SET status = ?, approved_fingerprint = COALESCE(?, approved_fingerprint), outcome = COALESCE(?, outcome)
+     WHERE student_id = ? AND id = ? AND status = ?`,
+  );
+  const takeCardToBrowser = db.prepare(
+    `UPDATE action_cards SET at_browser_at = ?
+     WHERE student_id = ? AND id = ? AND status = 'running' AND at_browser_at IS NULL`,
+  );
+  const toActionCard = (row: any): StoredActionCard => ({
+    id: row.id,
+    kind: row.kind,
+    content: row.content,
+    fingerprint: row.fingerprint,
+    status: row.status,
+    afterMessageId: row.after_message_id,
+    createdAt: new Date(row.created_at),
+    expiresAt: new Date(row.expires_at),
+    approvedFingerprint: row.approved_fingerprint,
+    outcome: row.outcome,
+  });
+  const actionCard = (studentId: string, id: number): StoredActionCard | null => {
+    const row = selectActionCard.get(studentId, id);
+    return row ? toActionCard(row) : null;
+  };
+  const addCard = (studentId: string, card: NewActionCard): StoredActionCard => {
+    const { lastInsertRowid } = insertActionCard.run(
+      studentId,
+      card.kind,
+      card.content,
+      card.fingerprint,
+      card.afterMessageId,
+      card.createdAt.toISOString(),
+      card.expiresAt.toISOString(),
+    );
+    return actionCard(studentId, Number(lastInsertRowid))!;
+  };
   const addActivity = (studentId: string, entry: NewActivityEntry): void => {
     insertActivity.run(
       studentId,
@@ -832,6 +954,47 @@ export function openStore(databasePath: string): Store {
         afterMessageId: row.after_message_id,
         createdAt: new Date(row.created_at),
       }));
+    },
+
+    addActionCard(studentId, card, entry) {
+      return inTransaction(db, () => {
+        addActivity(studentId, entry);
+        return addCard(studentId, card);
+      });
+    },
+
+    actionCard,
+
+    listActionCards(studentId) {
+      return selectActionCards.all(studentId).map(toActionCard);
+    },
+
+    moveActionCard(studentId, id, from, move, entries) {
+      return inTransaction(db, () => {
+        const { changes } = moveCard.run(
+          move.status,
+          move.approvedFingerprint ?? null,
+          move.outcome ?? null,
+          studentId,
+          id,
+          from,
+        );
+        if (changes === 0) return null;
+        for (const entry of entries) addActivity(studentId, entry);
+        return actionCard(studentId, id);
+      });
+    },
+
+    replaceActionCard(studentId, id, card, entries) {
+      return inTransaction(db, () => {
+        if (moveCard.run("replaced", null, null, studentId, id, "waiting").changes === 0) return null;
+        for (const entry of entries) addActivity(studentId, entry);
+        return addCard(studentId, card);
+      });
+    },
+
+    takeActionCardToBrowser(studentId, id, at) {
+      return takeCardToBrowser.run(at.toISOString(), studentId, id).changes > 0;
     },
 
     addActivity,

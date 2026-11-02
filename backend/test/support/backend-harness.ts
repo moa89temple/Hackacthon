@@ -1,12 +1,14 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import type { Site } from "../../src/browser-access.ts";
 import type { ConnectionType } from "../../src/connections.ts";
 import type { Office } from "../../src/office-pages.ts";
 import { createDevices } from "../../src/devices.ts";
 import { googleCalendar } from "../../src/google-calendar.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
-import { openStore } from "../../src/store.ts";
+import { openStore, THE_STUDENT } from "../../src/store.ts";
 import { MovableClock } from "./movable-clock.ts";
 import { saveOfficePages, TEST_OFFICES } from "./office-pages.ts";
 import { readEvents } from "./read-events.ts";
@@ -27,6 +29,9 @@ export const OTHER_TEST_SITE = {
   homeUrl: "https://portal.test/",
   loginHosts: ["portal.test"],
 };
+
+/** A public page, which Buddy's Browser may open with no Read Permission. */
+export const PUBLIC_TEST_PAGE = "https://public.test/";
 
 export const CALENDAR = googleCalendar.id;
 /** Made up, in the shape of the address Google gives. */
@@ -55,10 +60,16 @@ export class BackendHarness {
   /** The key of the phone every helper here acts as, paired the way the real app pairs. */
   deviceKey!: string;
   #offices: Office[] = TEST_OFFICES;
+  #sites: Record<string, Site> = { canvas: TEST_SITE, tuportal: OTHER_TEST_SITE };
+  #extraConnectionTypes: ConnectionType[] = [];
 
-  static async start(options: { offices?: Office[] } = {}): Promise<BackendHarness> {
+  static async start(
+    options: { offices?: Office[]; sites?: Record<string, Site>; extraConnectionTypes?: ConnectionType[] } = {},
+  ): Promise<BackendHarness> {
     const harness = new BackendHarness();
     harness.#offices = options.offices ?? TEST_OFFICES;
+    harness.#sites = options.sites ?? harness.#sites;
+    harness.#extraConnectionTypes = options.extraConnectionTypes ?? [];
     saveOfficePages(harness.web, harness.#offices);
     await harness.browser.startLiveView();
     await harness.#boot();
@@ -78,8 +89,9 @@ export class BackendHarness {
   async #boot(): Promise<void> {
     this.#backend = await startBackend({
       adapters: { claude: this.claude, clock: this.clock, browser: this.browser, web: this.web },
-      sites: { canvas: TEST_SITE, tuportal: OTHER_TEST_SITE },
-      connectionTypes: [googleCalendar, warnedConnection],
+      sites: this.#sites,
+      publicHosts: [new URL(PUBLIC_TEST_PAGE).hostname],
+      connectionTypes: [googleCalendar, warnedConnection, ...this.#extraConnectionTypes],
       allowedHosts: ["127.0.0.1"],
       databasePath: join(this.#directory, "buddy.sqlite"),
       chatModel: TEST_CHAT_MODEL,
@@ -137,9 +149,33 @@ export class BackendHarness {
       .some((name) => readFileSync(join(this.#directory, name)).includes(text));
   }
 
-  async restart(): Promise<void> {
+  /** A second connection to the database, for standing in for something going wrong from outside. */
+  #withDatabase(work: (database: DatabaseSync) => void): void {
+    const database = new DatabaseSync(join(this.#directory, "buddy.sqlite"));
+    work(database);
+    database.close();
+  }
+
+  /** Changes a card's content behind Buddy's back, as a bug or anything else with the file might. */
+  changeStoredCardContent(id: number, content: unknown): void {
+    this.#withDatabase((database) => {
+      database.prepare("UPDATE action_cards SET content = ? WHERE id = ?").run(JSON.stringify(content), id);
+    });
+  }
+
+  /** Leaves a card as a backend that stopped in the middle of its step would. */
+  stopCardPartway(id: number): void {
+    const store = openStore(join(this.#directory, "buddy.sqlite"));
+    const card = store.actionCard(THE_STUDENT, id)!;
+    store.moveActionCard(THE_STUDENT, id, "waiting", { status: "running", approvedFingerprint: card.fingerprint }, []);
+    store.close();
+  }
+
+  /** What main.ts does when it starts, unless it's a command run on the laptop. */
+  async restart(options: { asCommand?: boolean } = {}): Promise<void> {
     await this.#backend.close();
     await this.#boot();
+    if (!options.asCommand) this.#backend.actionCards.endInterrupted();
   }
 
   async stop(): Promise<void> {
@@ -257,5 +293,28 @@ export class BackendHarness {
 
   forgetLogin(site: string): Promise<Response> {
     return fetch(`${this.url}/sites/${site}/login`, { method: "DELETE", headers: this.deviceHeaders });
+  }
+
+  get actionCards(): RunningBackend["actionCards"] {
+    return this.#backend.actionCards;
+  }
+
+  /** The Student tapping Approve on a card. */
+  approveCard(id: unknown, body: unknown, key: Record<string, string> = this.deviceHeaders): Promise<Response> {
+    return fetch(`${this.url}/action-cards/${id}/approve`, {
+      method: "POST",
+      headers: { ...key, "content-type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+  }
+
+  /** The Student tapping Decline on a card. */
+  declineCard(id: unknown, key: Record<string, string> = this.deviceHeaders): Promise<Response> {
+    return fetch(`${this.url}/action-cards/${id}/decline`, { method: "POST", headers: key });
+  }
+
+  async card(id: unknown): Promise<any> {
+    const response = await fetch(`${this.url}/action-cards/${id}`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { card: any }).card;
   }
 }

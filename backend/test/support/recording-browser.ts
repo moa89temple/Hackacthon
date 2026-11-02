@@ -1,9 +1,11 @@
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
-import type { BuddysBrowser, PageReading } from "../../src/buddys-browser.ts";
+import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type PageReading } from "../../src/buddys-browser.ts";
+import type { ArmableGuard, RequestGuard } from "../../src/network-guard.ts";
 
 export type RecordedAction =
   | { type: "show"; url: string }
   | { type: "read"; url: string }
+  | { type: "submit"; form: FormToSubmit }
   | { type: "clear-screen" }
   | { type: "forget-login"; hosts: string[] };
 
@@ -29,6 +31,10 @@ export class RecordingBrowser implements BuddysBrowser {
   holdReads: Promise<void> | undefined;
   /** When set, putting a page on the screen waits on this, and fails if it rejects. */
   holdShows: Promise<void> | undefined;
+  /** When set, submitting a form waits on this. */
+  holdSubmits: Promise<void> | undefined;
+  /** When set, decides what submitting a form does. By default it goes as a real form would. */
+  nextSubmit: ((form: FormToSubmit, guard: ArmableGuard) => Promise<FormSubmission>) | undefined;
 
   #liveViewServer: Server | undefined;
   readonly #liveViewSockets = new Set<Socket>();
@@ -71,18 +77,41 @@ export class RecordingBrowser implements BuddysBrowser {
     await this.holdShows;
   }
 
-  async read(url: string): Promise<PageReading> {
+  async read(url: string, guard: RequestGuard): Promise<PageReading> {
     this.#failIfUnreachable();
     this.actions.push({ type: "read", url });
     await this.holdReads;
     const page = this.savedPages.get(url);
     if (!page) throw new Error(`RecordingBrowser: no saved page for ${url}`);
+    // What the guard does to a real browser's redirect.
+    if (page.finalUrl) {
+      const decision = guard.check({ url: page.finalUrl, method: "GET", opensPage: true });
+      if (!decision.allowed) throw new PageBlocked(decision.why);
+    }
     return {
       url: page.finalUrl ?? url,
       title: page.title,
       text: page.text,
       accessibilitySnapshot: page.accessibilitySnapshot,
     };
+  }
+
+  async submitForm(form: FormToSubmit, guard: ArmableGuard): Promise<FormSubmission> {
+    this.#failIfUnreachable();
+    this.actions.push({ type: "submit", form });
+    await this.holdSubmits;
+    if (this.nextSubmit) return this.nextSubmit(form, guard);
+    const fields = form.fields.map(({ name, value }): [string, string] => [name, value]);
+    guard.arm({ method: "POST", url: form.actionUrl, fields });
+    const body = new URLSearchParams(fields).toString();
+    const decision = guard.check({
+      url: form.actionUrl,
+      method: "POST",
+      opensPage: false,
+      body,
+      contentType: "application/x-www-form-urlencoded",
+    });
+    return decision.allowed ? { outcome: "submitted", status: 200 } : { outcome: "not_sent", why: decision.why };
   }
 
   async clearScreen(): Promise<void> {

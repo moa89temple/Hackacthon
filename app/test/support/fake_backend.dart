@@ -61,6 +61,39 @@ class FakeBackend implements BuddyBackend {
     reported.add(id);
   }
 
+  final List<(int, String)> approvals = [];
+  final List<int> declines = [];
+
+  /// What each tap comes back as.
+  ActionCard? cardAfterApprove;
+  ActionCard? cardAfterDecline;
+  ActionCard? cardWhenChecked;
+  String? approveRefusal;
+  Object? approveError;
+  Object? declineError;
+  bool holdApprove = false;
+  final Completer<void> _approveGate = Completer<void>();
+
+  void releaseApprove() => _approveGate.complete();
+
+  @override
+  Future<ActionCardAnswer> approveActionCard(int id, String fingerprint) async {
+    approvals.add((id, fingerprint));
+    if (holdApprove) await _approveGate.future;
+    if (approveError case final error?) throw error;
+    return ActionCardAnswer(cardAfterApprove!, refusal: approveRefusal);
+  }
+
+  @override
+  Future<ActionCardAnswer> declineActionCard(int id) async {
+    if (declineError case final error?) throw error;
+    declines.add(id);
+    return ActionCardAnswer(cardAfterDecline!);
+  }
+
+  @override
+  Future<ActionCard> loadActionCard(int id) async => cardWhenChecked!;
+
   List<ActivityEntry> activity = [];
   Object? activityError;
 

@@ -5,6 +5,7 @@ import { allowedHostsWithTailscale, readSecrets, settings } from "./settings.ts"
 const backend = await startBackend({
   adapters: productionAdapters(readSecrets(), settings.browser),
   sites: settings.sites,
+  publicHosts: settings.publicHosts,
   connectionTypes: settings.connectionTypes,
   allowedHosts: allowedHostsWithTailscale(),
   databasePath: settings.databasePath,
@@ -16,6 +17,7 @@ const backend = await startBackend({
   logger: true,
 });
 
+backend.actionCards.endInterrupted();
 backend.connections.startSchedule();
 backend.discovery.startSchedule();
 

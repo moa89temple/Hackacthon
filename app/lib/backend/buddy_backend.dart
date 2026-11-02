@@ -39,6 +39,86 @@ class GuidebookCardItem extends ConversationItem {
   final bool reportedJustNow;
 }
 
+/// An Action card in the conversation. Not const, so that each is its own object and the newest can
+/// be told from earlier ones.
+class ActionCardItem extends ConversationItem {
+  ActionCardItem(this.card);
+
+  final ActionCard card;
+}
+
+/// One line of what an Action card says will happen.
+class CardLine {
+  const CardLine({required this.label, required this.value});
+
+  factory CardLine.fromJson(Map<String, dynamic> json) =>
+      CardLine(label: json['label'] as String, value: json['value'] as String);
+
+  final String label;
+  final String value;
+}
+
+/// A step Buddy is asking the Student's Permission for, in the backend's words. Everything on it
+/// comes from the backend, which decides what each status means, so the app only shows it.
+class ActionCard {
+  const ActionCard({
+    required this.id,
+    required this.title,
+    required this.shows,
+    required this.status,
+    required this.statusText,
+    this.note,
+    this.outcome,
+    required this.fingerprint,
+    required this.canDecide,
+  });
+
+  factory ActionCard.fromJson(Map<String, dynamic> json) => ActionCard(
+        id: json['id'] as int,
+        title: json['title'] as String,
+        shows: [for (final line in json['shows'] as List<dynamic>) CardLine.fromJson(line as Map<String, dynamic>)],
+        status: json['status'] as String,
+        statusText: json['statusText'] as String,
+        note: json['note'] as String?,
+        outcome: json['outcome'] as String?,
+        fingerprint: json['fingerprint'] as String,
+        canDecide: json['canDecide'] as bool,
+      );
+
+  final int id;
+  final String title;
+
+  /// Exactly what will happen, line by line.
+  final List<CardLine> shows;
+  final String status;
+  final String statusText;
+
+  /// What the Student should know before they tap.
+  final String? note;
+
+  /// What happened in the end.
+  final String? outcome;
+
+  /// Sent back with Approve, to say which content the Student saw.
+  final String fingerprint;
+
+  /// Whether Approve and Decline still mean anything.
+  final bool canDecide;
+
+  bool get isRunning => status == 'running';
+}
+
+/// What the backend said to a tap on an Action card.
+class ActionCardAnswer {
+  const ActionCardAnswer(this.card, {this.refusal});
+
+  /// The card as it is now.
+  final ActionCard card;
+
+  /// Why the tap didn't count, when it didn't.
+  final String? refusal;
+}
+
 /// The web page where Buddy found a Guidebook item.
 class GuidebookSource {
   const GuidebookSource({required this.url, required this.title, required this.lastSeenAt});
@@ -332,6 +412,12 @@ class ReplyGuidebookCard extends ReplyEvent {
   final GuidebookItem item;
 }
 
+/// Buddy is asking for an Action Permission, with an Action card.
+class ReplyActionCard extends ReplyEvent {
+  const ReplyActionCard(this.card);
+  final ActionCard card;
+}
+
 /// The turn ended. This is the reply as saved, and it replaces whatever streamed in.
 class ReplyDone extends ReplyEvent {
   const ReplyDone(this.reply);
@@ -427,6 +513,17 @@ abstract interface class BuddyBackend {
 
   /// Hides the item for every Student. Also succeeds if the item has already gone.
   Future<void> reportGuidebookItem(int id);
+
+  /// The Student's Approve tap, with the fingerprint of what the card showed. It's the only way an
+  /// Action Permission is ever given. Sending it twice is safe: the step still runs at most once.
+  /// Throws only if there's no telling what the backend did.
+  Future<ActionCardAnswer> approveActionCard(int id, String fingerprint);
+
+  /// The Student's Decline tap.
+  Future<ActionCardAnswer> declineActionCard(int id);
+
+  /// The card as it is now.
+  Future<ActionCard> loadActionCard(int id);
 
   /// Newest first. There's nothing here to change or remove an entry, because nothing can.
   Future<List<ActivityEntry>> loadActivity();
@@ -609,6 +706,44 @@ class HttpBuddyBackend implements BuddyBackend {
     _check(response.statusCode, 'Sending a Report');
   }
 
+  Uri _actionCardUrl(int id, [String? operation]) =>
+      _baseUrl.replace(pathSegments: ['action-cards', '$id', ?operation]);
+
+  ActionCardAnswer _parseCardAnswer(http.Response response, String failure) {
+    if (response.statusCode == 409) {
+      final body = _decode(response);
+      return ActionCardAnswer(
+        ActionCard.fromJson(body['card'] as Map<String, dynamic>),
+        refusal: body['error'] as String,
+      );
+    }
+    _check(response.statusCode, failure);
+    return ActionCardAnswer(ActionCard.fromJson(_decode(response)['card'] as Map<String, dynamic>));
+  }
+
+  @override
+  Future<ActionCardAnswer> approveActionCard(int id, String fingerprint) async {
+    final response = await _client.post(
+      _actionCardUrl(id, 'approve'),
+      headers: {..._keyHeader, 'content-type': 'application/json'},
+      body: jsonEncode({'fingerprint': fingerprint}),
+    );
+    return _parseCardAnswer(response, 'Approving');
+  }
+
+  @override
+  Future<ActionCardAnswer> declineActionCard(int id) async {
+    final response = await _client.post(_actionCardUrl(id, 'decline'), headers: _keyHeader);
+    return _parseCardAnswer(response, 'Declining');
+  }
+
+  @override
+  Future<ActionCard> loadActionCard(int id) async {
+    final response = await _client.get(_actionCardUrl(id), headers: _keyHeader);
+    _check(response.statusCode, 'Loading a card');
+    return ActionCard.fromJson(_decode(response)['card'] as Map<String, dynamic>);
+  }
+
   @override
   Future<List<ActivityEntry>> loadActivity() async {
     final response = await _client.get(_activityUrl, headers: _keyHeader);
@@ -681,6 +816,7 @@ class HttpBuddyBackend implements BuddyBackend {
             final Map<String, dynamic> item => GuidebookItem.fromJson(item),
             _ => null,
           }),
+        'action_card' => ActionCardItem(ActionCard.fromJson(json['card'] as Map<String, dynamic>)),
         _ => ChatMessage.fromJson(json),
       };
 
@@ -691,6 +827,7 @@ class HttpBuddyBackend implements BuddyBackend {
         'crisis_card' => const ReplyCrisisCard(),
         'read_permission_card' => ReplyReadPermissionCard(json['connection'] as String),
         'guidebook_card' => ReplyGuidebookCard(GuidebookItem.fromJson(json['item'] as Map<String, dynamic>)),
+        'action_card' => ReplyActionCard(ActionCard.fromJson(json['card'] as Map<String, dynamic>)),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),
         _ => null,

@@ -1,3 +1,4 @@
+import type { CardDescription } from "./action-cards.ts";
 import type { ProfileFact } from "./profile.ts";
 import {
   THE_STUDENT,
@@ -33,6 +34,72 @@ export function readPermissionRevoked(connectionName: string, hadAddress: boolea
 
 export function loginChecked(siteName: string, at: Date): NewActivityEntry {
   return { kind: "login_check", title: `Buddy opened ${siteName} to check your login`, at };
+}
+
+/** Each line of the card as the Student saw it, so that the record says exactly what was asked. */
+function cardLines(card: CardDescription): string {
+  return card.shows.map(({ label, value }) => `${label}: ${value}`).join("\n");
+}
+
+export function actionCardRequested(card: CardDescription, at: Date): NewActivityEntry {
+  return { kind: "action_card_requested", title: `Buddy asked for an Action Permission: ${card.title}`, detail: cardLines(card), at };
+}
+
+export function actionApproved(card: CardDescription, at: Date): NewActivityEntry {
+  return { kind: "action_approved", title: `You gave an Action Permission: ${card.title}`, detail: cardLines(card), at };
+}
+
+export function actionCardDeclined(card: CardDescription, at: Date): NewActivityEntry {
+  return { kind: "action_card_declined", title: `You declined: ${card.title}`, detail: "Buddy dropped this step.", at };
+}
+
+export function actionCardExpired(card: CardDescription, at: Date): NewActivityEntry {
+  return {
+    kind: "action_card_expired",
+    title: `An Action card expired: ${card.title}`,
+    detail: "There was no Approve tap in time, so Buddy didn't do this.",
+    at,
+  };
+}
+
+export function actionCardReplaced(card: CardDescription, at: Date): NewActivityEntry {
+  return {
+    kind: "action_card_replaced",
+    title: `Buddy changed an Action card: ${card.title}`,
+    detail: "The old card no longer works, and the new one needs its own Approve tap.",
+    at,
+  };
+}
+
+/** Says nothing about what the card holds now, because that can't be trusted. */
+export function actionCardInvalid(at: Date): NewActivityEntry {
+  return {
+    kind: "action_card_invalid",
+    title: "An Action card stopped working",
+    detail: "What Buddy had stored no longer matched what you were shown, so it didn't do this.",
+    at,
+  };
+}
+
+const FINISHED_TITLES = {
+  done: "Buddy did this",
+  not_run: "Buddy didn't do this",
+  unknown: "Buddy can't tell whether this happened",
+};
+
+export function actionFinished(
+  status: keyof typeof FINISHED_TITLES,
+  card: CardDescription,
+  outcome: string,
+  more: string | undefined,
+  at: Date,
+): NewActivityEntry {
+  return {
+    kind: `action_${status}`,
+    title: `${FINISHED_TITLES[status]}: ${card.title}`,
+    detail: more ? `${outcome} ${more}` : outcome,
+    at,
+  };
 }
 
 /** What goes into the record of how Buddy decided a reply, as the turn goes on. */

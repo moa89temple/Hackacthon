@@ -1,8 +1,12 @@
-import { chromium, type BrowserContext } from "playwright-core";
-import type { BuddysBrowser, PageReading } from "./buddys-browser.ts";
+import { chromium, type BrowserContext, type Page } from "playwright-core";
+import { PageBlocked, type BuddysBrowser, type PageReading } from "./buddys-browser.ts";
+import { submitFormOnPage } from "./form-in-page.ts";
+import { attachGuard, type GuardConnection } from "./guard-connection.ts";
+import type { RequestGuard } from "./network-guard.ts";
 
 const PAGE_TIMEOUT_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 10_000;
+const BLOCKED_ERROR = "net::ERR_BLOCKED_BY_CLIENT";
 
 export interface ContainerBrowserSettings {
   /** The container's control port. See browser/compose.yaml. */
@@ -12,11 +16,17 @@ export interface ContainerBrowserSettings {
 
 /**
  * Drives the container from outside. It connects for each piece of work and then lets go, so
- * nothing is attached to the browser while the Student is using it.
+ * nothing is attached to the browser while the Student is using it. That's how the network guard
+ * steps aside during a Takeover, too: it's only ever attached for a piece of Buddy's work.
  */
 export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrowser {
-  async function whileConnected<T>(work: (context: BrowserContext) => Promise<T>): Promise<T> {
+  async function whileConnected<T>(
+    work: (context: BrowserContext) => Promise<T>,
+    alsoEndIf: Promise<never> = new Promise(() => {}),
+  ): Promise<T> {
     const browser = await chromium.connectOverCDP(settings.controlUrl, { timeout: CONNECT_TIMEOUT_MS });
+    // Closing the connection makes whatever the work does next fail, so it can't go on unguarded.
+    alsoEndIf.catch(() => browser.close());
     try {
       // The default context is the one that uses the saved profile, and so the logins.
       const context = browser.contexts()[0];
@@ -27,9 +37,44 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
     }
   }
 
+  /** The guard goes on first and comes off last, and losing it ends the work. */
+  async function whileGuarded<T>(
+    guard: RequestGuard,
+    work: (context: BrowserContext, guarded: GuardConnection) => Promise<T>,
+  ): Promise<T> {
+    const guarded = await attachGuard(settings.controlUrl, guard);
+    try {
+      return await whileConnected((context) => work(context, guarded), guarded.lost);
+    } finally {
+      guarded.close();
+    }
+  }
+
+  /** A new tab with the guard already watching it. */
+  async function guardedPage(context: BrowserContext, guarded: GuardConnection): Promise<Page> {
+    const page = await context.newPage();
+    try {
+      const session = await context.newCDPSession(page);
+      const { targetInfo } = await session.send("Target.getTargetInfo");
+      await session.detach();
+      await guarded.cover(targetInfo.targetId);
+      return page;
+    } catch (error) {
+      await page.close();
+      throw error;
+    }
+  }
+
+  function blockedByGuard(error: unknown, guarded: GuardConnection): unknown {
+    return error instanceof Error && error.message.includes(BLOCKED_ERROR)
+      ? new PageBlocked(guarded.lastPageRefusal() ?? "The guard wouldn't let Buddy's Browser open this page")
+      : error;
+  }
+
   return {
     liveView: settings.liveView,
 
+    // No guard, because this is for the Student, who's in control from here until they tap Done.
     show(url) {
       return whileConnected(async (context) => {
         const [screen, ...others] = context.pages();
@@ -40,9 +85,9 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
       });
     },
 
-    read(url) {
-      return whileConnected(async (context): Promise<PageReading> => {
-        const page = await context.newPage();
+    read(url, guard) {
+      return whileGuarded(guard, async (context, guarded): Promise<PageReading> => {
+        const page = await guardedPage(context, guarded);
         try {
           await page.goto(url, { timeout: PAGE_TIMEOUT_MS, waitUntil: "load" });
           return {
@@ -51,14 +96,30 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
             text: await page.locator("body").innerText({ timeout: PAGE_TIMEOUT_MS }),
             accessibilitySnapshot: await page.locator("body").ariaSnapshot({ timeout: PAGE_TIMEOUT_MS }),
           };
+        } catch (error) {
+          throw blockedByGuard(error, guarded);
         } finally {
           await page.close();
         }
       });
     },
 
-    clearScreen() {
-      return whileConnected(async (context) => {
+    submitForm(form, guard) {
+      return whileGuarded(guard, async (context, guarded) => {
+        const page = await guardedPage(context, guarded);
+        page.setDefaultTimeout(PAGE_TIMEOUT_MS);
+        try {
+          return await submitFormOnPage(page, form, guard);
+        } catch (error) {
+          throw blockedByGuard(error, guarded);
+        } finally {
+          await page.close();
+        }
+      });
+    },
+
+    clearScreen(guard) {
+      return whileGuarded(guard, async (context) => {
         await Promise.all(context.pages().map((page) => page.goto("about:blank", { timeout: PAGE_TIMEOUT_MS })));
       });
     },

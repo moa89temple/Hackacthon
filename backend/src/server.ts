@@ -1,4 +1,6 @@
 import fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import { addActionCardRoutes } from "./action-card-routes.ts";
+import { createActionCards, type ActionCards } from "./action-cards.ts";
 import { listActivity } from "./activity.ts";
 import type { Adapters } from "./adapters.ts";
 import {
@@ -25,10 +27,12 @@ import { createDiscovery, type Discovery } from "./discovery.ts";
 import { createGuidebook, type Guidebook } from "./guidebook.ts";
 import type { Office } from "./office-pages.ts";
 import { createDevices, type Devices } from "./devices.ts";
+import { formSubmitRoutine } from "./form-submit.ts";
 import { createLiveViewProxy } from "./live-view-proxy.ts";
 import { hiddenNote } from "./masking.ts";
+import { createGuardPolicy } from "./network-guard.ts";
 import { createProfile, type Profile } from "./profile.ts";
-import { openStore } from "./store.ts";
+import { openStore, THE_STUDENT } from "./store.ts";
 import { BUDDY_OPENING } from "./system-prompt.ts";
 
 const PAIR_ROUTE = "/devices/pair";
@@ -36,6 +40,8 @@ const PAIR_ROUTE = "/devices/pair";
 export interface BackendOptions {
   adapters: Adapters;
   sites: Record<string, Site>;
+  /** Hosts Buddy's Browser may open as public pages. Each means that exact host. */
+  publicHosts?: string[];
   connectionTypes: ConnectionType[];
   /** The host names the backend answers to. Requests for any other name are refused. */
   allowedHosts: string[];
@@ -51,6 +57,7 @@ export interface BackendOptions {
 export interface RunningBackend {
   url: string;
   browserAccess: BrowserAccess;
+  actionCards: ActionCards;
   connections: Connections;
   devices: Devices;
   guidebook: Guidebook;
@@ -83,6 +90,28 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     ...options.discovery,
     logError: (error) => app.log.error(error),
   });
+  const guards = createGuardPolicy({
+    sites: options.sites,
+    publicHosts: options.publicHosts ?? [],
+    hasReadPermission: (site) => store.readPermission(THE_STUDENT, site) !== null,
+  });
+  const browserAccess = createBrowserAccess({
+    browser: options.adapters.browser,
+    clock: options.adapters.clock,
+    store,
+    sites: options.sites,
+    guards,
+    onControlEnded: () => liveView.closeAll(),
+    logError: (error) => app.log.error(error),
+  });
+  const actionCards = createActionCards({
+    store,
+    clock: options.adapters.clock,
+    routines: [
+      formSubmitRoutine({ sites: options.sites, guards, browserAccess, logError: (error) => app.log.error(error) }),
+    ],
+    logError: (error) => app.log.error(error),
+  });
   const conversation = createConversation({
     claude: options.adapters.claude,
     clock: options.adapters.clock,
@@ -96,14 +125,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     profile,
     connections,
     guidebook,
-    logError: (error) => app.log.error(error),
-  });
-  const browserAccess = createBrowserAccess({
-    browser: options.adapters.browser,
-    clock: options.adapters.clock,
-    store,
-    sites: options.sites,
-    onControlEnded: () => liveView.closeAll(),
+    actionCards,
     logError: (error) => app.log.error(error),
   });
 
@@ -167,16 +189,20 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
 
   // Only this route, on purpose: no entry can be changed or removed one at a time.
-  app.get("/activity", async () => ({ entries: listActivity(store) }));
+  app.get("/activity", async () => {
+    actionCards.expireDue();
+    return { entries: listActivity(store) };
+  });
 
   addProfileRoutes(app, profile);
   addBrowserRoutes(app, browserAccess);
   addConnectionRoutes(app, connections);
 
   addGuidebookRoutes(app, guidebook);
+  addActionCardRoutes(app, actionCards, isStoredId);
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, connections, devices, guidebook, discovery, close: () => app.close() };
+  return { url, browserAccess, actionCards, connections, devices, guidebook, discovery, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {
