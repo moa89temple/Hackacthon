@@ -4,6 +4,7 @@ import {
   THE_STUDENT,
   type DecisionFact,
   type DecisionSource,
+  type DraftWords,
   type NewActivityEntry,
   type Store,
   type StoredActivityEntry,
@@ -145,6 +146,19 @@ export function replyFailed(shown: string, turn: TurnRecord, at: Date): NewActiv
 
 export function guidebookItemReported(name: string, at: Date): NewActivityEntry {
   return { kind: "guidebook_report", title: `You reported ${name}`, detail: "Buddy no longer shows it to any Student.", at };
+}
+
+/** Keeps all the words as they were at the time, because the Student can change the Draft afterwards. */
+function draftDetail(words: DraftWords): string {
+  return `Subject: ${words.subject}\n\n${words.body}`;
+}
+
+export function draftWritten(contactName: string, words: DraftWords, at: Date): NewActivityEntry {
+  return { kind: "draft_written", title: `Buddy wrote a Draft to ${contactName}`, detail: draftDetail(words), at };
+}
+
+export function draftEdited(contactName: string, words: DraftWords, at: Date): NewActivityEntry {
+  return { kind: "draft_edited", title: `You edited the Draft to ${contactName}`, detail: draftDetail(words), at };
 }
 
 export function discoveryRead(pagesRead: number, pagesInAll: number, couldNotRead: string[], at: Date): NewActivityEntry {

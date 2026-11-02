@@ -192,6 +192,24 @@ export interface ActionCardMove {
   outcome?: string;
 }
 
+/** The part of a Draft the Student can change. */
+export interface DraftWords {
+  subject: string;
+  body: string;
+}
+
+/** A Draft for the Student to send. Who it's to comes from the Guidebook, by number. */
+export interface StoredDraft extends DraftWords {
+  id: number;
+  contactId: number;
+  /** The Contact's name when Buddy wrote it, for Activity, which keeps it even after the Contact goes. */
+  contactName: string;
+  why: string;
+  afterMessageId: number;
+  createdAt: Date;
+  editedAt: Date | null;
+}
+
 export interface Store {
   /**
    * Appends the messages, and any Activity entry for them, together: either all of them are saved
@@ -310,6 +328,18 @@ export interface Store {
   ): StoredActionCard | null;
   /** Lets a running step through to the browser, and only ever once. Returns whether this was that once. */
   takeActionCardToBrowser(studentId: string, id: number, at: Date): boolean;
+  /** Saves the Draft and its Activity entry together. */
+  addDraft(studentId: string, draft: Omit<StoredDraft, "id" | "editedAt">, entry: NewActivityEntry): StoredDraft;
+  /** Oldest first. */
+  listDrafts(studentId: string): StoredDraft[];
+  /** Saves the new words and the Activity entry together. Returns null if this Student has no such Draft. */
+  editDraft(
+    studentId: string,
+    id: number,
+    words: DraftWords,
+    editedAt: Date,
+    entry: NewActivityEntry,
+  ): StoredDraft | null;
   /** Activity only ever grows: nothing here changes or removes one entry. */
   addActivity(studentId: string, entry: NewActivityEntry): void;
   /** Newest first. */
@@ -453,6 +483,19 @@ const MIGRATIONS = [
      outcome TEXT
    );
    CREATE INDEX action_cards_by_student ON action_cards (student_id, id);`,
+  `CREATE TABLE drafts (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     contact_item_id INTEGER NOT NULL,
+     contact_name TEXT NOT NULL,
+     why TEXT NOT NULL,
+     subject TEXT NOT NULL,
+     body TEXT NOT NULL,
+     after_message_id INTEGER NOT NULL,
+     created_at TEXT NOT NULL,
+     edited_at TEXT
+   );
+   CREATE INDEX drafts_by_student ON drafts (student_id, id);`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -641,6 +684,27 @@ export function openStore(databasePath: string): Store {
     );
     return actionCard(studentId, Number(lastInsertRowid))!;
   };
+  const insertDraft = db.prepare(
+    `INSERT INTO drafts (student_id, contact_item_id, contact_name, why, subject, body, after_message_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const selectDrafts = db.prepare(
+    `SELECT id, contact_item_id, contact_name, why, subject, body, after_message_id, created_at, edited_at
+     FROM drafts WHERE student_id = ? ORDER BY id`,
+  );
+  const updateDraft = db.prepare(`UPDATE drafts SET subject = ?, body = ?, edited_at = ? WHERE student_id = ? AND id = ?`);
+  const listDrafts = (studentId: string): StoredDraft[] =>
+    selectDrafts.all(studentId).map((row: any) => ({
+      id: row.id,
+      contactId: row.contact_item_id,
+      contactName: row.contact_name,
+      why: row.why,
+      subject: row.subject,
+      body: row.body,
+      afterMessageId: row.after_message_id,
+      createdAt: new Date(row.created_at),
+      editedAt: row.edited_at ? new Date(row.edited_at) : null,
+    }));
   const addActivity = (studentId: string, entry: NewActivityEntry): void => {
     insertActivity.run(
       studentId,
@@ -995,6 +1059,34 @@ export function openStore(databasePath: string): Store {
 
     takeActionCardToBrowser(studentId, id, at) {
       return takeCardToBrowser.run(at.toISOString(), studentId, id).changes > 0;
+    },
+
+    addDraft(studentId, draft, entry) {
+      return inTransaction(db, () => {
+        const { lastInsertRowid } = insertDraft.run(
+          studentId,
+          draft.contactId,
+          draft.contactName,
+          draft.why,
+          draft.subject,
+          draft.body,
+          draft.afterMessageId,
+          draft.createdAt.toISOString(),
+        );
+        addActivity(studentId, entry);
+        return { ...draft, id: Number(lastInsertRowid), editedAt: null };
+      });
+    },
+
+    listDrafts,
+
+    editDraft(studentId, id, words, editedAt, entry) {
+      return inTransaction(db, () => {
+        const { changes } = updateDraft.run(words.subject, words.body, editedAt.toISOString(), studentId, id);
+        if (changes === 0) return null;
+        addActivity(studentId, entry);
+        return listDrafts(studentId).find((draft) => draft.id === id) ?? null;
+      });
     },
 
     addActivity,

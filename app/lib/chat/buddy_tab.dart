@@ -7,14 +7,17 @@ import 'action_card.dart';
 import '../widgets/buddy_avatar.dart';
 import 'chat_controller.dart';
 import 'crisis_card.dart';
+import 'draft_card.dart';
 import 'guidebook_card.dart';
+import 'outlook.dart';
 
 class BuddyTab extends StatelessWidget {
-  const BuddyTab({super.key, required this.chat, required this.connections, required this.openPhone});
+  const BuddyTab({super.key, required this.chat, required this.connections, required this.openPhone, required this.openDraft});
 
   final ChatController chat;
   final ConnectionsController connections;
   final PhoneOpener openPhone;
+  final DraftOpener openDraft;
 
   @override
   Widget build(BuildContext context) {
@@ -34,16 +37,17 @@ class BuddyTab extends StatelessWidget {
       return const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading your conversation'));
     }
     if (chat.couldNotLoad) return _CouldNotLoad(onRetry: chat.loadHistory);
-    return _MessageList(chat: chat, connections: connections, openPhone: openPhone);
+    return _MessageList(chat: chat, connections: connections, openPhone: openPhone, openDraft: openDraft);
   }
 }
 
 class _MessageList extends StatefulWidget {
-  const _MessageList({required this.chat, required this.connections, required this.openPhone});
+  const _MessageList({required this.chat, required this.connections, required this.openPhone, required this.openDraft});
 
   final ChatController chat;
   final ConnectionsController connections;
   final PhoneOpener openPhone;
+  final DraftOpener openDraft;
 
   @override
   State<_MessageList> createState() => _MessageListState();
@@ -105,6 +109,14 @@ class _MessageListState extends State<_MessageList> {
               card: item.card,
               chat: chat,
               announce: chat.newestActionCards.any((newest) => identical(newest, item)),
+            ),
+          DraftCardItem() => DraftCard(
+              // By number, because an edit replaces the item and what the card has just said should stay.
+              key: ValueKey('draft ${item.draft.id}'),
+              card: item,
+              chat: chat,
+              openDraft: widget.openDraft,
+              announce: identical(item, chat.newestDraftCard),
             ),
         },
     ];

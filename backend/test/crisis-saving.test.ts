@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createActionCards } from "../src/action-cards.ts";
 import { createConversation } from "../src/conversation.ts";
 import { createCrisisCheck } from "../src/crisis-check.ts";
+import { createDrafts } from "../src/drafts.ts";
 import { createGuidebook } from "../src/guidebook.ts";
 import type { Connections } from "../src/connections.ts";
 import { createProfile } from "../src/profile.ts";
@@ -32,6 +33,7 @@ afterEach(() => {
 function send(text: string, storeInUse: Store): Promise<any[]> {
   const logError = () => {};
   const clock = new MovableClock("2026-11-02T14:00:00Z");
+  const guidebook = createGuidebook({ store: storeInUse, clock });
   const conversation = createConversation({
     claude,
     clock,
@@ -40,8 +42,9 @@ function send(text: string, storeInUse: Store): Promise<any[]> {
     crisisCheck: createCrisisCheck({ claude, model: "crisis", timeoutMs: 50, logError }),
     profile: createProfile({ connectionName: (id) => id, store: storeInUse, clock }),
     connections: { describeForTurn: () => "" } as unknown as Connections,
-    guidebook: createGuidebook({ store: storeInUse, clock }),
+    guidebook,
     actionCards: createActionCards({ store: storeInUse, clock, routines: [], logError }),
+    drafts: createDrafts({ store: storeInUse, clock, guidebook }),
     logError,
   });
   return Array.fromAsync(conversation.send(text));

@@ -178,6 +178,50 @@ class GuidebookItem {
   final List<GuidebookSource> sources;
 }
 
+/// A message Buddy prepared for the Student to send to a Contact. With no contact, the Contact has
+/// been reported or has left its Source.
+class Draft {
+  const Draft({required this.id, this.contact, this.why, required this.subject, required this.body});
+
+  factory Draft.fromJson(Map<String, dynamic> json) => Draft(
+        id: json['id'] as int,
+        contact: switch (json['contact']) {
+          final Map<String, dynamic> contact => GuidebookItem.fromJson(contact),
+          _ => null,
+        },
+        why: json['why'] as String?,
+        subject: json['subject'] as String,
+        body: json['body'] as String,
+      );
+
+  final int id;
+  final GuidebookItem? contact;
+
+  /// Why Buddy picked this Contact. It can name them, so it goes when they do.
+  final String? why;
+  final String subject;
+  final String body;
+
+  Draft withoutContact() => Draft(id: id, subject: subject, body: body);
+}
+
+/// A Draft after the Student's edit, which may differ from what they typed.
+class EditedDraft {
+  const EditedDraft({required this.draft, this.hiddenNote});
+
+  final Draft draft;
+
+  /// What to tell the Student if something in their edit was hidden.
+  final String? hiddenNote;
+}
+
+/// A Draft card in the conversation. Not const, so that the newest can be told from earlier ones.
+class DraftCardItem extends ConversationItem {
+  DraftCardItem(this.draft);
+
+  final Draft draft;
+}
+
 class ChatMessage extends ConversationItem {
   const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote});
 
@@ -418,6 +462,12 @@ class ReplyActionCard extends ReplyEvent {
   final ActionCard card;
 }
 
+/// Buddy is showing a Draft card.
+class ReplyDraftCard extends ReplyEvent {
+  const ReplyDraftCard(this.draft);
+  final Draft draft;
+}
+
 /// The turn ended. This is the reply as saved, and it replaces whatever streamed in.
 class ReplyDone extends ReplyEvent {
   const ReplyDone(this.reply);
@@ -524,6 +574,9 @@ abstract interface class BuddyBackend {
 
   /// The card as it is now.
   Future<ActionCard> loadActionCard(int id);
+
+  /// Saves the Student's changes to a Draft, and returns it as saved.
+  Future<EditedDraft> editDraft(int id, {required String subject, required String body});
 
   /// Newest first. There's nothing here to change or remove an entry, because nothing can.
   Future<List<ActivityEntry>> loadActivity();
@@ -745,6 +798,21 @@ class HttpBuddyBackend implements BuddyBackend {
   }
 
   @override
+  Future<EditedDraft> editDraft(int id, {required String subject, required String body}) async {
+    final response = await _client.patch(
+      _baseUrl.replace(pathSegments: ['drafts', '$id']),
+      headers: {..._keyHeader, 'content-type': 'application/json'},
+      body: jsonEncode({'subject': subject, 'body': body}),
+    );
+    _check(response.statusCode, 'Saving a Draft');
+    final saved = _decode(response);
+    return EditedDraft(
+      draft: Draft.fromJson(saved['draft'] as Map<String, dynamic>),
+      hiddenNote: saved['hiddenNote'] as String?,
+    );
+  }
+
+  @override
   Future<List<ActivityEntry>> loadActivity() async {
     final response = await _client.get(_activityUrl, headers: _keyHeader);
     _check(response.statusCode, 'Loading Activity');
@@ -817,6 +885,7 @@ class HttpBuddyBackend implements BuddyBackend {
             _ => null,
           }),
         'action_card' => ActionCardItem(ActionCard.fromJson(json['card'] as Map<String, dynamic>)),
+        'draft_card' => DraftCardItem(Draft.fromJson(json['draft'] as Map<String, dynamic>)),
         _ => ChatMessage.fromJson(json),
       };
 
@@ -828,6 +897,7 @@ class HttpBuddyBackend implements BuddyBackend {
         'read_permission_card' => ReplyReadPermissionCard(json['connection'] as String),
         'guidebook_card' => ReplyGuidebookCard(GuidebookItem.fromJson(json['item'] as Map<String, dynamic>)),
         'action_card' => ReplyActionCard(ActionCard.fromJson(json['card'] as Map<String, dynamic>)),
+        'draft_card' => ReplyDraftCard(Draft.fromJson(json['draft'] as Map<String, dynamic>)),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),
         _ => null,

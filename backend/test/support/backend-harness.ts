@@ -127,6 +127,15 @@ export class BackendHarness {
     return fetch(`${this.url}/guidebook/items/${id}/report`, { method: "POST", headers: key });
   }
 
+  /** The Student saving their changes to a Draft. */
+  editDraft(id: unknown, words: { subject: unknown; body: unknown }, key: Record<string, string> = this.deviceHeaders): Promise<Response> {
+    return fetch(`${this.url}/drafts/${id}`, {
+      method: "PATCH",
+      headers: { ...key, "content-type": "application/json" },
+      body: JSON.stringify(words),
+    });
+  }
+
   get devices(): RunningBackend["devices"] {
     return this.#backend.devices;
   }

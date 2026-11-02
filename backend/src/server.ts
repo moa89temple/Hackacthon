@@ -24,6 +24,7 @@ import {
 import { createConversation } from "./conversation.ts";
 import { createCrisisCheck } from "./crisis-check.ts";
 import { createDiscovery, type Discovery } from "./discovery.ts";
+import { createDrafts, type Drafts } from "./drafts.ts";
 import { createGuidebook, type Guidebook } from "./guidebook.ts";
 import type { Office } from "./office-pages.ts";
 import { createDevices, type Devices } from "./devices.ts";
@@ -82,6 +83,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     logError: (error) => app.log.error(error),
   });
   const guidebook = createGuidebook({ store, clock: options.adapters.clock });
+  const drafts = createDrafts({ store, clock: options.adapters.clock, guidebook });
   const discovery = createDiscovery({
     claude: options.adapters.claude,
     web: options.adapters.web,
@@ -126,6 +128,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     connections,
     guidebook,
     actionCards,
+    drafts,
     logError: (error) => app.log.error(error),
   });
 
@@ -200,6 +203,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
 
   addGuidebookRoutes(app, guidebook);
   addActionCardRoutes(app, actionCards, isStoredId);
+  addDraftRoutes(app, drafts);
 
   const url = await app.listen({ host: options.host, port: options.port });
   return { url, browserAccess, actionCards, connections, devices, guidebook, discovery, close: () => app.close() };
@@ -235,6 +239,20 @@ function addGuidebookRoutes(app: FastifyInstance, guidebook: Guidebook): void {
   app.post<{ Params: { id: string } }>("/guidebook/items/:id/report", async (request, reply) => {
     const known = isStoredId(request.params.id) && guidebook.report(Number(request.params.id));
     return known ? reply.code(204).send() : reply.code(404).send({ error: "There's no such item" });
+  });
+}
+
+/** Only the Student's changes come here. Opening a Draft in Outlook or copying it happens on the phone, and Buddy never hears of it. */
+function addDraftRoutes(app: FastifyInstance, drafts: Drafts): void {
+  app.patch<{ Params: { id: string }; Body: { subject?: unknown; body?: unknown } }>("/drafts/:id", async (request, reply) => {
+    const { subject, body } = request.body ?? {};
+    if (typeof subject !== "string" || typeof body !== "string" || body.trim() === "") {
+      return reply.code(400).send({ error: "subject must be a string and body must be a non-empty string" });
+    }
+    const draft = isStoredId(request.params.id) ? drafts.edit(Number(request.params.id), { subject, body }) : null;
+    if (!draft) return reply.code(404).send({ error: "There's no such Draft" });
+    const note = hiddenNote(`${draft.subject}\n${draft.body}`);
+    return { draft, ...(note ? { hiddenNote: note } : {}) };
   });
 }
 
