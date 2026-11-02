@@ -19,6 +19,7 @@
     "check-login": "node scripts/check-login.ts",
     "forget-login": "node scripts/forget-login.ts",
     "check-canvas": "node --disable-warning=ExperimentalWarning scripts/check-canvas.ts",
+    "check-tuportal": "node --disable-warning=ExperimentalWarning scripts/check-tuportal.ts",
     "pair": "node --disable-warning=ExperimentalWarning scripts/pair.ts"
   },
   "dependencies": {

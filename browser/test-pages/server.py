@@ -201,6 +201,54 @@ CANVAS_ASSIGNMENT_LIST = json.dumps(
     ]
 )
 
+# A made-up TUportal, modelled on Banner's View Holds table. Nothing here came from a real account.
+# Every MARKER is something the TUportal check must never print, whichever way a page holds it.
+TUPORTAL_HOLDS = """
+<title>MARKERPAGETITLE</title>
+<h2>View Holds</h2>
+<table class="datadisplaytable">
+  <tr><th>Hold Type</th><th>Reason</th><th>Originator</th></tr>
+  <tr><td>MARKERHOLD Bursar</td><td>MARKERREASON</td><td>MARKERSTAFF</td></tr>
+</table>
+<iframe src="/group/home/registration"></iframe>
+<script>
+  fetch('/group/home/student-record-services', {method: 'POST', body: 'x=1'}).catch(() => {});
+  fetch('/group/home/add-drop?who=MARKERSTUDENT').catch(() => {});
+</script>
+"""
+
+# The empty message is there all along, and it's the stylesheet that hides it, while the holds are in a layout the reader doesn't know.
+TUPORTAL_HIDDEN_EMPTY_MESSAGE = """
+<title>View Holds</title>
+<style>.empty-state { display: none; }</style>
+<div class="empty-state">No holds exist</div>
+<div class="made-up-card">MARKERHOLD Bursar</div>
+"""
+
+# Fills itself in after it has loaded, as a portal's channels can.
+TUPORTAL_BALANCE = """
+<title>MARKERPAGETITLE</title>
+<div id="snapshot"></div>
+<script>
+  setTimeout(() => {
+    document.getElementById('snapshot').innerHTML = '<table><tr><th>Current Balance</th><td>$876.54</td></tr></table>';
+  }, 100);
+</script>
+"""
+
+TUPORTAL_REGISTRATION = """
+<title>MARKERPAGETITLE</title>
+<dl><dt>Term:</dt><dd>MARKERTERM</dd><dt>Registration Status:</dt><dd>MARKERSTATUS</dd></dl>
+<a href="/group/home/registration">Register for Classes (Add/Drop)</a>
+"""
+
+TUPORTAL_PAGES = {
+    "/group/home": '<title>MARKERPAGETITLE</title><h1>Welcome, MARKERSTUDENT</h1><a href="/group/home/costs-and-aid">Cost &amp; Aid</a>',
+    "/group/home/student-record-services?holds?pweb": TUPORTAL_HOLDS,
+    "/group/home/costs-and-aid": TUPORTAL_BALANCE,
+    "/group/home/student": TUPORTAL_REGISTRATION,
+}
+
 REDIRECTS = {
     "/redirect-to-quiz": "/quizzes/1",
     # What Canvas does when a teacher has hidden a course's Grades page.
@@ -269,6 +317,21 @@ class Pages(BaseHTTPRequestHandler):
         elif self.path == "/login/made-up-saml":
             self.send_response(200)
             self.page("MARKERPAGETITLE", "<h1>MARKERSTUDENT, log in</h1>")
+        elif self.path == "/made-up-tuportal-login":
+            self.send_response(200)
+            self.send_header("set-cookie", "tuportal_session=signed-in; Path=/; HttpOnly")
+            self.page("Signed in", "<h1>Signed in</h1>")
+        elif self.path == "/c/portal/login":
+            self.send_response(200)
+            self.page("MARKERPAGETITLE", "<h1>MARKERSTUDENT, log in</h1>")
+        elif self.path == "/tuportal-hidden-empty-message":
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{TUPORTAL_HIDDEN_EMPTY_MESSAGE}".encode())
+        elif self.path in TUPORTAL_PAGES and "tuportal_session" not in cookies:
+            self.redirect("/c/portal/login")
+        elif self.path in TUPORTAL_PAGES:
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{TUPORTAL_PAGES[self.path]}".encode())
         elif self.path in CANVAS_PAGES and "canvas_session" not in cookies:
             self.redirect("/login/made-up-saml")
         elif self.path in CANVAS_PAGES:
