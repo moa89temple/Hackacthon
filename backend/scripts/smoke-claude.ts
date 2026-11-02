@@ -167,6 +167,9 @@ try {
   const afterOffer = await send("Different question. In one short sentence, what's a syllabus?", keyHeader);
   check("Buddy doesn't offer it again on a question it wouldn't help", !showsCard(afterOffer));
 
+  const askedForIt = await send("Can you connect my Google Calendar?", keyHeader);
+  check("Buddy offers it again when the Student asks for it", showsCard(askedForIt));
+
   const given = await fetch(`${backend.url}/connections/${googleCalendar.id}/read-permission`, {
     method: "POST",
     headers: { ...keyHeader, "content-type": "application/json" },

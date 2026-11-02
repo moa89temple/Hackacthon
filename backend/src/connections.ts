@@ -223,7 +223,6 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     },
 
     describeForTurn() {
-      const offers = store.listReadPermissionCards(THE_STUDENT);
       return types
         .map((type) => {
           const permission = store.readPermission(THE_STUDENT, type.id);
@@ -233,12 +232,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
               : "but Buddy hasn't managed to read it yet";
             return `${type.name} is connected, ${lastRead}. ${type.whileOnTellClaude}`;
           }
-          const offered = offers.some((card) => card.connection === type.id);
-          return `${type.name} isn't connected, so don't use or mention anything you saw from it earlier in this conversation. ${
-            offered
-              ? "You've already offered it, so don't offer it again unless the Student asks."
-              : "Offer it only if reading it would help answer what they've just asked."
-          }`;
+          return `${type.name} isn't connected, so don't use or mention anything you saw from it earlier in this conversation. Offer it only when reading it is actually needed to answer what they've just asked, or they ask for it. Having offered it before doesn't change that.`;
         })
         .join(" ");
     },

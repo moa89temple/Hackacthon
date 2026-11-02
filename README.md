@@ -136,7 +136,7 @@ Revoking the Read Permission deletes the address and every fact from the calenda
 ### Known limits
 
 - Calendar events Claude has already seen stay in the conversation's history after you revoke, as with a deleted fact, until the conversation is deleted. Buddy is told not to use or mention them. The history is on the laptop's disk too.
-- That Claude won't suggest a Connection when it wouldn't help, won't offer it twice and won't save calendar details as your own facts are instructions to Claude, checked by `npm run smoke`, not guarantees.
+- That Claude suggests a Connection only when it's actually needed or you ask, and won't save calendar details as your own facts, are instructions to Claude, checked by `npm run smoke`, not guarantees. An earlier offer doesn't stop a later one when it's needed again.
 - The feed doesn't say which guest is you, so an event you declined still counts as busy if Google includes it. Only the one calendar whose address you paste is read.
 - Anyone who invites you can put text on your calendar. Claude is told it's only ever information, but that's an instruction too.
 - Reads depend on the laptop being on and awake. A read that fails waits for the next read time, unless you tap **Read now**.

@@ -337,13 +337,23 @@ describe("what each turn tells Claude about Connections", () => {
     expect(lastSystemNote()).not.toContain("Shift at CVS");
   });
 
-  it("says when Buddy has already offered, so that it doesn't keep offering", async () => {
+  it("says to offer it only when it's actually needed or the Student asks", async () => {
+    backend.claude.willReply({ chunks: ["Hi."] });
+
+    await backend.sendAndCollect("Hello");
+
+    expect(lastSystemNote()).toMatch(/only when reading it is actually needed to answer what they've just asked, or they ask for it/);
+  });
+
+  it("says the same after an earlier offer, because that offer doesn't settle it either way", async () => {
     backend.claude.willReply(calls("suggest_connection", { connection: CALENDAR }), { chunks: ["Want to connect it?"] }, { chunks: ["Sure."] });
     await backend.sendAndCollect("When should I go to tutoring?");
 
     await backend.sendAndCollect("What's a bursar?");
 
-    expect(lastSystemNote()).toMatch(/already offered/);
+    expect(lastSystemNote()).toMatch(/actually needed/);
+    expect(lastSystemNote()).toMatch(/Having offered it before doesn't change that/);
+    expect(lastSystemNote()).not.toMatch(/already offered/);
   });
 });
 
@@ -381,6 +391,21 @@ describe("suggesting a Connection", () => {
       { type: "read_permission_card", connection: CALENDAR, sentAt: "2026-11-02T14:00:00.000Z" },
       { role: "buddy", text: "It would help." },
     ]);
+  });
+
+  it("can show the card again in a later turn, when it's needed again", async () => {
+    backend.claude.willReply(
+      calls("suggest_connection", { connection: CALENDAR }),
+      { chunks: ["It would help."] },
+      calls("suggest_connection", { connection: CALENDAR }),
+      { chunks: ["It would help here too."] },
+    );
+
+    await backend.sendAndCollect("When should I go to tutoring?");
+    const events = await backend.sendAndCollect("And when could I fit in office hours?");
+
+    expect(events.some((event) => event.type === "read_permission_card")).toBe(true);
+    expect((await backend.history()).filter((item) => item.type === "read_permission_card")).toHaveLength(2);
   });
 
   it("doesn't show the same card twice in one turn", async () => {
@@ -476,7 +501,7 @@ describe("what the system prompt asks of Buddy", () => {
   it.each([
     ["checking before suggesting a time", /check_calendar/],
     ["the example from the plan", /You're free Tuesday 2–4\. Want me to find tutoring then\?/],
-    ["suggesting a Connection only when it helps", /only when/i],
+    ["suggesting a Connection only when it's needed or asked for", /only when knowing their schedule is actually needed to answer what they've just asked, or when they ask for it/],
     ["never pasting the address in the chat", /never ask them to paste/i],
     ["a typed yes not counting", /typed/i],
     ["what a hidden address looks like", /\[secret calendar address hidden\]/],
