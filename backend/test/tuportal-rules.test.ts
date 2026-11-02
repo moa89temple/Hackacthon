@@ -1,0 +1,141 @@
+import { describe, expect, it } from "vitest";
+import { createGuardPolicy } from "../src/network-guard.ts";
+import { keepToReadablePages } from "../src/readable-pages.ts";
+import { settings } from "../src/settings.ts";
+import { isTuportalLoginPage, TUPORTAL_ID, TUPORTAL_SITE } from "../src/tuportal-rules.ts";
+import { BALANCE_PAGE, HOLDS_PAGE, HOME_PAGE, REGISTRATION_PAGE, TUPORTAL } from "./support/tuportal-pages.ts";
+
+const sites = { [TUPORTAL_ID]: TUPORTAL_SITE };
+/** The real rules, with the Read Permission given, so that only the rules can be what refuses. */
+const guards = createGuardPolicy({ sites, publicHosts: settings.publicHosts, hasReadPermission: () => true });
+const reading = keepToReadablePages(guards.forReading(), sites);
+
+const opening = (url: string) => ({ url, method: "GET", opensPage: true });
+const loading = (url: string, method = "GET") => ({ url, method, opensPage: false });
+
+describe("the pages the reader opens", () => {
+  it.each([HOME_PAGE, HOLDS_PAGE, BALANCE_PAGE, REGISTRATION_PAGE, `${TUPORTAL}/`])("may open %s", (url) => {
+    expect(reading.check(opening(url))).toEqual({ allowed: true });
+  });
+
+  it("may be sent to the sign-on page, so that a read can see a login has expired", () => {
+    expect(reading.check(opening("https://fim.temple.edu/idp/profile/SAML2/Redirect/SSO"))).toEqual({ allowed: true });
+  });
+
+  it.each([
+    `${TUPORTAL}/group/home/student-tools`,
+    `${TUPORTAL}/group/home/some-other-channel`,
+    `${TUPORTAL}/group/home/costs-and-aid/statement`,
+    `${TUPORTAL}/web/guest/anything`,
+    "https://api-made-up.duosecurity.com/frame/prompt",
+  ])("won't open anything else, such as %s", (url) => {
+    expect(reading.check(opening(url)).allowed).toBe(false);
+  });
+});
+
+describe("pages that are refused whichever way they're reached", () => {
+  const NEVER_LOADED: Record<string, string[]> = {
+    "paying": [
+      `${TUPORTAL}/web/home-community/tupay`,
+      `${TUPORTAL}/group/home/tupay`,
+      `${TUPORTAL}/group/home/make-a-payment`,
+      `${TUPORTAL}/group/home/PAY`,
+      `${TUPORTAL}/group/home/%70ay`,
+      "https://tupay.temple.edu/",
+      "https://tupay.temple.edu/anything/at/all",
+      "https://secure.touchnet.com/C21551_tsa/web/login.jsp",
+      "https://secure.touchnet.net/C21551_tsa/web/login.jsp",
+    ],
+    "changing registration": [
+      `${TUPORTAL}/group/home/registration`,
+      `${TUPORTAL}/group/home/register-for-classes`,
+      `${TUPORTAL}/group/home/add-drop`,
+      `${TUPORTAL}/group/home/plan-your-schedule`,
+      `${TUPORTAL}/group/home/withdrawal`,
+      "https://prd-wlssb.temple.edu/prod8/bwskfreg.P_AltPin",
+      "https://prd-wlssb.temple.edu/prod8/bwckcoms.P_Regs",
+      "https://prd-xereg.temple.edu/StudentRegistrationSsb/ssb/classRegistration/classRegistration",
+    ],
+    "forms": [
+      `${TUPORTAL}/group/home/form`,
+      `${TUPORTAL}/group/home/forms/anything`,
+      `${TUPORTAL}/group/home/veteran-declaration`,
+      `${TUPORTAL}/group/home/petition`,
+      `${TUPORTAL}/group/home/costs-and-aid/submit`,
+    ],
+    "logging out, which would lose the login": [
+      `${TUPORTAL}/c/portal/logout`,
+      "https://fim.temple.edu/idp/profile/Logout",
+      "https://prd-wlssb.temple.edu/prod8/twbkwbis.P_Logout",
+    ],
+    "an action sent as an ordinary link in the portal": [`${HOME_PAGE}?p_p_id=made_up&p_p_lifecycle=1&_made_up_action=drop`],
+    "anything at all on Banner, which can act on a GET": ["https://prd-wlssb.temple.edu/prod8/bwskoacc.P_ViewAcct", "https://prd-xereg.temple.edu/anything"],
+  };
+
+  describe.each(Object.keys(NEVER_LOADED))("%s", (kind) => {
+    it.each(NEVER_LOADED[kind]!)("%s", (url) => {
+      // As a page, and as what a page loads for itself in a frame or a script.
+      expect(guards.forReading().check(opening(url)).allowed).toBe(false);
+      expect(guards.forReading().check(loading(url)).allowed).toBe(false);
+    });
+  });
+});
+
+describe("what a page loads for itself", () => {
+  it("may read other pages of the portal, such as its stylesheets", () => {
+    expect(guards.forReading().check(loading(`${TUPORTAL}/o/made-up-theme/main.css`))).toEqual({ allowed: true });
+  });
+
+  it.each(["POST", "PUT", "PATCH", "DELETE"])("can't %s anything, so nothing is ever submitted", (method) => {
+    expect(guards.forReading().check(loading(HOLDS_PAGE, method)).allowed).toBe(false);
+    expect(guards.forReading().check(loading(`${TUPORTAL}/group/home/costs-and-aid`, method)).allowed).toBe(false);
+  });
+});
+
+describe("the sign-on's own pages still work for logging in", () => {
+  it.each([
+    "https://fim.temple.edu/idp/profile/SAML2/POST/SSO",
+    "https://fim.temple.edu/idp/profile/SAML2/Redirect/SSO",
+    "https://api-made-up.duosecurity.com/frame/v4/auth/prompt",
+    "https://api-made-up.duosecurity.com/oauth/v1/authorize",
+  ])("%s isn't blocked", (url) => {
+    expect(guards.isBlockedPage(url)).toBe(false);
+  });
+});
+
+describe("with no Read Permission", () => {
+  it("nothing of TUportal is reached, even with Temple's sign-on still logged in", () => {
+    const noPermission = createGuardPolicy({ sites, publicHosts: [], hasReadPermission: () => false });
+
+    expect(noPermission.forReading().check(opening(HOLDS_PAGE)).allowed).toBe(false);
+    expect(noPermission.forReading().check(loading(`${TUPORTAL}/o/made-up-theme/main.css`)).allowed).toBe(false);
+  });
+});
+
+describe("as a site", () => {
+  it("is set up in Buddy's settings, as a Connection with no forms it can submit", () => {
+    expect(settings.sites[TUPORTAL_ID]).toBe(TUPORTAL_SITE);
+    expect(settings.connectionTypes.map((type) => type.id)).toContain(TUPORTAL_ID);
+    expect(TUPORTAL_SITE.isConnection).toBe(true);
+    expect("formPages" in TUPORTAL_SITE).toBe(false);
+    expect("readOnlyRequests" in TUPORTAL_SITE).toBe(false);
+  });
+
+  it("never claims all of temple.edu, which would let the sign-on log it in to anything", () => {
+    expect(TUPORTAL_SITE.loginHosts).not.toContain("temple.edu");
+    expect(guards.isBlockedPage("https://www.temple.edu/")).toBe(false);
+  });
+});
+
+describe("somewhere to log in", () => {
+  it.each(["https://fim.temple.edu/idp/profile/SAML2/Redirect/SSO", "https://api-made-up.duosecurity.com/frame/prompt", `${TUPORTAL}/c/portal/login`, "not an address"])(
+    "%s is",
+    (address) => {
+      expect(isTuportalLoginPage(address)).toBe(true);
+    },
+  );
+
+  it.each([HOME_PAGE, HOLDS_PAGE, "https://tuportal.temple.edu/group/home"])("%s isn't", (address) => {
+    expect(isTuportalLoginPage(address)).toBe(false);
+  });
+});

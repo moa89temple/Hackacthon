@@ -204,9 +204,12 @@ const READ_REASONS: Record<ReadReason, string> = {
   logged_in: "You had just logged in.",
 };
 
-/** What's new says how many of what, never what they are, so that what's read doesn't outlive a revoke here. */
-export function connectionRead(connectionName: string, reason: ReadReason, at: Date, whatsNew?: string): NewActivityEntry {
-  const detail = whatsNew ? `${READ_REASONS[reason]} What's new: ${whatsNew}.` : READ_REASONS[reason];
+/**
+ * What's new says how many of what, never what they are, so that what's read doesn't outlive a revoke here.
+ * A part it couldn't read is in words from Buddy's own code, so the record doesn't claim the whole read worked.
+ */
+export function connectionRead(connectionName: string, reason: ReadReason, at: Date, whatsNew?: string, missed?: string | null): NewActivityEntry {
+  const detail = [READ_REASONS[reason], whatsNew && `What's new: ${whatsNew}.`, missed].filter(Boolean).join(" ");
   return { kind: "connection_read", title: `Buddy read ${connectionName}`, detail, at };
 }
 

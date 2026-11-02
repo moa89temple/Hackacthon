@@ -247,7 +247,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       const events = permission.lastReadAt ? (type.eventsBetween?.(previous, facts) ?? []) : [];
       const whatsNew = events.length > 0 ? type.countEvents?.(events) : undefined;
       // Saves only if this Read Permission still stands, so a revoke made meanwhile stays revoked.
-      profile.saveReading(permission.id, facts, now, connectionRead(type.name, reason, clock.now(), whatsNew), {
+      profile.saveReading(permission.id, facts, now, connectionRead(type.name, reason, clock.now(), whatsNew, missed), {
         events,
         problem: missed,
       });

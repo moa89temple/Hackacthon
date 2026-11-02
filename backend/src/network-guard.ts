@@ -98,7 +98,9 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
         isOnSite(parsed.hostname, site) &&
         (site.blockedPages ?? []).some(
           (page) =>
-            (page.host === undefined || page.host === withoutFinalDot(parsed.hostname)) && page.path.test(pathToBlock(parsed)),
+            (page.host === undefined || page.host === withoutFinalDot(parsed.hostname)) &&
+            page.path.test(pathToBlock(parsed)) &&
+            (page.query === undefined || page.query.test(decodedAndLower(parsed.search))),
         ),
     );
   }
@@ -198,11 +200,15 @@ function withoutFinalDot(hostname: string): string {
 
 /** Decoded and in lower case, so that a page can't be reached by spelling its address another way. */
 function pathToBlock(url: URL): string {
+  return decodedAndLower(url.pathname);
+}
+
+function decodedAndLower(part: string): string {
   try {
-    return decodeURIComponent(url.pathname).toLowerCase();
+    return decodeURIComponent(part).toLowerCase();
   } catch {
     // It can't be read, so it can't be shown not to be a blocked page. The raw address has to do.
-    return url.pathname.toLowerCase();
+    return part.toLowerCase();
   }
 }
 

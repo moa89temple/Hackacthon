@@ -20,6 +20,11 @@ export interface PagePattern {
   /** One exact host. Left out, it means any of the site's hosts. */
   host?: string;
   path: RegExp;
+  /**
+   * Only with this in the part of the address after the ?, for a site whose actions are ordinary links.
+   * Only blockedPages looks at this. It's tested decoded and in lower case, like the path.
+   */
+  query?: RegExp;
 }
 
 /** A request that looks like it changes something but only reads, such as a search sent by POST. */
@@ -56,6 +61,11 @@ export interface Site {
   isConnection?: boolean;
   /** The only pages where Buddy may ask to submit a form. With none, it can't ask to on this site. */
   formPages?: PagePattern[];
+  /**
+   * Whether this address is somewhere to log in, for a site where that isn't only its /login pages, or
+   * where a login can end up on another of its hosts. Left out, a login check goes by those.
+   */
+  isLoginPage?: (address: string) => boolean;
 }
 
 export interface Takeover {
@@ -153,7 +163,10 @@ export interface BrowserAccess {
   startTakeover(site: string): Promise<Takeover>;
   /** Hands control back to Buddy, then checks the login by reading the site. */
   finishTakeover(): Promise<FinishedTakeover>;
-  /** Forgets one site's login. Throws TakeoverInProgress while the Student is in control. */
+  /**
+   * Forgets one site's login, apart from any host another Connection with a Read Permission logs in
+   * through too. Throws TakeoverInProgress while the Student is in control.
+   */
   forgetLogin(site: string): Promise<void>;
   /** Whether this token belongs to a Takeover whose screen is now the Student's. */
   isLiveViewOpen(token: string): boolean;
@@ -212,6 +225,22 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
 
   function lacksReadPermission(id: string, site: Site): boolean {
     return site.isConnection === true && store.readPermission(THE_STUDENT, id) === null;
+  }
+
+  /**
+   * The site's hosts, without those another Connection still needs. Temple's single sign-on and Duo are
+   * shared, and clearing them would log that Connection out too, for no reason it could tell the Student.
+   * That can't let this site in: the guard refuses its own pages with no Read Permission, however logged
+   * in the sign-on is. Once the last Connection using them goes, they go with it.
+   */
+  function hostsToForget(id: string, site: Site): string[] {
+    const stillNeeded = new Set(
+      Object.entries(sites).flatMap(([otherId, other]) =>
+        otherId !== id && other.isConnection === true && store.readPermission(THE_STUDENT, otherId) !== null ? other.loginHosts : [],
+      ),
+    );
+    // The site's own address too: its storage belongs to that exact origin, whether or not a cookie is left.
+    return [...new Set([new URL(site.homeUrl).hostname, ...site.loginHosts])].filter((host) => !stillNeeded.has(host));
   }
 
   /**
@@ -343,8 +372,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
           failIfStudentInControl();
           // A page left open could otherwise write its login straight back.
           await browser.clearScreen(guards.forReading());
-          // The site's own address too: its storage belongs to that exact origin, whether or not a cookie is left.
-          await browser.forgetLogin([...new Set([new URL(site.homeUrl).hostname, ...site.loginHosts])]);
+          await browser.forgetLogin(hostsToForget(id, site));
         });
       } catch (error) {
         if (error instanceof TakeoverInProgress) throw error;
@@ -365,6 +393,7 @@ function failIfGuardRefuses(guard: RequestGuard, url: string): void {
 }
 
 function isOnSiteAndPastLogin(finalUrl: string, site: Site): boolean {
+  if (site.isLoginPage) return !site.isLoginPage(finalUrl);
   const final = new URL(finalUrl);
   return final.hostname === new URL(site.homeUrl).hostname && !final.pathname.startsWith("/login");
 }

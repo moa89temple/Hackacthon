@@ -28,6 +28,8 @@ import {
   SUGGEST_CONNECTION_TOOL,
 } from "./system-prompt.ts";
 import { THE_STUDENT, type NewMessage, type Store, type StoredMessage } from "./store.ts";
+import { CHECK_TUPORTAL_TOOL } from "./tuportal-chat.ts";
+import { TUPORTAL_ID } from "./tuportal-rules.ts";
 
 const REFUSAL_NOTE =
   "I can't help with that one. Try asking another way, or tell me what you're trying to get done and I'll point you to someone at Temple who can help.";
@@ -410,6 +412,15 @@ export function createConversation(deps: ConversationDeps): Conversation {
         "Canvas couldn't be checked. Tell the Student, and don't guess at what's due or what their grades are.",
       );
     }
+    if (call.name === CHECK_TUPORTAL_TOOL.name) {
+      return lookAtConnection(
+        call,
+        turn,
+        TUPORTAL_ID,
+        "TUportal",
+        "TUportal couldn't be checked. Tell the Student, and don't guess at their holds, balance or registration status. Above all, don't say they have no hold.",
+      );
+    }
     if (call.name === SEARCH_GUIDEBOOK_TOOL.name) return searchGuidebook(call, turn);
     if (call.name === FIND_CONTACTS_TOOL.name) return searchGuidebook(call, turn, "contact");
     if (call.name === CRISIS_CARD_TOOL.name) {
@@ -569,6 +580,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
                     const card = askForLoginIfNeeded(CANVAS_ID, suggestedThisTurn, studentMessageId!, now);
                     if (card) yield { type: "read_permission_card", connection: card };
                   }
+                  if (call.name === CHECK_TUPORTAL_TOOL.name) {
+                    const card = askForLoginIfNeeded(TUPORTAL_ID, suggestedThisTurn, studentMessageId!, now);
+                    if (card) yield { type: "read_permission_card", connection: card };
+                  }
                 }
               }
               toolRounds.push(reply, { role: "user", content: answers, createdAt: now });
@@ -698,6 +713,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       REMEMBER_TOOL,
       CHECK_CALENDAR_TOOL,
       CHECK_CANVAS_TOOL,
+      CHECK_TUPORTAL_TOOL,
       SUGGEST_CONNECTION_TOOL,
       SEARCH_GUIDEBOOK_TOOL,
       FIND_CONTACTS_TOOL,

@@ -6,6 +6,8 @@ import { CANVAS_BLOCKED_PAGES, CANVAS_HOME, CANVAS_ID, CANVAS_READABLE_PAGES } f
 import { googleCalendar } from "./google-calendar.ts";
 import { MILESTONE_OFFICES } from "./milestone-pages.ts";
 import { OFFICES } from "./office-pages.ts";
+import { tuportal } from "./tuportal.ts";
+import { TUPORTAL_ID, TUPORTAL_SITE } from "./tuportal-rules.ts";
 
 const secretsPath = fileURLToPath(new URL("../../.env.local", import.meta.url));
 
@@ -35,7 +37,7 @@ export const settings = {
     liveView: { host: "127.0.0.1", port: 6080 },
   },
   /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
-  connectionTypes: [googleCalendar, canvas],
+  connectionTypes: [googleCalendar, canvas, tuportal],
   /**
    * Public pages Buddy's Browser may open, each as this exact host. A whole domain would be wrong:
    * Temple's single sign-on could log it in to a Connection that has no Read Permission.
@@ -68,6 +70,7 @@ export const settings = {
       readablePages: CANVAS_READABLE_PAGES,
       blockedPages: CANVAS_BLOCKED_PAGES,
     },
+    [TUPORTAL_ID]: TUPORTAL_SITE,
   },
 };
 
