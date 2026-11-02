@@ -1,5 +1,5 @@
-import type { FastifyInstance } from "fastify";
-import { CardRefused, type ActionCards } from "./action-cards.ts";
+import type { FastifyInstance, FastifyReply } from "fastify";
+import { CardRefused, type ActionCard, type ActionCards } from "./action-cards.ts";
 
 /**
  * What the app's Approve and Decline buttons call. A tap comes straight here from the paired phone
@@ -13,6 +13,17 @@ export function addActionCardRoutes(
 ): void {
   const noSuchCard = { error: "There's no such card" };
 
+  /** Answers with the card as it is now, or says why the tap didn't count, with the card as it is. */
+  async function answerTap(reply: FastifyReply, tap: () => ActionCard | null | Promise<ActionCard | null>) {
+    try {
+      const card = await tap();
+      return card ? { card } : reply.code(404).send(noSuchCard);
+    } catch (error) {
+      if (error instanceof CardRefused) return reply.code(409).send({ error: error.message, card: error.card });
+      throw error;
+    }
+  }
+
   app.get<{ Params: { id: string } }>("/action-cards/:id", async (request, reply) => {
     const card = isStoredId(request.params.id) ? actionCards.get(Number(request.params.id)) : null;
     return card ? { card } : reply.code(404).send(noSuchCard);
@@ -25,23 +36,12 @@ export function addActionCardRoutes(
       const fingerprint = request.body?.fingerprint;
       if (!isStoredId(request.params.id)) return reply.code(404).send(noSuchCard);
       if (typeof fingerprint !== "string") return reply.code(400).send({ error: "fingerprint must say what the card showed" });
-      try {
-        const card = await actionCards.approve(Number(request.params.id), fingerprint);
-        return card ? { card } : reply.code(404).send(noSuchCard);
-      } catch (error) {
-        if (error instanceof CardRefused) return reply.code(409).send({ error: error.message, card: error.card });
-        throw error;
-      }
+      return answerTap(reply, () => actionCards.approve(Number(request.params.id), fingerprint));
     },
   );
 
   app.post<{ Params: { id: string } }>("/action-cards/:id/decline", async (request, reply) => {
-    try {
-      const card = isStoredId(request.params.id) ? actionCards.decline(Number(request.params.id)) : null;
-      return card ? { card } : reply.code(404).send(noSuchCard);
-    } catch (error) {
-      if (error instanceof CardRefused) return reply.code(409).send({ error: error.message, card: error.card });
-      throw error;
-    }
+    if (!isStoredId(request.params.id)) return reply.code(404).send(noSuchCard);
+    return answerTap(reply, () => actionCards.decline(Number(request.params.id)));
   });
 }

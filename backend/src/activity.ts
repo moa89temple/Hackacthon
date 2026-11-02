@@ -1,4 +1,4 @@
-import type { CardDescription } from "./action-cards.ts";
+import type { CardDescription, StepResult } from "./action-cards.ts";
 import type { ProfileFact } from "./profile.ts";
 import {
   THE_STUDENT,
@@ -81,23 +81,17 @@ export function actionCardInvalid(at: Date): NewActivityEntry {
   };
 }
 
-const FINISHED_TITLES = {
+const FINISHED_TITLES: Record<StepResult["status"], string> = {
   done: "Buddy did this",
   not_run: "Buddy didn't do this",
   unknown: "Buddy can't tell whether this happened",
 };
 
-export function actionFinished(
-  status: keyof typeof FINISHED_TITLES,
-  card: CardDescription,
-  outcome: string,
-  more: string | undefined,
-  at: Date,
-): NewActivityEntry {
+export function actionFinished({ status, outcome, detail }: StepResult, card: CardDescription, at: Date): NewActivityEntry {
   return {
     kind: `action_${status}`,
     title: `${FINISHED_TITLES[status]}: ${card.title}`,
-    detail: more ? `${outcome} ${more}` : outcome,
+    detail: detail ? `${outcome} ${detail}` : outcome,
     at,
   };
 }

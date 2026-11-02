@@ -137,6 +137,7 @@ const FORM: FormToSubmit = {
     { name: "kind", value: "other" },
     { name: "urgent", value: "yes" },
   ],
+  pageFills: ["token"],
 };
 const formOn = (path: string, more: Partial<FormToSubmit> = {}): FormToSubmit => ({ ...FORM, pageUrl: page(path), ...more });
 
@@ -193,6 +194,7 @@ function cardFor(form: FormToSubmit) {
       form: form.form,
       button: form.button,
       fields: form.fields,
+      page_fills: form.pageFills,
     },
     { afterMessageId: 0 },
   );
@@ -272,6 +274,16 @@ describe("the network guard while reading", () => {
     expect(seen).toContain("/worker-ran");
     expect(seen).not.toContain("/from-worker");
     expect(seen).not.toContain("/socket-from-worker");
+  });
+
+  it("stops requests and sockets from a worker a worker started", async () => {
+    await read(page("/active"));
+    await settle();
+
+    const seen = ledger().map((entry) => entry.path);
+    expect(seen).toContain("/nested-worker-ran");
+    expect(seen).not.toContain("/from-nested-worker");
+    expect(seen).not.toContain("/socket-from-nested-worker");
   });
 
   it("doesn't let a page leave a service worker behind, which could run once the guard has let go", async () => {
@@ -438,7 +450,7 @@ describe("the form-submit routine", () => {
   });
 
   it("carries the button's own value when the card names that button", async () => {
-    await browser.submitForm({ ...FORM, button: "Save draft" }, guards.forApprovedStep());
+    await browser.submitForm({ ...FORM, button: "Save draft", pageFills: ["token", "draft"] }, guards.forApprovedStep());
     await settle();
 
     expect(new URLSearchParams(changesInLedger()[0]!.body).get("draft")).toBe("1");
@@ -456,6 +468,9 @@ describe("the form-submit routine", () => {
   it.each([
     ["has a field the card doesn't", formOn("/form-page-extra-field"), /cc/],
     ["lacks a field the card has", formOn("/form-page-missing-field"), /note/],
+    ["has a hidden field the card doesn't", formOn("/form-page-extra-hidden-field"), /hidden field.*to/],
+    ["lacks a hidden field the card has", { ...FORM, pageFills: ["token", "another"] }, /hidden field.*another/],
+    ["has a button that sends a value the card doesn't list", { ...FORM, button: "Save draft" }, /hidden field.*draft/],
     ["now sends somewhere else", formOn("/form-page-elsewhere"), /somewhere other/],
     ["no longer sends by POST", formOn("/form-page-gets"), /POST/],
     ["has a password field", formOn("/form-page-password"), /never fills in/],
@@ -631,10 +646,27 @@ describe("the guard around a Takeover", () => {
     await finishTakeover();
     clearLedger();
 
-    await read(page("/active"));
+    await backend.browserAccess.read(page("/active"));
     await settle();
 
-    expect(pathsThatChanged()).not.toContain("/changes");
+    expect(ledger().map((entry) => entry.path)).toContain("/active");
+    expect(pathsThatChanged()).toEqual(["/search"]);
+  });
+
+  it("leaves nothing from the Student's pages still running after Done", async () => {
+    await startTakeover("site");
+    await asTheStudent(async (screen) => {
+      await screen.goto(page("/ticking"));
+    });
+    await settle();
+    expect(ledger().map((entry) => entry.path)).toContain("/tick");
+
+    await finishTakeover();
+    await settle(200);
+    clearLedger();
+    await settle(1000);
+
+    expect(ledger()).toEqual([]);
   });
 
   it("stops what the page left on the screen tries to send as it's cleared at Done", async () => {
@@ -730,8 +762,11 @@ describe("during a Takeover", () => {
 
     await expect(backend.browserAccess.read(SITE.homeUrl)).rejects.toThrow(TakeoverInProgress);
 
-    const targets = (await (await fetch(`${controlUrl}/json/list`)).json()) as { url: string }[];
-    expect(targets.filter((target) => target.url.startsWith("http"))).toHaveLength(1);
+    const targets = (await (await fetch(`${controlUrl}/json/list`)).json()) as { type: string; url: string }[];
+    // Only tabs: a worker from a page the screen has moved on from can still be listed. See the check
+    // that nothing keeps running after Done.
+    const tabs = targets.filter((target) => target.type === "page" && target.url.startsWith("http"));
+    expect(tabs.map((target) => target.url)).toEqual([expect.stringMatching(/\/(home|login-required)$/)]);
 
     await finishTakeover();
   });

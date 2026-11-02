@@ -25,7 +25,15 @@ export function formSubmitRoutine({ sites, guards, browserAccess, logError }: Fo
     isAvailable: () => Object.values(sites).some((site) => (site.formPages ?? []).length > 0),
 
     prepare(input): FormStep {
-      const { site: siteId, page_url: pageUrl, action_url: actionUrl, form, button, fields } = input as Record<string, unknown>;
+      const {
+        site: siteId,
+        page_url: pageUrl,
+        action_url: actionUrl,
+        form,
+        button,
+        fields,
+        page_fills: pageFills,
+      } = input as Record<string, unknown>;
       if (typeof siteId !== "string" || !Object.hasOwn(sites, siteId)) throw new ActionRefused("Buddy doesn't know that site.");
       const site = sites[siteId]!;
       const page = siteAddress(pageUrl, site);
@@ -40,7 +48,15 @@ export function formSubmitRoutine({ sites, guards, browserAccess, logError }: Fo
       }
       if (typeof form !== "string" || form === "") throw new ActionRefused("form must name the form.");
       if (typeof button !== "string" || button === "") throw new ActionRefused("button must be the label of the button to press.");
-      return { site: siteId, pageUrl: page.href, actionUrl: action.href, form, button, fields: checkedFields(fields) };
+      return {
+        site: siteId,
+        pageUrl: page.href,
+        actionUrl: action.href,
+        form,
+        button,
+        fields: checkedFields(fields),
+        pageFills: checkedNames(pageFills),
+      };
     },
 
     describe(content): CardDescription {
@@ -49,9 +65,12 @@ export function formSubmitRoutine({ sites, guards, browserAccess, logError }: Fo
         title: `Submit a form on ${sites[step.site]?.name ?? step.site}`,
         shows: [
           { label: "Page", value: step.pageUrl },
+          { label: "Form", value: step.form },
           { label: "Sent to", value: step.actionUrl },
           { label: "Button Buddy presses", value: step.button },
-          ...step.fields.map(({ name, value }) => ({ label: name, value })),
+          // Field names come from Claude, so they say what they are and can't pass for the lines above.
+          ...step.fields.map(({ name, value }) => ({ label: `Field: ${name}`, value })),
+          ...(step.pageFills.length > 0 ? [{ label: "Also sent, filled in by the page", value: step.pageFills.join(", ") }] : []),
         ],
       };
     },
@@ -108,6 +127,14 @@ function checkedFields(fields: unknown): FormToSubmit["fields"] {
     throw new ActionRefused("Each field can appear only once.");
   }
   return checked;
+}
+
+function checkedNames(names: unknown): string[] {
+  if (!Array.isArray(names) || !names.every((name) => typeof name === "string" && name !== "")) {
+    throw new ActionRefused("page_fills must be a list of names.");
+  }
+  if (new Set(names).size < names.length) throw new ActionRefused("Each name in page_fills can appear only once.");
+  return names;
 }
 
 /** On the site, the same way its home page is reached, and with no login in the address. */

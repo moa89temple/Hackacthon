@@ -31,6 +31,7 @@ const REQUEST = {
     { name: "subject", value: "Meeting" },
     { name: "note", value: "Tuesday works" },
   ],
+  page_fills: ["token"],
   replaces_card: null,
 };
 
@@ -95,13 +96,24 @@ describe("asking for an action", () => {
       title: "Submit a form on Canvas",
       shows: [
         { label: "Page", value: "https://canvas.test/forms/advising" },
+        { label: "Form", value: "advising" },
         { label: "Sent to", value: "https://canvas.test/forms/advising/send" },
         { label: "Button Buddy presses", value: "Send" },
-        { label: "subject", value: "Meeting" },
-        { label: "note", value: "Tuesday works" },
+        { label: "Field: subject", value: "Meeting" },
+        { label: "Field: note", value: "Tuesday works" },
+        { label: "Also sent, filled in by the page", value: "token" },
       ],
     });
     expect(card.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("doesn't let a field Claude names pass for one of Buddy's own lines", async () => {
+    const card = await requestCard({ ...REQUEST, fields: [{ name: "Sent to", value: "someone-harmless" }] });
+
+    expect(card.shows.filter((line: any) => line.label === "Sent to")).toEqual([
+      { label: "Sent to", value: "https://canvas.test/forms/advising/send" },
+    ]);
+    expect(card.shows).toContainEqual({ label: "Field: Sent to", value: "someone-harmless" });
   });
 
   it("never carries the step out, or even touches the browser", async () => {
@@ -157,6 +169,8 @@ describe("asking for an action", () => {
     ["a field with no name", { ...REQUEST, fields: [{ name: "", value: "x" }] }],
     ["a field with no value", { ...REQUEST, fields: [{ name: "subject" }] }],
     ["the same field twice", { ...REQUEST, fields: [{ name: "a", value: "1" }, { name: "a", value: "2" }] }],
+    ["no list of what the page fills in", { ...REQUEST, page_fills: undefined }],
+    ["a name the page fills in that isn't one", { ...REQUEST, page_fills: [7] }],
     ["nothing at all", null],
   ])("refuses %s, and no card appears", async (_, input) => {
     const card = await requestCard(input);
@@ -201,15 +215,6 @@ describe("the fingerprint", () => {
     expect((await approve(edited)).status).toBe(200);
     expect(submissions()).toHaveLength(1);
     expect((submissions()[0] as any).form.button).toBe("Save");
-  });
-
-  it("offers the same edit to the rest of the backend", async () => {
-    const old = await requestCard();
-
-    const edited = backend.actionCards.edit(old.id, { ...REQUEST, button: "Save" });
-
-    expect(edited.status).toBe("waiting");
-    expect((await backend.card(old.id)).status).toBe("replaced");
   });
 
   it("can't edit a card that's no longer waiting", async () => {
@@ -391,6 +396,7 @@ describe("running at most once", () => {
           form: REQUEST.form,
           button: REQUEST.button,
           fields: REQUEST.fields,
+          pageFills: REQUEST.page_fills,
         },
       },
     ]);
@@ -650,7 +656,7 @@ describe("the gate in front of the browser's submit step", () => {
     ["declined", (card: any) => backend.declineCard(card.id)],
     ["expired", async (card: any) => { backend.clock.moveForward(ONE_DAY_MS); await backend.card(card.id); }],
     ["already done", (card: any) => approve(card)],
-    ["replaced", (card: any) => Promise.resolve(backend.actionCards.edit(card.id, { ...REQUEST, button: "Save" }))],
+    ["replaced", (card: any) => requestCard({ ...REQUEST, button: "Save", replaces_card: card.id })],
   ])("refuses a card that's %s", async (_, finish) => {
     const card = await requestCard();
     await finish(card);
@@ -737,7 +743,7 @@ describe("Activity", () => {
 
     const entry = (await backend.activity()).find((candidate) => candidate.kind === "action_card_requested");
     expect(entry.title).toBe("Buddy asked for an Action Permission: Submit a form on Canvas");
-    expect(entry.detail).toContain("subject: Meeting");
+    expect(entry.detail).toContain("Field: subject: Meeting");
     expect(entry.detail).toContain("Button Buddy presses: Send");
   });
 

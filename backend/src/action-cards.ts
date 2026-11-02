@@ -82,7 +82,7 @@ export interface StepResult {
 /**
  * One kind of step Buddy can take. This is the fixed routine the Approve tap runs, so everything it
  * does has to come from the content it's given, which is exactly what the card showed. Adding a kind
- * of action means adding one of these.
+ * of action means adding one of these, and adding what Claude can ask for to its tool in system-prompt.ts.
  */
 export interface ActionRoutine {
   kind: string;
@@ -90,7 +90,10 @@ export interface ActionRoutine {
   isAvailable(): boolean;
   /** Turns what Claude asked for into the exact content of a card. Throws ActionRefused. */
   prepare(input: unknown): unknown;
-  /** In words from Buddy's code. A value on a line may be what Claude asked for, but never a label or the title. */
+  /**
+   * In words from Buddy's code. A value on a line may be what Claude asked for. A label or the title
+   * must make plain which of Buddy's own lines it is, so that nothing Claude asks for can pass for one.
+   */
   describe(content: unknown): CardDescription;
   /** Says why an Approve can't start now, leaving the card waiting. Nothing is used up. */
   whyNotNow(): string | null;
@@ -116,11 +119,10 @@ export interface ActionCards {
   canAsk(): boolean;
   /**
    * The one way to make a card, and all that Claude's tool can do. It never runs the step.
-   * With `replaces`, the old card stops working: that's what editing a card means.
+   * With `replaces`, the old card stops working and the new one needs its own tap: that's what
+   * editing a card means.
    */
   request(input: unknown, where: { afterMessageId: number; replaces?: number }): ActionCard;
-  /** Editing a card: it stops working, and the new one needs its own tap. */
-  edit(id: number, input: unknown): ActionCard;
   get(id: number): ActionCard | null;
   list(): { card: ActionCard; afterMessageId: number; createdAt: Date }[];
   /**
@@ -212,10 +214,10 @@ export function createActionCards({ store, clock, routines, logError }: ActionCa
     return stored && expireIfDue(stored);
   }
 
-  function replace(id: number, input: unknown, afterMessageId?: number): ActionCard {
+  function replace(id: number, input: unknown, afterMessageId: number): ActionCard {
     const old = current(id);
     if (old?.status !== "waiting") throw new ActionRefused("That card is no longer waiting, so it can't be changed.");
-    const card = prepareCard(input, afterMessageId ?? old.afterMessageId);
+    const card = prepareCard(input, afterMessageId);
     const description = routineFor(card.kind).describe(JSON.parse(card.content));
     const replaced = store.replaceActionCard(THE_STUDENT, id, card, [
       actionCardReplaced(describe(old), card.createdAt),
@@ -239,7 +241,7 @@ export function createActionCards({ store, clock, routines, logError }: ActionCa
       stored.id,
       "running",
       { status: result.status, outcome: result.outcome },
-      [actionFinished(result.status, describe(stored), result.outcome, result.detail, clock.now())],
+      [actionFinished(result, describe(stored), clock.now())],
     );
     return finished ?? store.actionCard(THE_STUDENT, stored.id)!;
   }
@@ -253,8 +255,6 @@ export function createActionCards({ store, clock, routines, logError }: ActionCa
       const description = routineFor(card.kind).describe(JSON.parse(card.content));
       return toCard(store.addActionCard(THE_STUDENT, card, actionCardRequested(description, card.createdAt)));
     },
-
-    edit: (id, input) => replace(id, input),
 
     get(id) {
       const stored = current(id);
@@ -322,9 +322,12 @@ export function createActionCards({ store, clock, routines, logError }: ActionCa
     endInterrupted() {
       for (const stored of store.listActionCards(THE_STUDENT)) {
         if (stored.status !== "running") continue;
-        const outcome = "The backend stopped partway through, so Buddy can't tell whether this happened.";
-        store.moveActionCard(THE_STUDENT, stored.id, "running", { status: "unknown", outcome }, [
-          actionFinished("unknown", describe(stored), outcome, undefined, clock.now()),
+        const result: StepResult = {
+          status: "unknown",
+          outcome: "The backend stopped partway through, so Buddy can't tell whether this happened.",
+        };
+        store.moveActionCard(THE_STUDENT, stored.id, "running", { status: result.status, outcome: result.outcome }, [
+          actionFinished(result, describe(stored), clock.now()),
         ]);
       }
     },

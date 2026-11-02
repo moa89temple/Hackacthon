@@ -35,6 +35,7 @@ def form(attributes='action="/forms/send"', fields=FORM_FIELDS, extra=""):
 FORM_PAGES = {
     "/form-page": form(),
     "/form-page-extra-field": form(extra='<input name="cc">'),
+    "/form-page-extra-hidden-field": form(extra='<input type="hidden" name="to" value="someone-else">'),
     "/form-page-missing-field": form(fields='<input type="hidden" name="token" value="x"><input name="subject">'),
     "/form-page-elsewhere": form('action="/forms/somewhere-else"'),
     "/form-page-gets": form('action="/forms/send" data-x="y"').replace('method="post"', 'method="get"'),
@@ -95,6 +96,7 @@ SERVICE_WORKER_PAGE = """
 PAGES = {
     "/active": ACTIVE_PAGE,
     "/has-service-worker": SERVICE_WORKER_PAGE,
+    "/ticking": "<title>Ticking</title><script>new Worker('/ticking-worker.js');</script>",
     "/private-resource": '<title>Loads from a private address</title><img src="http://127.0.0.3:8000/from-private">',
     "/public-resources": '<title>Loads from a public address</title><img src="http://cdn.elsewhere.test:8000/img-ok">'
     '<iframe src="http://cdn.elsewhere.test:8000/frame-same"></iframe>',
@@ -117,7 +119,12 @@ REDIRECTS = {
 SCRIPTS = {
     "/worker.js": "fetch('/worker-ran').catch(() => {});"
     "fetch('/from-worker', {method: 'POST', body: 'x=1'}).catch(() => {});"
-    "try { new WebSocket('ws://127.0.0.1:8000/socket-from-worker'); } catch (error) {}",
+    "try { new WebSocket('ws://127.0.0.1:8000/socket-from-worker'); } catch (error) {}"
+    "new Worker('/nested-worker.js');",
+    "/ticking-worker.js": "setInterval(() => fetch('/tick').catch(() => {}), 100);",
+    "/nested-worker.js": "fetch('/nested-worker-ran').catch(() => {});"
+    "fetch('/from-nested-worker', {method: 'POST', body: 'x=1'}).catch(() => {});"
+    "try { new WebSocket('ws://127.0.0.1:8000/socket-from-nested-worker'); } catch (error) {}",
     "/sw.js": "const send = () => fetch('/from-service-worker', {method: 'POST', body: 'x=1'}).catch(() => {});"
     "self.addEventListener('install', () => { self.skipWaiting(); send(); });"
     "self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));"
@@ -146,7 +153,7 @@ class Pages(BaseHTTPRequestHandler):
             self.page_with_type("application/json", b"[]")
             return
         self.note()
-        if self.path in ("/socket", "/socket-from-worker"):
+        if self.path in ("/socket", "/socket-from-worker", "/socket-from-nested-worker"):
             self.open_socket()
         elif self.path == "/login":
             self.send_response(200)

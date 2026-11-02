@@ -77,10 +77,11 @@ const refuse = (why: string): GuardDecision => ({ allowed: false, why });
  * 2. Only the web, and only the Student's Connections and public pages. A Connection counts once it
  *    has its Read Permission. Anywhere else may only serve what an open page loads, like a font.
  * 3. Requests that only read go through.
- * 4. A request on the site's `readOnlyRequests` goes through.
- * 5. Anything else that changes something is refused, unless it's the one approved request.
+ * 4. The one approved request goes through, once, if it matches exactly.
+ * 5. A request on the site's `readOnlyRequests` goes through. Anything else that changes something
+ *    is refused.
  *
- * An approved card only ever affects rule 5, and only for its one request.
+ * An approved card only ever affects rule 4, and only for its one request.
  *
  * During a Takeover none of this runs, because Buddy isn't attached to the browser at all: see
  * BrowserAccess. Whatever Buddy does after the Student taps Done is guarded again.
@@ -96,7 +97,8 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
       ([, site]) =>
         isOnSite(parsed.hostname, site) &&
         (site.blockedPages ?? []).some(
-          (page) => (page.host === undefined || page.host === parsed.hostname) && page.path.test(pathToBlock(parsed)),
+          (page) =>
+            (page.host === undefined || page.host === withoutFinalDot(parsed.hostname)) && page.path.test(pathToBlock(parsed)),
         ),
     );
   }
@@ -143,8 +145,9 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
 
     const method = request.method.toUpperCase();
     if (READING_METHODS.has(method)) return allow;
-    if (isKnownReadOnly(url, method)) return allow;
+    // Before the read-only list, so that an approved step always counts as having been sent.
     if (takeApprovedRequest(request)) return allow;
+    if (isKnownReadOnly(url, method)) return allow;
     return refuse(`A ${method} request changes something, and this one has no Action Permission: ${url.host}`);
   }
 
@@ -184,9 +187,13 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
 
 /** Whether a host is one of this site's: its home page's, or any that holds part of its login. */
 export function isOnSite(hostname: string, site: Site): boolean {
-  return [new URL(site.homeUrl).hostname, ...site.loginHosts].some(
-    (host) => hostname === host || hostname.endsWith(`.${host}`),
-  );
+  const name = withoutFinalDot(hostname);
+  return [new URL(site.homeUrl).hostname, ...site.loginHosts].some((host) => name === host || name.endsWith(`.${host}`));
+}
+
+/** "canvas.test." reaches the same place as "canvas.test", so it mustn't pass for somewhere else. */
+function withoutFinalDot(hostname: string): string {
+  return hostname.replace(/\.+$/, "");
 }
 
 /** Decoded and in lower case, so that a page can't be reached by spelling its address another way. */
@@ -205,22 +212,27 @@ function pathToBlock(url: URL): string {
  * the other spellings of those, such as 2130706433, into plain numbers.
  */
 function isPublicAddress(hostname: string): boolean {
-  if (hostname.startsWith("[") || /^\d+(\.\d+){3}$/.test(hostname)) return false;
-  if (!hostname.includes(".")) return false;
-  return !PRIVATE_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
+  const name = withoutFinalDot(hostname);
+  if (name.startsWith("[") || /^\d+(\.\d+){3}$/.test(name)) return false;
+  if (!name.includes(".")) return false;
+  return !PRIVATE_SUFFIXES.some((suffix) => name.endsWith(suffix));
 }
 
 function isTheApprovedRequest(request: RequestToCheck, approved: ApprovedRequest): boolean {
   if (request.method.toUpperCase() !== approved.method.toUpperCase()) return false;
-  if (withoutFragment(request.url) !== withoutFragment(approved.url)) return false;
+  if (!sameAddress(request.url, approved.url)) return false;
   const sent = fieldsInBody(request);
   return sent !== null && sameFields(sent, approved.fields);
 }
 
-function withoutFragment(address: string): string {
-  const url = new URL(address);
-  url.hash = "";
-  return url.href;
+/** Whether these go to the same place. A fragment never leaves the browser, so it doesn't count. */
+export function sameAddress(left: string, right: string): boolean {
+  const withoutFragment = (address: string) => {
+    const url = new URL(address);
+    url.hash = "";
+    return url.href;
+  };
+  return withoutFragment(left) === withoutFragment(right);
 }
 
 /** Null when the body isn't one a form makes, so that nothing unreadable passes for the card's content. */
@@ -247,7 +259,8 @@ function fieldsInMultipart(body: string, boundary: string): [string, string][] |
   return fields;
 }
 
-function sameFields(left: [string, string][], right: [string, string][]): boolean {
+/** In any order, and with a textarea's line endings either way, as the browser changes them to send. */
+export function sameFields(left: [string, string][], right: [string, string][]): boolean {
   const canonical = (fields: [string, string][]) =>
     JSON.stringify(fields.map(([name, value]) => [name, value.replace(/\r\n/g, "\n")]).sort());
   return canonical(left) === canonical(right);

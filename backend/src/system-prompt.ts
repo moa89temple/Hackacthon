@@ -136,12 +136,17 @@ export const REQUEST_ACTION_TOOL = {
           additionalProperties: false,
         },
       },
+      page_fills: {
+        type: "array",
+        description: "The names of the form's hidden fields, and of the button if it has a name. The page sets what they send, and the card lists them.",
+        items: { type: "string" },
+      },
       replaces_card: {
         type: ["integer", "null"],
         description: "The number of a waiting card this one changes, which then stops working. Otherwise null.",
       },
     },
-    required: ["kind", "site", "page_url", "action_url", "form", "button", "fields", "replaces_card"],
+    required: ["kind", "site", "page_url", "action_url", "form", "button", "fields", "page_fills", "replaces_card"],
     additionalProperties: false,
   },
 };

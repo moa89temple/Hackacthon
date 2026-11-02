@@ -92,6 +92,19 @@ describe("where Buddy's Browser may go", () => {
     expect(policy().forReading().check(loading(url)).allowed).toBe(false);
   });
 
+  it.each(["http://localhost./", "http://host.docker.internal./", "http://printer.local./", "http://router./"])(
+    "isn't fooled by a dot on the end of a private name: %s",
+    (url) => {
+      expect(policy().forReading().check(loading(url)).allowed).toBe(false);
+    },
+  );
+
+  it("treats a site's host the same with a dot on the end", () => {
+    const guard = policy([]).forReading();
+
+    expect(guard.check(loading("https://school.canvas.test./logo.png")).allowed).toBe(false);
+  });
+
   it.each(["file:///etc/passwd", "chrome://settings", "ftp://elsewhere.test/", "javascript:alert(1)", "not a url"])(
     "refuses what isn't the web: %s",
     (url) => {
@@ -224,6 +237,16 @@ describe("arming for one approved step", () => {
     expect(decision.allowed).toBe(true);
   });
 
+  it("counts the step as sent even if the site's read-only list covers the same address", () => {
+    const url = "https://school.canvas.test/api/graphql";
+    const guard = policy().forApprovedStep();
+    guard.arm({ method: "POST", url, fields: [["q", "1"]] });
+
+    expect(guard.check(posting(url, "q=1")).allowed).toBe(true);
+
+    expect(guard.progress()).toBe("sent");
+  });
+
   it("has no way to arm the guard used for ordinary reading", () => {
     expect("arm" in policy().forReading()).toBe(false);
   });
@@ -235,6 +258,7 @@ describe("pages Buddy never opens", () => {
     "https://school.canvas.test/courses/1/QUIZZES/2",
     "https://school.canvas.test/courses/1/%71uizzes/2",
     "https://school.canvas.test/courses/1/users",
+    "https://school.canvas.test./courses/1/quizzes/2",
   ])("refuses %s when only reading", (url) => {
     const decision = policy().forReading().check(opening(url));
 

@@ -22,6 +22,12 @@ export interface FormToSubmit {
   button: string;
   /** Every field the Student can see. A checkbox left unticked has an empty value. */
   fields: { name: string; value: string }[];
+  /**
+   * The names the page sends values for by itself: its hidden fields, and the button's own name if it
+   * has one. Their values aren't on the card, because a site's anti-forgery token differs on every
+   * load, but a page with any other names doesn't match the card.
+   */
+  pageFills: string[];
 }
 
 /** The kind of Action card that submits a form. */

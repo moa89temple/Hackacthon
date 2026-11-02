@@ -191,7 +191,11 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
   /** The way in that has no Read Permission behind it, so it's named for the one thing it's for. */
   const readToCheckLogin = async (id: string) => readUnderGuard(siteWithId(id).homeUrl, guards.forLoginCheck(id));
 
-  function failIfCardCantReachBrowser(cardId: number): FormToSubmit {
+  /**
+   * The form on a card that's just had its Approve tap, and only once for that card. Throws
+   * NoActionPermission for anything else, or if what's stored isn't what the Student saw.
+   */
+  function takeApprovedForm(cardId: number): FormToSubmit {
     const card = store.actionCard(THE_STUDENT, cardId);
     if (
       !card ||
@@ -213,7 +217,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
     return oneAtATime(async () => {
       // A Takeover may have started while this step was waiting its turn.
       failIfStudentInControl();
-      const form = failIfCardCantReachBrowser(cardId);
+      const form = takeApprovedForm(cardId);
       const guard = guards.forApprovedStep();
       failIfGuardRefuses(guard, form.pageUrl);
       try {

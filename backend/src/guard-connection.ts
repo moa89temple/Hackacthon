@@ -100,6 +100,7 @@ export async function attachGuard(controlUrl: string, guard: RequestGuard): Prom
       );
     } else if (TARGETS_THAT_ARE_WORKERS.has(type)) {
       // Not waited for: a worker held at its start may not answer until it's let go.
+      sendAndForget("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sessionId);
       sendAndForget("Runtime.evaluate", { expression: NO_SOCKETS }, sessionId);
     }
   }
