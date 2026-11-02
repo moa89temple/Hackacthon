@@ -16,6 +16,7 @@ import {
   BUDDY_SYSTEM_PROMPT,
   CHECK_CALENDAR_TOOL,
   CHECK_CANVAS_TOOL,
+  CHECK_TUMAIL_TOOL,
   CRISIS_CARD_TOOL,
   FIND_CONTACTS_TOOL,
   MAKE_HANDOFF_TOOL,
@@ -28,6 +29,8 @@ import {
   SUGGEST_CONNECTION_TOOL,
 } from "./system-prompt.ts";
 import { THE_STUDENT, type NewMessage, type Store, type StoredMessage } from "./store.ts";
+import { newMailTurn, noteMailGiven } from "./tumail-chat.ts";
+import { TUMAIL_ID } from "./tumail-rules.ts";
 
 const REFUSAL_NOTE =
   "I can't help with that one. Try asking another way, or tell me what you're trying to get done and I'll point you to someone at Temple who can help.";
@@ -220,6 +223,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
     id: string,
     name: string,
     couldNotCheck: string,
+    noteFacts = noteFactsGiven,
   ) {
     try {
       let looked = `Looked at what Buddy has from your ${name}.`;
@@ -232,7 +236,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       }
       const description = connections.describeForClaude(id);
       turn.tools.push(looked);
-      noteFactsGiven(turn, factsFromConnection(profile, id));
+      noteFacts(turn, factsFromConnection(profile, id));
       return toolAnswer(call, description);
     } catch (error) {
       if (error instanceof NoReadPermission) {
@@ -410,6 +414,16 @@ export function createConversation(deps: ConversationDeps): Conversation {
         "Canvas couldn't be checked. Tell the Student, and don't guess at what's due or what their grades are.",
       );
     }
+    if (call.name === CHECK_TUMAIL_TOOL.name) {
+      return lookAtConnection(
+        call,
+        turn,
+        TUMAIL_ID,
+        "TUmail",
+        "TUmail couldn't be checked. Tell the Student, and don't guess at what's in their mail.",
+        noteMailGiven,
+      );
+    }
     if (call.name === SEARCH_GUIDEBOOK_TOOL.name) return searchGuidebook(call, turn);
     if (call.name === FIND_CONTACTS_TOOL.name) return searchGuidebook(call, turn, "contact");
     if (call.name === CRISIS_CARD_TOOL.name) {
@@ -448,6 +462,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const actionsAskedThisTurn = new Map<string, number>();
       let handoffMade = false;
       const turn = newTurnRecord();
+      const mailTurn = newMailTurn(turn);
       const noteIfClaudeCant = () => (cardShown ? CRISIS_NOTE : checkingIn ? CHECK_IN_NOTE : null);
 
       try {
@@ -535,7 +550,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
               }
               const answers = [];
               for (const call of calls) {
-                if (call.name === SUGGEST_CONNECTION_TOOL.name) {
+                const refusedAfterMail = mailTurn.refusal(call.name);
+                if (refusedAfterMail) {
+                  answers.push(toolFailure(call, refusedAfterMail));
+                } else if (call.name === SUGGEST_CONNECTION_TOOL.name) {
                   const { answer, card } = suggestConnection(call, suggestedThisTurn, studentMessageId!, now, turn);
                   if (card) yield { type: "read_permission_card", connection: card };
                   answers.push(answer);
@@ -564,9 +582,15 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   for (const milestone of cards) yield { type: "milestone_card", milestone };
                   answers.push(toolResultFrom(call, outcome));
                 } else {
-                  answers.push(await answerCall(call, studentMessageId!, turn));
+                  const answer = await answerCall(call, studentMessageId!, turn);
+                  answers.push(answer);
                   if (call.name === CHECK_CANVAS_TOOL.name) {
                     const card = askForLoginIfNeeded(CANVAS_ID, suggestedThisTurn, studentMessageId!, now);
+                    if (card) yield { type: "read_permission_card", connection: card };
+                  }
+                  if (call.name === CHECK_TUMAIL_TOOL.name) {
+                    if (!("is_error" in answer)) mailTurn.noteRead(call.id);
+                    const card = askForLoginIfNeeded(TUMAIL_ID, suggestedThisTurn, studentMessageId!, now);
                     if (card) yield { type: "read_permission_card", connection: card };
                   }
                 }
@@ -605,8 +629,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
               THE_STUDENT,
               [
                 { role: "system", content: turnContext.content, createdAt: now },
-                ...toolRounds,
-                wordsSoFar ? { ...reply, shownText: words } : reply,
+                ...mailTurn.forHistory([...toolRounds, wordsSoFar ? { ...reply, shownText: words } : reply]),
               ],
               replyDecided(words, turn, clock.now()),
             );
@@ -698,6 +721,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       REMEMBER_TOOL,
       CHECK_CALENDAR_TOOL,
       CHECK_CANVAS_TOOL,
+      CHECK_TUMAIL_TOOL,
       SUGGEST_CONNECTION_TOOL,
       SEARCH_GUIDEBOOK_TOOL,
       FIND_CONTACTS_TOOL,

@@ -47,6 +47,8 @@ export interface Guidebook {
   search(query: string, options?: { kind?: GuidebookKind }): GuidebookItem[];
   /** Those of these items still in the Guidebook. A reported one never comes back from here. */
   itemsWithIds(ids: number[]): GuidebookItem[];
+  /** Every Contact a Handoff can go to right now, and so everyone whose email counts as from a Contact. */
+  contacts(): GuidebookItem[];
   /** The items a reply names, so that their Sources can be shown even if Claude didn't ask. */
   itemsNamedIn(reply: string): GuidebookItem[];
   /** Hides the item for every Student. Returns whether there was such an item. */
@@ -206,6 +208,10 @@ export function createGuidebook(deps: { store: Store; clock: Clock }): Guidebook
 
     itemsWithIds(ids) {
       return freeFirst(store.listGuidebookItems().filter((stored) => ids.includes(stored.id)).map(asItem));
+    },
+
+    contacts() {
+      return store.listGuidebookItems().map(asItem).filter((item) => item.kind === "contact");
     },
 
     itemsNamedIn(reply) {

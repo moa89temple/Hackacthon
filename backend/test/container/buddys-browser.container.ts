@@ -17,6 +17,9 @@ import { createGuardPolicy } from "../../src/network-guard.ts";
 import { keepToReadablePages } from "../../src/readable-pages.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
 import { systemClock } from "../../src/clock.ts";
+import { tumailAt } from "../../src/tumail.ts";
+import { runTumailCheck } from "../../src/tumail-check.ts";
+import { TUMAIL_ID, tumailReadablePages, tumailReadOnlyRequests } from "../../src/tumail-rules.ts";
 
 const browserDirectory = fileURLToPath(new URL("../../../browser", import.meta.url));
 const CONTROL_PORT = 19222;
@@ -1059,5 +1062,88 @@ describe("what the browser never keeps", () => {
     const policies = text.replace(/\s+/g, " ");
     expect(policies).toMatch(/PasswordManagerEnabled false/);
     expect(policies).toMatch(/SavingBrowserHistoryDisabled true/);
+  });
+});
+
+describe("the TUmail reader, against a made-up app in the real browser", () => {
+  const HOST = "127.0.0.5";
+  const SIGN_IN_HOST = "127.0.0.6";
+  const HOME = `http://${HOST}:8000/mail/`;
+  const TUMAIL_SITE: Site = {
+    name: "TUmail",
+    homeUrl: HOME,
+    loginHosts: [HOST, SIGN_IN_HOST],
+    isConnection: true,
+    readablePages: [...tumailReadablePages([HOST]), { host: SIGN_IN_HOST, path: /^\// }],
+    readOnlyRequests: tumailReadOnlyRequests([HOST]),
+  };
+  const logInToOutlook = async () => {
+    await browser.show(`http://${HOST}:8000/made-up-outlook-login`);
+    await settle(300);
+  };
+  const visited = () => ledger().filter((entry) => entry.host.startsWith(HOST)).map((entry) => `${entry.method} ${entry.path}`);
+
+  async function runCheck() {
+    const lines: string[] = [];
+    const exitCode = await runTumailCheck({
+      browser,
+      connection: tumailAt(HOME),
+      sites: { [TUMAIL_ID]: TUMAIL_SITE },
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: false, oldLoginRemains: false }),
+      print: (line) => lines.push(line),
+    });
+    return { exitCode, output: lines.join("\n") };
+  }
+
+  beforeEach(async () => {
+    await browser.forgetLogin([HOST, SIGN_IN_HOST]);
+    clearLedger();
+  });
+
+  it("waits for a list and a message the app builds long after loading, and asks for them by POST through the guard", async () => {
+    await logInToOutlook();
+
+    const { exitCode, output } = await runCheck();
+
+    expect(exitCode).toBe(0);
+    expect(output).toMatch(/messages in the list: 2\b/);
+    expect(output).toMatch(/with a sender's address: 2\b/);
+    expect(output).toMatch(/from temple\.edu addresses: 1\b/);
+    expect(output).toMatch(/opened: 1\b/);
+    expect(output).toMatch(/words read: 1, kept: 1\b/);
+    expect(visited()).toContain("POST /owa/service.svc?action=FindConversation&app=Mail");
+    expect(visited()).toContain("POST /owa/service.svc?action=GetConversationItems&app=Mail");
+  });
+
+  it("opens only what's from a temple.edu address, and nothing it does marks a message read", async () => {
+    await logInToOutlook();
+
+    const { output } = await runCheck();
+
+    expect(visited()).toContain("GET /mail/inbox/id/AAQkMadeUpOne%3D");
+    expect(visited()).not.toContain("GET /mail/inbox/id/AAQkMadeUpTwo%3D");
+    expect(visited().filter((request) => request.includes("UpdateItem") || request.includes("graphql") || request.includes("action=GetItem"))).toEqual([]);
+    expect(output).toMatch(/opened while unread: 1\b/);
+    expect(output).toMatch(/still unread afterwards: 1\b/);
+    expect(output).toContain(`POST ${HOST} /owa/service.svc?action=UpdateItem`);
+  });
+
+  it("prints no words, names or addresses from the app, whatever it held", async () => {
+    await logInToOutlook();
+
+    const { output } = await runCheck();
+
+    expect(output).not.toMatch(/marker/i);
+    expect(output).not.toContain("elsewhere.test");
+    expect(output).not.toContain("AAQk");
+  });
+
+  it("says the login has gone when Outlook sends the browser to sign in, and goes no further", async () => {
+    const { exitCode, output } = await runCheck();
+
+    expect(exitCode).toBe(4);
+    expect(output).toContain("Log in to TUmail");
+    expect(output).not.toMatch(/marker/i);
+    expect(visited()).toEqual(["GET /mail/inbox"]);
   });
 });

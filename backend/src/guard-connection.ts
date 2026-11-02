@@ -119,13 +119,16 @@ export async function attachGuard(controlUrl: string, guard: RequestGuard): Prom
     const opensPage = event.resourceType === "Document" && target?.type === "page" && event.frameId === target.targetId;
     let decision: GuardDecision;
     try {
-      const headers: Record<string, string> = event.request.headers ?? {};
-      const contentType = Object.entries(headers).find(([name]) => name.toLowerCase() === "content-type")?.[1];
+      const headers = Object.fromEntries(
+        Object.entries((event.request.headers ?? {}) as Record<string, string>).map(([name, value]) => [name.toLowerCase(), value]),
+      );
+      const contentType = headers["content-type"];
       const body = await bodyOf(event, sessionId);
       decision = guard.check({
         url: event.request.url,
         method: event.request.method,
         opensPage,
+        headers,
         ...(body !== undefined ? { body } : {}),
         ...(contentType !== undefined ? { contentType } : {}),
       });

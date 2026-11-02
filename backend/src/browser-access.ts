@@ -9,9 +9,10 @@ import {
   type FormSubmission,
   type FormToSubmit,
   type PageReading,
+  type PageWait,
 } from "./buddys-browser.ts";
 import type { Clock } from "./clock.ts";
-import type { GuardPolicy, RequestGuard } from "./network-guard.ts";
+import { isOnSite, type GuardPolicy, type RequestGuard } from "./network-guard.ts";
 import { keepToReadablePages } from "./readable-pages.ts";
 import { THE_STUDENT, type Store, type StoredTakeover } from "./store.ts";
 
@@ -29,6 +30,10 @@ export interface KnownRequest {
   host: string;
   /** Tested against the address's path exactly as sent, so write it to match nothing extra. */
   path: RegExp;
+  /** Tested against all that follows the path, question mark included, for an address that serves many things. */
+  query?: RegExp;
+  /** By lower-case name. A request that carries one of these must carry a value that matches. */
+  headers?: Record<string, RegExp>;
 }
 
 export interface Site {
@@ -37,6 +42,8 @@ export interface Site {
   homeUrl: string;
   /** Every host that holds part of this site's login, including its single sign-on. */
   loginHosts: string[];
+  /** Other hosts a logged-in home page can end up on, for a site that moves between them. */
+  appHosts?: string[];
   /** What the network guard lets through for this site without an Action Permission. See network-guard.ts. */
   readOnlyRequests?: KnownRequest[];
   /**
@@ -125,7 +132,7 @@ export interface BrowserAccess {
    * Reads a page. Throws TakeoverInProgress while the Student is in control, and PageBlocked unless
    * it's a public page or a Connection with its Read Permission.
    */
-  read(url: string): Promise<PageReading>;
+  read(url: string, wait?: PageWait): Promise<PageReading>;
   /**
    * Reads a site's home page to see whether the login works, and for nothing else. Throws PageBlocked
    * for a site that's a Connection with no Read Permission. For any other site it's the one read that
@@ -198,20 +205,32 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
     return stored && describeTakeover(stored);
   }
 
-  async function readUnderGuard(url: string, guard: RequestGuard): Promise<PageReading> {
+  async function readUnderGuard(url: string, guard: RequestGuard, wait?: PageWait): Promise<PageReading> {
     failIfStudentInControl();
     return oneAtATime(() => {
       // A Takeover may have started while this read was waiting its turn.
       failIfStudentInControl();
       failIfGuardRefuses(guard, url);
-      return browser.read(url, guard);
+      return browser.read(url, guard, wait);
     });
   }
 
-  const read = (url: string) => readUnderGuard(url, keepToReadablePages(guards.forReading(), sites));
+  const read = (url: string, wait?: PageWait) => readUnderGuard(url, keepToReadablePages(guards.forReading(), sites), wait);
 
   function lacksReadPermission(id: string, site: Site): boolean {
     return site.isConnection === true && store.readPermission(THE_STUDENT, id) === null;
+  }
+
+  /**
+   * A single sign-on shared with a Connection that still has its Read Permission stays, or else revoking
+   * one Connection would log the Student out of another. The guard is what keeps that sign-on from
+   * reaching a Connection with no Read Permission: it refuses the Connection's own hosts whatever the
+   * browser holds. The last Connection using it to be revoked forgets it.
+   */
+  function isStillInUse(host: string, forgetting: string): boolean {
+    return Object.entries(sites).some(
+      ([id, site]) => id !== forgetting && site.isConnection === true && !lacksReadPermission(id, site) && isOnSite(host, site),
+    );
   }
 
   /**
@@ -344,7 +363,8 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
           // A page left open could otherwise write its login straight back.
           await browser.clearScreen(guards.forReading());
           // The site's own address too: its storage belongs to that exact origin, whether or not a cookie is left.
-          await browser.forgetLogin([...new Set([new URL(site.homeUrl).hostname, ...site.loginHosts])]);
+          const hosts = [...new Set([new URL(site.homeUrl).hostname, ...site.loginHosts])];
+          await browser.forgetLogin(hosts.filter((host) => !isStillInUse(host, id)));
         });
       } catch (error) {
         if (error instanceof TakeoverInProgress) throw error;
@@ -366,7 +386,7 @@ function failIfGuardRefuses(guard: RequestGuard, url: string): void {
 
 function isOnSiteAndPastLogin(finalUrl: string, site: Site): boolean {
   const final = new URL(finalUrl);
-  return final.hostname === new URL(site.homeUrl).hostname && !final.pathname.startsWith("/login");
+  return [new URL(site.homeUrl).hostname, ...(site.appHosts ?? [])].includes(final.hostname) && !final.pathname.startsWith("/login");
 }
 
 /** Runs each piece of work only after everything before it has finished, whether it worked or not. */
