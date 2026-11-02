@@ -9,13 +9,13 @@ import {
   hasPasswordField,
   readBalancePage,
   readHoldsPage,
-  readRegistrationPage,
   type BalanceOnPage,
   type HoldOnPage,
   type PageToRead,
-  type RegistrationOnPage,
 } from "./tuportal-pages.ts";
 import {
+  BANNER_HOME,
+  BANNER_PAGES,
   isTuportalLoginPage,
   isTuportalPage,
   TUPORTAL_FRAMES,
@@ -39,9 +39,7 @@ type TuportalData =
   /** The holds page was understood. Without one of these, Buddy doesn't know whether there are holds. */
   | { kind: "holds_checked"; count: number; readAt: string }
   | { kind: "hold" }
-  | { kind: "balance"; cents: number; credit: boolean; readAt: string }
-  /** The status's own words are in the fact. This only tells whether they've changed. */
-  | { kind: "registration_status"; digest: string; readAt: string };
+  | { kind: "balance"; cents: number; credit: boolean; readAt: string };
 
 const dataOf = (fact: { data: unknown }) => fact.data as TuportalData | null;
 
@@ -93,15 +91,6 @@ function balanceFact(balance: BalanceOnPage, now: Date): ConnectionFactToStore {
   };
 }
 
-function registrationFact({ status, term }: RegistrationOnPage, now: Date): ConnectionFactToStore {
-  return {
-    key: "registration-status",
-    text: `Registration status: ${short(status)}`,
-    detail: [term && `Term: ${short(term)}`, whenRead(now)].filter(Boolean).join(" · "),
-    data: { kind: "registration_status", digest: digest(status), readAt: now.toISOString() } satisfies TuportalData,
-  };
-}
-
 /** One page's worth of a read: what's wanted from it, how to say it's missing, and which facts it's the source of. */
 interface Section<T> {
   page: TuportalReadPage;
@@ -131,13 +120,6 @@ export const TUPORTAL_SECTIONS = [
     understand: readBalancePage,
     facts: (balance: BalanceOnPage, now) => [balanceFact(balance, now)],
   }),
-  section({
-    page: "registration",
-    missing: "your registration status",
-    kinds: ["registration_status"],
-    understand: readRegistrationPage,
-    facts: (registration: RegistrationOnPage, now) => [registrationFact(registration, now)],
-  }),
 ];
 
 /**
@@ -164,13 +146,15 @@ function missedPart(missing: Section<unknown>[]): string {
   return `Buddy couldn't read ${listOf(missing.map((part) => part.missing))} on TUportal, so what it has may be out of date or missing.${andHolds} It will try again at its next read, or you can tap Read now.`;
 }
 
-async function readTuportal(home: string, hosts: string[] | undefined, { browser, now, previous, reportMissed }: ReadContext): Promise<ConnectionFactToStore[]> {
+async function readTuportal(home: string, hosts: string[] | undefined, banner: string, { browser, now, previous, reportMissed }: ReadContext): Promise<ConnectionFactToStore[]> {
+  const bannerHost = new URL(banner).hostname;
   /** Says plainly when what came back was somewhere to log in, which can be on any page, at any time. */
-  async function open(page: TuportalPage): Promise<PageReading> {
-    const reading = await browser.read(new URL(TUPORTAL_PAGES[page], home).href);
-    if (isTuportalLoginPage(reading.url, hosts) || hasPasswordField(reading.html)) throw new LoginNeeded(LOG_IN);
+  async function openAddress(address: string): Promise<PageReading> {
+    const reading = await browser.read(address);
+    if (isTuportalLoginPage(reading.url, hosts, bannerHost) || hasPasswordField(reading.html)) throw new LoginNeeded(LOG_IN);
     return reading;
   }
+  const open = (page: TuportalPage) => openAddress(new URL(TUPORTAL_PAGES[page], page === "holds" ? banner : home).href);
 
   try {
     await open("home");
@@ -189,9 +173,11 @@ async function readTuportal(home: string, hosts: string[] | undefined, { browser
   for (const wanted of TUPORTAL_SECTIONS) {
     let understood: unknown = null;
     try {
+      // Banner ends a session it didn't start itself, so it has to go through its own sign-on first.
+      if (wanted.page === "holds") await openAddress(new URL(BANNER_PAGES.signOn, banner).href);
       const reading = await open(wanted.page);
       // Somewhere else on the portal isn't the page, however much it reads like it.
-      if (isTuportalPage(wanted.page, reading.url)) understood = wanted.understand(partToRead(wanted.page, reading));
+      if (isTuportalPage(wanted.page, reading.url, bannerHost)) understood = wanted.understand(partToRead(wanted.page, reading));
     } catch (error) {
       if (error instanceof ReadProblem) throw error;
       if (error instanceof TakeoverInProgress) throw new ReadProblem(STUDENT_IN_CONTROL);
@@ -247,9 +233,6 @@ function eventsBetween(before: FactFromConnection[], after: ConnectionFactToStor
         data: { from: signed(was), to: signed(current) },
       });
     }
-    if (current.kind === "registration_status" && was?.kind === "registration_status" && was.digest !== current.digest) {
-      events.push({ kind: "registration_status_changed", factKey: fact.key, text: `Changed on TUportal: ${fact.text}`, data: {} });
-    }
   }
   for (const fact of before) {
     if (dataOf(fact)?.kind === "hold" && !stillThere.has(fact.key)) {
@@ -264,7 +247,6 @@ const EVENT_NAMES: Record<string, [one: string, many: string]> = {
   hold_first_seen: ["hold seen for the first time", "holds seen for the first time"],
   hold_cleared: ["hold gone", "holds gone"],
   balance_changed: ["balance change", "balance changes"],
-  registration_status_changed: ["registration status change", "registration status changes"],
 };
 
 function countEvents(events: ConnectionEventToStore[]): string {
@@ -283,7 +265,7 @@ function describeTuportal({ facts, events, lastReadAt, lastReadProblem, needsLog
     ? " Buddy's Browser isn't logged in to TUportal, so tell the Student to tap Log in to TUportal on the You tab. They log in themselves, and you never ask for a password."
     : "";
   if (!lastReadAt) {
-    return `Buddy hasn't managed to read TUportal yet, so you can't see the Student's holds, balance or registration status. Tell them, and don't guess. Above all, don't say they have no hold.${login} The problem: ${lastReadProblem ?? "none recorded"}`;
+    return `Buddy hasn't managed to read TUportal yet, so you can't see the Student's holds or balance. Tell them, and don't guess. Above all, don't say they have no hold.${login} The problem: ${lastReadProblem ?? "none recorded"}`;
   }
 
   const ofKind = <K extends TuportalData["kind"]>(kind: K) =>
@@ -311,7 +293,6 @@ function describeTuportal({ facts, events, lastReadAt, lastReadProblem, needsLog
         ];
 
   const balance = ofKind("balance")[0];
-  const registration = ofKind("registration_status")[0];
   const newest = events.slice(-10).map((event) => `- ${describeInPhiladelphia(event.at)}: ${JSON.stringify(event.text)}`);
 
   return [
@@ -323,9 +304,6 @@ function describeTuportal({ facts, events, lastReadAt, lastReadProblem, needsLog
     "",
     "Balance:",
     balance ? `${quoted(balance.fact)}, ${asOf(balance.data.readAt)}.` : "Buddy doesn't know the Student's balance, because it hasn't been able to read it. Don't guess.",
-    "",
-    "Registration status:",
-    registration ? `${quoted(registration.fact)}, ${asOf(registration.data.readAt)}.` : "Buddy doesn't know the Student's registration status, because it hasn't been able to read it. Don't guess.",
     ...(newest.length > 0 ? ["", "What changed most recently:", ...newest] : []),
   ].join("\n");
 }
@@ -335,9 +313,9 @@ function describeTuportal({ facts, events, lastReadAt, lastReadProblem, needsLog
  * and they're enforced by the guard in the browser, not here. There's no model in this: what it finds is
  * read by Buddy's own code, and only reaches Claude through describeForClaude.
  *
- * The home address and hosts are only ever something else for made-up pages in the checks of the real browser.
+ * The addresses and hosts are only ever something else for made-up pages in the checks of the real browser.
  */
-export const tuportalAt = (home: string, hosts?: string[]): ConnectionType => ({
+export const tuportalAt = (home: string, hosts?: string[], banner: string = BANNER_HOME): ConnectionType => ({
   id: TUPORTAL_ID,
   name: "TUportal",
   logsIn: true,
@@ -345,15 +323,15 @@ export const tuportalAt = (home: string, hosts?: string[]): ConnectionType => ({
     reads: [
       "Your holds: each one's type, reason, dates, amount and what it affects, but not who placed it.",
       "Your balance on your student account.",
-      "Your registration status and the term it's for.",
     ],
     notes: [
-      "Buddy opens only your TUportal home page and the three pages that show these. It also opens the page where you log in to check that your login works.",
-      "It never opens TUpay or any page for paying, for adding or dropping classes, or for filling in a form, and it never opens Self-Service Banner, where opening a page can be enough to change something. It never submits anything on TUportal, even if you tap Approve. Buddy's code stops all of this, so nothing the AI reads can change it.",
+      "Buddy opens only your TUportal home page, the Cost & Aid page for your balance, and the page where you log in to check that your login works.",
+      "For your holds, it opens one page of Self-Service Banner, View Holds, going through Banner's own sign-on and main menu to reach it. Temple's records may show that as you opening Banner. Buddy opens nothing else on Banner, where opening a page can be enough to change something.",
+      "It never opens TUpay or any page for paying, for adding or dropping classes, or for filling in a form. It never submits anything on TUportal, even if you tap Approve. Buddy's code stops all of this, so nothing the AI reads can change it.",
       "You log in yourself through a Takeover, so Buddy never learns your password or your Duo code. After you give this Read Permission, Buddy asks you to log in if it needs you to, and asks again whenever the login expires.",
       "TUportal shares Temple's single sign-on with Canvas and other Temple systems. If you've already logged in to one of them in Buddy's Browser, Buddy may get into TUportal without asking you to log in again, and only after you give this Read Permission.",
       "Buddy reads it at 7 a.m., 1 p.m. and 7 p.m., and when you ask. If your laptop was asleep at one of those times, it reads when the laptop wakes.",
-      "What it reads is saved to your Profile, where you can change or delete it, including your balance. When you ask about your holds, balance or registration, Buddy sends all three to Claude, the AI behind Buddy.",
+      "What it reads is saved to your Profile, where you can change or delete it, including your balance. When you ask about your holds or balance, Buddy sends both to Claude, the AI behind Buddy.",
       "You can revoke this at any time on the You tab. That deletes every fact from TUportal and your TUportal login in Buddy's Browser. Temple's sign-on stays for as long as another Temple Connection you've kept on needs it, and goes with the last of them. Whatever was already shown to Claude stays in your conversation's history and in Activity until those are deleted, and Buddy is told not to use it.",
     ],
     warning:
@@ -361,9 +339,9 @@ export const tuportalAt = (home: string, hosts?: string[]): ConnectionType => ({
     address: null,
   },
 
-  whileOnTellClaude: "Call check_tuportal before you answer anything about their holds, balance or registration status, such as whether they have a hold.",
+  whileOnTellClaude: "Call check_tuportal before you answer anything about their holds or balance, such as whether they have a hold.",
 
-  read: (context) => readTuportal(home, hosts, context),
+  read: (context) => readTuportal(home, hosts, banner, context),
   eventsBetween,
   countEvents,
   describeForClaude: describeTuportal,

@@ -8,20 +8,18 @@ import type { PagePattern, Site } from "./browser-access.ts";
  * - Logged in, tuportal6.temple.edu/group/home is the home page, and the holds, Cost & Aid and Student
  *   addresses in TUPORTAL_PAGES are all real pages.
  * - The balance is in a frame on Cost & Aid: see TUPORTAL_FRAMES.
- * - The holds page has no holds on it. Its frame is the registrar's Dashboard, whose own script sends the
- *   Student on to Banner's bwskoacc.P_ViewHold. Banner is refused whole, so holds aren't read yet.
+ * - The portal has no holds on it. Its registrar's Dashboard sends the Student on to Banner's
+ *   bwskoacc.P_ViewHold, and that's the page the reader opens: see BANNER_PAGES.
+ * - Banner's sign-on has to end on its main menu, or Banner says the session has ended. So a read goes
+ *   through the sign-on first, and only then opens View Holds.
  * - That Dashboard's ajax.jsp is one address for everything it does, including amending a record and
  *   re-enrolling, chosen by a field in the body. It must never go on a read-only list by its address.
- * - The Student tab has no registration status on it.
+ * - The Student tab has no registration status on it, so Buddy doesn't read one.
  *
  * What Temple's public pages say, as of November 2026:
- * - registrar.temple.edu/course-registration links View Holds at
- *   tuportal.temple.edu/web/home-community/student-record-services?holds?pweb.
  * - its.temple.edu's articles link tuportal6.temple.edu/group/home/student-record-services?contactus?pweb.
  * - bursar.temple.edu and sfs.temple.edu say to log in at tuportal6.temple.edu, and that the live snapshot of
  *   the account is on the Cost & Aid tab, which is also the way into TUpay.
- * - registrar.temple.edu's pages put registration on the Student tab, in its Registration channel, and
- *   add/drop on Student Tools, in its SSB9 Registration channel.
  *
  * What's a guess:
  * - BANNER_HOSTS, which come from memory rather than from anything of Temple's that could be read.
@@ -36,17 +34,32 @@ const TUPORTAL_HOSTS = [TUPORTAL_HOST, "tuportal.temple.edu"];
 const SIGN_ON_HOST = "fim.temple.edu";
 const DUO_HOST = "duosecurity.com";
 
-/** Self-Service Banner. Nothing on it is opened: see TUPORTAL_BLOCKED_PAGES. */
-const BANNER_HOSTS = ["prd-wlssb.temple.edu", "prd-xereg.temple.edu"];
+/** Self-Service Banner, where opening a page can be enough to change something. Almost nothing on it is opened: see BANNER_PAGES. */
+const BANNER_HOST = "prd-wlssb.temple.edu";
+const BANNER_REGISTRATION_HOST = "prd-xereg.temple.edu";
+const BANNER_HOSTS = [BANNER_HOST, BANNER_REGISTRATION_HOST];
+export const BANNER_HOME = `https://${BANNER_HOST}/`;
+
+/**
+ * The only pages of Banner's Buddy opens. The Student chose this on 2026-11-02, for View Holds and the two
+ * steps it takes to get there, and any other page of Banner's is a decision for a person, one page at a time.
+ * The main menu is only a list of links, and nothing is read from it.
+ */
+export const BANNER_PAGES = {
+  signOn: "/ssomanager/c/SSB",
+  menu: "/prod8/twbkwbis.P_GenMenu",
+  holds: "/prod8/bwskoacc.P_ViewHold",
+};
+/** The one thing the menu page may be asked for: its own name for the main menu. Decoded and in lower case, as the guard tests it. */
+const BANNER_MAIN_MENU_QUERY = "?name=bmenu.p_mainmnu";
 /** Where the Student pays. Nothing on them is opened either. */
 const PAYMENT_HOSTS = ["tupay.temple.edu", "secure.touchnet.com", "secure.touchnet.net"];
 
 /** The reader opens these and no others, with what each one is for. */
 export const TUPORTAL_PAGES = {
   home: "/group/home",
-  holds: "/group/home/student-record-services?holds?pweb",
+  holds: BANNER_PAGES.holds,
   balance: "/group/home/costs-and-aid",
-  registration: "/group/home/student",
 };
 
 export type TuportalPage = keyof typeof TUPORTAL_PAGES;
@@ -74,9 +87,12 @@ const WAY_TO_SIGN_ON = /^\/c\/portal\/(?:login|saml(?:\/|$))/;
  * Whether this address is the page that was asked for, wherever the portal keeps it for someone logged in.
  * A page that ends up anywhere else isn't that page, however much it looks like it.
  */
-export function isTuportalPage(page: TuportalPage, address: string): boolean {
+export function isTuportalPage(page: TuportalPage, address: string, bannerHost = BANNER_HOST): boolean {
   const url = URL.parse(address);
-  return url !== null && pathsOf(TUPORTAL_PAGES[page]).includes(url.pathname);
+  if (!url) return false;
+  // Banner's View Holds, on any other host, isn't Banner's View Holds.
+  if (page === "holds") return url.hostname === bannerHost && url.pathname === BANNER_PAGES.holds;
+  return pathsOf(TUPORTAL_PAGES[page]).includes(url.pathname);
 }
 
 /**
@@ -84,9 +100,10 @@ export function isTuportalPage(page: TuportalPage, address: string): boolean {
  * exactly one of these isn't one of these. The part after the ? isn't tested, which is why it's the
  * blocked pages that deal with an action sent as a link.
  */
-export function tuportalReadablePages(hosts: string[] = TUPORTAL_HOSTS): PagePattern[] {
-  const paths = Object.values(TUPORTAL_PAGES).flatMap(pathsOf);
+export function tuportalReadablePages(hosts: string[] = TUPORTAL_HOSTS, bannerHost = BANNER_HOST): PagePattern[] {
+  const paths = [TUPORTAL_PAGES.home, TUPORTAL_PAGES.balance].flatMap(pathsOf);
   return [
+    ...Object.values(BANNER_PAGES).map((path) => ({ host: bannerHost, path: new RegExp(`^${path.replaceAll(".", "\\.")}$`) })),
     ...hosts.flatMap((host) => [
       // Where a login check starts.
       { host, path: /^\/$/ },
@@ -122,13 +139,18 @@ const everyPageOf = (hosts: string[]): PagePattern[] => hosts.map((host) => ({ h
  * for pages, frames, redirects and everything a page loads. Each names its hosts, because a pattern with
  * none would apply to Temple's sign-on and to Duo too, and neither is TUportal's to limit.
  *
- * Banner is refused whole, because its pages can act on a GET: a registration page can file a change just
- * by being opened, and its addresses don't say which do. If it turns out that the holds or the balance are
- * only on Banner, that's a decision for a person, one exact page at a time, and these are the rules to change.
+ * Banner is refused but for BANNER_PAGES, because its pages can act on a GET: a registration page can file a
+ * change just by being opened, and its addresses don't say which do. Adding to them is a decision for a
+ * person, one exact page at a time. Its registration app, on a host of its own, is refused whole.
  */
-export function tuportalBlockedPages(hosts: string[] = TUPORTAL_HOSTS): PagePattern[] {
+export function tuportalBlockedPages(hosts: string[] = TUPORTAL_HOSTS, bannerHost = BANNER_HOST): PagePattern[] {
+  const allowedOnBanner = Object.values(BANNER_PAGES).map((path) => path.toLowerCase().replaceAll(".", "\\.")).join("|");
   return [
-    ...everyPageOf(BANNER_HOSTS),
+    { host: bannerHost, path: new RegExp(`^(?!(?:${allowedOnBanner})$)`) },
+    // Each of these is opened as it is, with nothing added that could ask it for something else.
+    { host: bannerHost, path: /^\/prod8\/twbkwbis\.p_genmenu$/, query: new RegExp(`^(?!${BANNER_MAIN_MENU_QUERY.replaceAll("?", "\\?").replaceAll(".", "\\.")}$)`) },
+    { host: bannerHost, path: /^\/prod8\/bwskoacc\.p_viewhold$/, query: /./ },
+    ...everyPageOf([BANNER_REGISTRATION_HOST]),
     ...everyPageOf(PAYMENT_HOSTS),
     ...hosts.flatMap((host) => [
       { host, path: NEVER_ANYWHERE },
@@ -141,9 +163,12 @@ export function tuportalBlockedPages(hosts: string[] = TUPORTAL_HOSTS): PagePatt
 }
 
 /** TUportal sends the browser to one of these when it isn't logged in: anywhere off the portal, or the portal's own way to the sign-on. */
-export function isTuportalLoginPage(address: string, hosts: string[] = TUPORTAL_HOSTS): boolean {
+export function isTuportalLoginPage(address: string, hosts: string[] = TUPORTAL_HOSTS, bannerHost = BANNER_HOST): boolean {
   const url = URL.parse(address);
-  return !url || !hosts.includes(url.hostname) || WAY_TO_SIGN_ON.test(url.pathname);
+  if (!url) return true;
+  // Where Banner's sign-on ends, and the page it leads to. Stuck on the sign-on itself isn't logged in.
+  if (url.hostname === bannerHost && (url.pathname === BANNER_PAGES.menu || url.pathname === BANNER_PAGES.holds)) return false;
+  return !hosts.includes(url.hostname) || WAY_TO_SIGN_ON.test(url.pathname);
 }
 
 export const TUPORTAL_SITE: Site = {

@@ -37,12 +37,6 @@ export interface BalanceOnPage {
   credit: boolean;
 }
 
-export interface RegistrationOnPage {
-  /** As the page words it. */
-  status: string;
-  term: string | null;
-}
-
 type Node = Html.ChildNode | Html.Document;
 
 export function attribute(element: Html.Element, name: string): string | undefined {
@@ -86,9 +80,15 @@ const SAYS_THERE_IS_A_HOLD = /\bhold type\b|\bprocesses affected\b|\byou have (?
  */
 const NAMES_A_HOLD = /^(?=.{1,100}$)[^.?!]*(?:\bhold\b|\bholds?\b[^.?!]*\d|\d[^.?!]*\bholds?\b)[^.?!]*$/i;
 
+/** The page's own part, on a page of Banner's. Around it are layout tables of menu links, and those aren't data. */
+function bodyOf(html: string): Node {
+  const page = parse(html);
+  return elementsNamed(page, "div").find((div) => attribute(div, "class")?.split(/\s+/).includes("pagebodydiv")) ?? page;
+}
+
 /** A table with a row of more than one filled cell, on a page that's meant to say there's nothing to list. */
 function hasDataRows(html: string): boolean {
-  return elementsNamed(parse(html), "tr").some((row) => elementsNamed(row, "td").filter((cell) => wordsIn(cell) !== "").length > 1);
+  return elementsNamed(bodyOf(html), "tr").some((row) => elementsNamed(row, "td").filter((cell) => wordsIn(cell) !== "").length > 1);
 }
 
 /** Who placed a hold isn't read: a column with no match here is left alone. */
@@ -181,33 +181,6 @@ export function readBalancePage({ text }: PageToRead): BalanceOnPage | null {
   });
   const different = new Set(balances.map(({ cents, credit }) => `${cents} ${credit}`));
   return different.size === 1 ? balances[0]! : null;
-}
-
-const STATUS_LABEL = String.raw`(?:registration|enrollment|enrolment)\s+status`;
-const STATUS_AND_VALUE = new RegExp(`^${STATUS_LABEL}\\s*[:\\t]\\s*(.+)$`, "i");
-const STATUS_ALONE = new RegExp(`^${STATUS_LABEL}\\s*:?$`, "i");
-const SAYS_REGISTERED = /^you are (?:currently )?(?:not )?(?:currently )?registered(?: for [^.]{1,60})?\.?$/i;
-const TERM_AND_VALUE = /^term\s*[:\t]\s*(.{3,30})$/i;
-const TERM_ALONE = /^term\s*:?$/i;
-const LONGEST_STATUS = 80;
-/** What follows a label when the value hasn't loaded, or is really the next thing on the page. */
-const NOT_A_STATUS = /^(?:-+|n\/?a|none|unknown|loading.*|select.*)$|register for|add\/drop|click|plan your/i;
-
-const isStatus = (words: string | undefined): words is string =>
-  words !== undefined && words.length <= LONGEST_STATUS && /\p{L}/u.test(words) && !NOT_A_STATUS.test(words);
-
-export function readRegistrationPage({ text }: PageToRead): RegistrationOnPage | null {
-  const lines = linesOf(text);
-  const statuses = lines.flatMap((line, index) => {
-    if (SAYS_REGISTERED.test(line)) return [line];
-    const value = STATUS_AND_VALUE.exec(line)?.[1] ?? (STATUS_ALONE.test(line) ? lines[index + 1] : undefined);
-    return isStatus(value) ? [value] : [];
-  });
-  if (new Set(statuses.map((status) => status.toLowerCase())).size !== 1) return null;
-
-  const termAt = lines.findIndex((line) => TERM_AND_VALUE.test(line) || TERM_ALONE.test(line));
-  const term = termAt < 0 ? null : (TERM_AND_VALUE.exec(lines[termAt]!)?.[1] ?? lines[termAt + 1] ?? null);
-  return { status: statuses[0]!, term };
 }
 
 /** Somewhere to log in, wherever it turned up. A page with a Student's records on it never asks for this. */

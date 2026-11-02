@@ -3,7 +3,7 @@ import { createGuardPolicy } from "../src/network-guard.ts";
 import { keepToReadablePages } from "../src/readable-pages.ts";
 import { settings } from "../src/settings.ts";
 import { isTuportalLoginPage, TUPORTAL_ID, TUPORTAL_SITE } from "../src/tuportal-rules.ts";
-import { BALANCE_PAGE, HOLDS_PAGE, HOME_PAGE, REGISTRATION_PAGE, TUPORTAL } from "./support/tuportal-pages.ts";
+import { BALANCE_PAGE, BANNER, BANNER_MENU, BANNER_SIGN_ON, HOLDS_PAGE, HOME_PAGE, TUPORTAL } from "./support/tuportal-pages.ts";
 
 const sites = { [TUPORTAL_ID]: TUPORTAL_SITE };
 /** The real rules, with the Read Permission given, so that only the rules can be what refuses. */
@@ -14,7 +14,7 @@ const opening = (url: string) => ({ url, method: "GET", opensPage: true });
 const loading = (url: string, method = "GET") => ({ url, method, opensPage: false });
 
 describe("the pages the reader opens", () => {
-  it.each([HOME_PAGE, HOLDS_PAGE, BALANCE_PAGE, REGISTRATION_PAGE, `${TUPORTAL}/`])("may open %s", (url) => {
+  it.each([HOME_PAGE, HOLDS_PAGE, BANNER_SIGN_ON, BANNER_MENU, `${BANNER_SIGN_ON}?ticket=ST-made-up`, BALANCE_PAGE, `${TUPORTAL}/`])("may open %s", (url) => {
     expect(reading.check(opening(url))).toEqual({ allowed: true });
   });
 
@@ -30,6 +30,16 @@ describe("the pages the reader opens", () => {
     "https://api-made-up.duosecurity.com/frame/prompt",
   ])("won't open anything else, such as %s", (url) => {
     expect(reading.check(opening(url)).allowed).toBe(false);
+  });
+});
+
+describe("the pages opened on Banner", () => {
+  it.each([HOLDS_PAGE, BANNER_SIGN_ON, BANNER_MENU])("%s only ever reads", (url) => {
+    expect(guards.forReading().check(loading(url, "POST")).allowed).toBe(false);
+  });
+
+  it("are only Banner's, and the same address on the portal isn't one", () => {
+    expect(reading.check(opening(`${TUPORTAL}/prod8/bwskoacc.P_ViewHold`)).allowed).toBe(false);
   });
 });
 
@@ -72,7 +82,15 @@ describe("pages that are refused whichever way they're reached", () => {
       "https://prd-wlssb.temple.edu/prod8/twbkwbis.P_Logout",
     ],
     "an action sent as an ordinary link in the portal": [`${HOME_PAGE}?p_p_id=made_up&p_p_lifecycle=1&_made_up_action=drop`],
-    "anything at all on Banner, which can act on a GET": ["https://prd-wlssb.temple.edu/prod8/bwskoacc.P_ViewAcct", "https://prd-xereg.temple.edu/anything"],
+    "anything else on Banner, which can act on a GET": [
+      `${BANNER}/`,
+      `${HOLDS_PAGE}?anything=at-all`,
+      `${BANNER}/prod8/twbkwbis.P_GenMenu?name=bmenu.P_RegMnu`,
+      `${BANNER}/prod8/twbkwbis.P_GenMenu`,
+      `${BANNER}/prod8/twbkwbis.P_GenMenu?name=bmenu.P_MainMnu&next=bwskfreg.P_AltPin`,
+      `${BANNER}/prod8/bwskoacc.P_ViewHold/../bwskfreg.P_AltPin`,
+      `${BANNER}/prod8/bwskoacc.P_ViewHold2`,
+      `${BANNER}/ssomanager/c/other`,"https://prd-wlssb.temple.edu/prod8/bwskoacc.P_ViewAcct", "https://prd-xereg.temple.edu/anything"],
     // Temple's sign-on would log a frame or a script in to it, Connection or not.
     "a Temple host nobody has listed": ["https://prd-not-listed.temple.edu/prod8/bwskfreg.P_AltPin", "https://navigate-not-listed.temple.edu/"],
   };

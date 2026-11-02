@@ -4,7 +4,7 @@ import { BUDDY_SYSTEM_PROMPT } from "../src/system-prompt.ts";
 import { tuportal } from "../src/tuportal.ts";
 import { BackendHarness, TEST_CHAT_MODEL } from "./support/backend-harness.ts";
 import { toolUseBlock } from "./support/scripted-claude.ts";
-import { BALANCE_PAGE, changeTuportalPage, expireTuportalLogin, HOLDS_PAGE, REGISTRATION_PAGE, saveTuportalPages, savedTuportalHtml } from "./support/tuportal-pages.ts";
+import { BALANCE_PAGE, changeTuportalPage, expireTuportalLogin, HOLDS_PAGE, saveTuportalPages, savedTuportalHtml } from "./support/tuportal-pages.ts";
 
 const TUPORTAL_ID = tuportal.id;
 const UNREADABLE = "<h1>Made-up page Buddy can't read</h1>";
@@ -82,7 +82,7 @@ describe('"Do I have a hold?"', () => {
     });
 
     it("says the same when nothing on TUportal could be read", async () => {
-      for (const page of [HOLDS_PAGE, BALANCE_PAGE, REGISTRATION_PAGE]) changeTuportalPage(backend.browser, page, UNREADABLE);
+      for (const page of [HOLDS_PAGE, BALANCE_PAGE]) changeTuportalPage(backend.browser, page, UNREADABLE);
       await connect();
 
       await askAboutAHold();

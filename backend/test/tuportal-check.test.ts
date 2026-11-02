@@ -9,7 +9,6 @@ import {
   expireTuportalLogin,
   HOLDS_PAGE,
   HOME_PAGE,
-  REGISTRATION_PAGE,
   saveTuportalPages,
   savedTuportalHtml,
   TUPORTAL,
@@ -91,9 +90,8 @@ describe("with pages the reader understands", () => {
 
     expect(exitCode).toBe(0);
     expect(output).toMatch(/Login: works/);
-    expect(output).toMatch(/holds \/group\/home\/student-record-services: understood/);
+    expect(output).toMatch(/holds \/prod8\/bwskoacc\.p_viewhold: understood/);
     expect(output).toMatch(/balance \/group\/home\/costs-and-aid: understood/);
-    expect(output).toMatch(/registration \/group\/home\/student: understood/);
     expect(browser.actions.every((action) => action.type === "read")).toBe(true);
   });
 
@@ -142,7 +140,7 @@ describe("with pages it doesn't understand", () => {
     const { exitCode, output } = await check(browser);
 
     expect(exitCode).toBe(6);
-    expect(output).toMatch(/holds \/group\/home\/student-record-services: NOT understood/);
+    expect(output).toMatch(/holds \/prod8\/bwskoacc\.p_viewhold: NOT understood/);
     expect(output).toMatch(/balance \/group\/home\/costs-and-aid: understood/);
     expect(output).toMatch(/couldn't read your holds/);
     expect(output).toContain("table.made-table");
@@ -271,13 +269,13 @@ describe("with pages it doesn't understand", () => {
 
   it("says when a page the reader asked for is refused, and it isn't blamed on the login", async () => {
     const browser = browserWithAllPages();
-    changeTuportalPage(browser, REGISTRATION_PAGE, "<p>x</p>", { finalUrl: `${TUPORTAL}/group/home/registration` });
+    changeTuportalPage(browser, BALANCE_PAGE, "<p>x</p>", { finalUrl: `${TUPORTAL}/group/home/registration` });
 
     const { exitCode, output } = await check(browser);
 
     expect(exitCode).toBe(6);
     expect(output).toMatch(/Login: works/);
-    expect(output).toMatch(/registration \/group\/home\/student: NOT understood \(PageBlocked\)/);
+    expect(output).toMatch(/balance \/group\/home\/costs-and-aid: NOT understood \(PageBlocked\)/);
   });
 });
 

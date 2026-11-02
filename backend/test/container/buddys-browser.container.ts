@@ -1053,14 +1053,16 @@ describe("the Canvas reader, against made-up pages in the real browser", () => {
 describe("the TUportal reader, against made-up pages in the real browser", () => {
   const HOST = "127.0.0.5";
   const HOME = `http://${HOST}:8000/`;
+  const BANNER_HOST = "127.0.0.6";
+  const BANNER = `http://${BANNER_HOST}:8000/`;
   const TUPORTAL_SITE: Site = {
     name: "TUportal",
     homeUrl: HOME,
-    loginHosts: [HOST],
+    loginHosts: [HOST, BANNER_HOST],
     isConnection: true,
-    readablePages: tuportalReadablePages([HOST]),
-    blockedPages: tuportalBlockedPages([HOST]),
-    isLoginPage: (address) => isTuportalLoginPage(address, [HOST]),
+    readablePages: tuportalReadablePages([HOST], BANNER_HOST),
+    blockedPages: tuportalBlockedPages([HOST], BANNER_HOST),
+    isLoginPage: (address) => isTuportalLoginPage(address, [HOST], BANNER_HOST),
   };
   const sites = { tuportal: TUPORTAL_SITE };
   const portalGuards = createGuardPolicy({ sites, publicHosts: [], hasReadPermission: () => true });
@@ -1069,13 +1071,13 @@ describe("the TUportal reader, against made-up pages in the real browser", () =>
     await browser.show(`${HOME}made-up-tuportal-login`);
     await settle(300);
   };
-  const visited = () => ledger().filter((entry) => entry.host.startsWith(HOST)).map((entry) => `${entry.method} ${entry.path}`);
+  const visited = () => ledger().filter((entry) => entry.host.startsWith(HOST) || entry.host.startsWith(BANNER_HOST)).map((entry) => `${entry.method} ${entry.path}`);
 
   async function runCheck() {
     const lines: string[] = [];
     const exitCode = await runTuportalCheck({
       browser,
-      connection: tuportalAt(HOME, [HOST]),
+      connection: tuportalAt(HOME, [HOST], BANNER),
       sites,
       student: () => ({ hasReadPermission: true, takeoverUnderWay: false, oldLoginRemains: false }),
       print: (line) => lines.push(line),
@@ -1084,7 +1086,7 @@ describe("the TUportal reader, against made-up pages in the real browser", () =>
   }
 
   beforeEach(async () => {
-    await browser.forgetLogin([HOST]);
+    await browser.forgetLogin([HOST, BANNER_HOST]);
     clearLedger();
   });
 
@@ -1094,9 +1096,8 @@ describe("the TUportal reader, against made-up pages in the real browser", () =>
     const { exitCode, output } = await runCheck();
 
     expect(exitCode).toBe(0);
-    expect(output).toMatch(/holds \/group\/home\/student-record-services: understood/);
+    expect(output).toMatch(/holds \/prod8\/bwskoacc\.p_viewhold: understood/);
     expect(output).toMatch(/balance \/group\/home\/costs-and-aid: understood/);
-    expect(output).toMatch(/registration \/group\/home\/student: understood/);
     expect(output).not.toMatch(/marker/i);
     expect(output).not.toContain("876");
   });
@@ -1118,10 +1119,10 @@ describe("the TUportal reader, against made-up pages in the real browser", () =>
     await settle();
 
     const requests = visited();
-    expect(requests).toContain("GET /group/home/student-record-services?holds?pweb");
+    expect(requests).toContain("GET /prod8/bwskoacc.P_ViewHold");
     expect(requests.filter((request) => /registration|add-drop/.test(request))).toEqual([]);
     expect(requests.filter((request) => !request.startsWith("GET "))).toEqual([]);
-    expect(output).toContain(`POST ${HOST} /group/home/student-record-services`);
+    expect(output).toContain(`POST ${BANNER_HOST} /group/home/student-record-services`);
   });
 
   it("takes an empty message hidden by the stylesheet for what it is, not for no holds", async () => {
@@ -1139,7 +1140,7 @@ describe("the TUportal reader, against made-up pages in the real browser", () =>
     expect(exitCode).toBe(4);
     expect(output).toMatch(/Login: not logged in/);
     expect(output).not.toMatch(/marker/i);
-    expect(visited().filter((request) => request.includes("student-record-services"))).toEqual([]);
+    expect(visited().filter((request) => request.includes("P_ViewHold"))).toEqual([]);
   });
 
   it.each(["/group/home/registration", "/group/home/add-drop", "/group/home/tupay", "/group/home/forms/1", "/c/portal/logout", "/group/home/student-tools"])(

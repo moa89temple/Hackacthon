@@ -10,7 +10,7 @@ import {
   expireTuportalLogin,
   HOLDS_PAGE,
   HOME_PAGE,
-  REGISTRATION_PAGE,
+  BANNER_SIGN_ON,
   saveTuportalPages,
   savedTuportalHtml,
   SIGN_ON_PAGE,
@@ -52,7 +52,7 @@ describe("the Read Permission card", () => {
 
     expect(reads).toMatch(/holds/);
     expect(reads).toMatch(/balance/);
-    expect(reads).toMatch(/registration status/);
+    expect(reads).not.toMatch(/registration/i);
   });
 
   it("says what Buddy never opens, that the Student logs in themselves, and that the sign-on is shared", async () => {
@@ -91,7 +91,7 @@ describe("without a Read Permission", () => {
 });
 
 describe("a read", () => {
-  it("turns holds, balance and registration status into Profile facts, each from TUportal", async () => {
+  it("turns holds and balance into Profile facts, each from TUportal", async () => {
     await connect();
 
     const facts = await factsFromTuportal();
@@ -101,19 +101,35 @@ describe("a read", () => {
         "Hold: Made-Up Bursar Hold",
         "Hold: Made-Up Advising Hold",
         "Balance on your student account: $1,234.56",
-        "Registration status: Made-Up Registered Full Time",
       ]),
     );
     for (const one of facts) expect(one.origin).toEqual({ type: "connection", connection: TUPORTAL_ID, name: "TUportal" });
     expect((await fact("Made-Up Bursar Hold")).detail).toContain("Made-up past due balance");
-    expect((await fact("Registration status")).detail).toContain("Spring 2027");
     expect((await statusOf()).lastReadProblem).toBeNull();
   });
 
-  it("opens only the home page and the three pages it reads", async () => {
+  it("opens only the home page, Banner's sign-on and the two pages it reads", async () => {
     await connect();
 
-    expect(pagesOpened().sort()).toEqual([BALANCE_PAGE, HOLDS_PAGE, HOME_PAGE, REGISTRATION_PAGE].sort());
+    expect(pagesOpened().sort()).toEqual([BALANCE_PAGE, BANNER_SIGN_ON, HOLDS_PAGE, HOME_PAGE].sort());
+  });
+
+  it("goes through Banner's sign-on before it opens View Holds, because Banner ends a session it didn't start", async () => {
+    await connect();
+
+    const opened = pagesOpened();
+    expect(opened.indexOf(BANNER_SIGN_ON)).toBeGreaterThanOrEqual(0);
+    expect(opened.indexOf(BANNER_SIGN_ON)).toBeLessThan(opened.indexOf(HOLDS_PAGE));
+  });
+
+  it("doesn't take Banner saying the session has ended to mean there are no holds", async () => {
+    changeTuportalPage(backend.browser, HOLDS_PAGE, "<h1>User Logout</h1><p>Your session is ended. You may want to close your browser to protect your privacy.</p>");
+
+    await connect();
+
+    expect(await fact("no holds")).toBeUndefined();
+    expect((await statusOf()).lastReadProblem).toMatch(/couldn't read your holds/);
+    expect((await statusOf()).needsLogin).toBe(false);
   });
 
   it("says so when the page says there are no holds", async () => {
@@ -209,7 +225,7 @@ describe("a page Buddy can't understand is never read as having nothing on it", 
 
   it("when none of the pages can be understood, it's a failed read that keeps what Buddy had", async () => {
     await connect();
-    for (const page of [HOLDS_PAGE, BALANCE_PAGE, REGISTRATION_PAGE]) changeTuportalPage(backend.browser, page, UNREADABLE);
+    for (const page of [HOLDS_PAGE, BALANCE_PAGE]) changeTuportalPage(backend.browser, page, UNREADABLE);
 
     await readAgain();
 
@@ -324,17 +340,6 @@ describe("what changed between reads", () => {
     expect(event.text).toContain("$20.00");
     expect((await backend.activity())[0].detail).toContain("1 balance change");
     expect((await backend.activity())[0].detail).not.toContain("$20.00");
-  });
-
-  it("spots a changed registration status", async () => {
-    await connect();
-    changeTuportalPage(backend.browser, REGISTRATION_PAGE, "<p>Registration Status: Made-Up Not Registered</p>");
-
-    await readAgain();
-
-    const [event] = await backend.connectionEvents(TUPORTAL_ID);
-    expect(event.kind).toBe("registration_status_changed");
-    expect(event.text).toContain("Made-Up Not Registered");
   });
 
   it("doesn't call a balance changed when it's only the first it could read", async () => {

@@ -244,18 +244,12 @@ TUPORTAL_BALANCE = """
 </script>
 """
 
-TUPORTAL_REGISTRATION = """
-<title>MARKERPAGETITLE</title>
-<dl><dt>Term:</dt><dd>MARKERTERM</dd><dt>Registration Status:</dt><dd>MARKERSTATUS</dd></dl>
-<a href="/group/home/registration">Register for Classes (Add/Drop)</a>
-"""
-
 TUPORTAL_PAGES = {
     "/group/home": '<title>MARKERPAGETITLE</title><h1>Welcome, MARKERSTUDENT</h1><a href="/group/home/costs-and-aid">Cost &amp; Aid</a>',
-    "/group/home/student-record-services?holds?pweb": TUPORTAL_HOLDS,
+    "/prod8/bwskoacc.P_ViewHold": TUPORTAL_HOLDS,
+    "/prod8/twbkwbis.P_GenMenu?name=bmenu.P_MainMnu": "<title>MARKERPAGETITLE</title><h1>Main Menu</h1>",
     "/group/home/costs-and-aid": TUPORTAL_COST_AND_AID,
     "/html/TEMPLE/apps/tup/Channels/index.jsp": TUPORTAL_BALANCE,
-    "/group/home/student": TUPORTAL_REGISTRATION,
 }
 
 # A made-up Outlook on the web. The server sends an empty page, and its script asks for the mail by POST
@@ -424,6 +418,14 @@ class Pages(BaseHTTPRequestHandler):
         elif self.path == "/login/made-up-saml":
             self.send_response(200)
             self.page("MARKERPAGETITLE", "<h1>MARKERSTUDENT, log in</h1>")
+        elif self.path == "/ssomanager/c/SSB":
+            # Banner's sign-on, on Banner's host, ending where the real one does. Banner has no session without it.
+            self.send_response(302)
+            self.send_header("set-cookie", "tuportal_session=signed-in; Path=/; HttpOnly")
+            self.send_header("location", "/prod8/twbkwbis.P_GenMenu?name=bmenu.P_MainMnu")
+            self.send_header("cache-control", "no-store")
+            self.send_header("content-length", "0")
+            self.end_headers()
         elif self.path == "/made-up-tuportal-login":
             self.send_response(200)
             self.send_header("set-cookie", "tuportal_session=signed-in; Path=/; HttpOnly")

@@ -5,9 +5,11 @@ import type { RecordingBrowser, SavedPage } from "./recording-browser.ts";
 
 export const TUPORTAL = "https://tuportal6.temple.edu";
 export const HOME_PAGE = `${TUPORTAL}/group/home`;
-export const HOLDS_PAGE = `${TUPORTAL}/group/home/student-record-services?holds?pweb`;
+export const BANNER = "https://prd-wlssb.temple.edu";
+export const HOLDS_PAGE = `${BANNER}/prod8/bwskoacc.P_ViewHold`;
+export const BANNER_SIGN_ON = `${BANNER}/ssomanager/c/SSB`;
+export const BANNER_MENU = `${BANNER}/prod8/twbkwbis.P_GenMenu?name=bmenu.P_MainMnu`;
 export const BALANCE_PAGE = `${TUPORTAL}/group/home/costs-and-aid`;
-export const REGISTRATION_PAGE = `${TUPORTAL}/group/home/student`;
 /** Where a browser with no working login ends up. */
 export const SIGN_ON_PAGE = "https://fim.temple.edu/idp/profile/SAML2/Redirect/SSO?execution=e1s1";
 
@@ -68,10 +70,10 @@ export function saveTuportalPages(browser: RecordingBrowser, { holds = "holds" }
     [`${TUPORTAL}/`, "<h1>Made-up TUportal front page</h1>"],
     [HOME_PAGE, '<h1>Made-up TUportal home</h1><a href="/group/home/costs-and-aid">Cost &amp; Aid</a>'],
     [HOLDS_PAGE, savedTuportalHtml(holds)],
-    [REGISTRATION_PAGE, savedTuportalHtml("registration")],
   ];
   for (const [url, html] of pages) browser.savedPages.set(url, tuportalPage(html));
   browser.savedPages.set(BALANCE_PAGE, costAndAidPage(savedTuportalHtml("balance")));
+  browser.savedPages.set(BANNER_SIGN_ON, tuportalPage("<h1>Made-up main menu</h1>", { finalUrl: BANNER_MENU }));
 }
 
 /** Changes one saved page, as if something had changed on TUportal since the last read. */
@@ -82,7 +84,7 @@ export function changeTuportalPage(browser: RecordingBrowser, url: string, html:
 /** TUportal sending a browser with no working login to Temple's sign-on page. */
 export function expireTuportalLogin(browser: RecordingBrowser): void {
   for (const [url, page] of browser.savedPages) {
-    if (url.startsWith(TUPORTAL)) {
+    if (url.startsWith(TUPORTAL) || url.startsWith(BANNER)) {
       browser.savedPages.set(url, { ...page, finalUrl: SIGN_ON_PAGE, html: "<form>Made-up sign-on page</form>", text: "Made-up sign-on page" });
     }
   }

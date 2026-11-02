@@ -1,6 +1,6 @@
 import { partToRead } from "../src/tuportal.ts";
 import { describe, expect, it } from "vitest";
-import { hasPasswordField, readBalancePage, readHoldsPage, readRegistrationPage } from "../src/tuportal-pages.ts";
+import { hasPasswordField, readBalancePage, readHoldsPage } from "../src/tuportal-pages.ts";
 import { pageFrom, savedPage } from "./support/tuportal-pages.ts";
 
 describe("the holds page", () => {
@@ -120,31 +120,23 @@ describe("the balance on the Cost & Aid page", () => {
   });
 });
 
-describe("the registration status", () => {
-  it("reads the status and its term", () => {
-    expect(readRegistrationPage(savedPage("registration"))).toEqual({ status: "Made-Up Registered Full Time", term: "Spring 2027" });
-  });
-
-  it("takes a plain sentence that the Student isn't registered", () => {
-    const text = "You are not registered for this term.";
-
-    expect(readRegistrationPage({ html: "", text })).toEqual({ status: text, term: null });
-  });
-
-  it.each([
-    ["no status on the page", "Register for Classes (Add/Drop)"],
-    ["a label with no value", "Registration Status:"],
-    ["a placeholder", "Registration Status: -"],
-    ["two statuses that differ", "Registration Status: Active\nRegistration Status: Inactive"],
-  ])("gives nothing rather than a guess for %s", (_, text) => {
-    expect(readRegistrationPage({ html: "", text })).toBeNull();
-  });
-});
-
 describe("a page that asks for a password", () => {
   it("is somewhere to log in", () => {
     expect(hasPasswordField('<form><input type="password" name="j_password"></form>')).toBe(true);
     expect(hasPasswordField(savedPage("holds").html)).toBe(false);
+  });
+});
+
+describe("a page of Banner's, with layout tables around its own part", () => {
+  const layout = "<table><tr><td>Return to Menu</td><td>Made-up Exit</td></tr></table>";
+  const banner = (body: string) => pageFrom(`${layout}<div class="pagebodydiv">${body}</div>${layout}`);
+
+  it("doesn't take the layout around it for data", () => {
+    expect(readHoldsPage(banner("<p>No holds exist on your record.</p>"))).toEqual([]);
+  });
+
+  it("still gives no answer if the page's own part has rows of something it can't read", () => {
+    expect(readHoldsPage(banner("<p>No holds exist on your record.</p><table><tr><td>Made-up</td><td>Row</td></tr></table>"))).toBeNull();
   });
 });
 
