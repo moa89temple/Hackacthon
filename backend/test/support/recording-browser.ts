@@ -1,5 +1,5 @@
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
-import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type PageReading } from "../../src/buddys-browser.ts";
+import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type PageReading, type PageWait } from "../../src/buddys-browser.ts";
 import type { ArmableGuard, RequestGuard } from "../../src/network-guard.ts";
 
 export type RecordedAction =
@@ -80,7 +80,7 @@ export class RecordingBrowser implements BuddysBrowser {
     await this.holdShows;
   }
 
-  async read(url: string, guard: RequestGuard): Promise<PageReading> {
+  async read(url: string, guard: RequestGuard, _wait?: PageWait): Promise<PageReading> {
     this.#failIfUnreachable();
     this.actions.push({ type: "read", url });
     await this.holdReads;

@@ -111,6 +111,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     clock: options.adapters.clock,
     store,
     profile,
+    contacts: () => guidebook.contacts(),
     logError: (error) => app.log.error(error),
   });
   const actionCards = createActionCards({

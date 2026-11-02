@@ -249,6 +249,46 @@ TUPORTAL_PAGES = {
     "/group/home/student": TUPORTAL_REGISTRATION,
 }
 
+# A made-up Outlook on the web. The server sends an empty page, and its script asks for the mail by POST
+# and builds what the reader wants late, as the real app does. Nothing here came from a real account.
+OUTLOOK_MESSAGES = [
+    {"id": "AAQkMadeUpOne=", "address": "made.up.markerperson@temple.edu", "name": "MARKERNAME", "subject": "MARKERSUBJECT", "body": "MARKERWORDS"},
+    {"id": "AAQkMadeUpTwo=", "address": "markerstranger@elsewhere.test", "name": "MARKERNAME", "subject": "MARKERSUBJECT", "body": "MARKERNEVEROPENED"},
+]
+OUTLOOK_STATE = {"unread": True}
+
+OUTLOOK_INBOX = """
+<title>MARKERPAGETITLE</title><div id="appRoot"></div>
+<script>
+  setTimeout(async () => {
+    const answer = await fetch('/owa/service.svc?action=FindConversation&app=Mail', {method: 'POST', headers: {action: 'FindConversation'}});
+    const {messages, unread} = await answer.json();
+    document.getElementById('appRoot').innerHTML = '<div role="listbox" aria-label="Message list">' + messages.map((one) =>
+      '<div role="option" data-convid="' + one.id + '" aria-label="' + (unread ? 'Unread ' : '') + one.name + '">' +
+      '<span title="' + one.address + '">' + one.name + '</span><span title="' + one.subject + '">' + one.subject + '</span>' +
+      '<span title="Mon 11/2/2026 10:32 AM">10:32 AM</span></div>').join('') + '</div>';
+  }, 1500);
+</script>
+"""
+
+# Once it has shown the message it tries to mark it read, by address and by header, as the real app would.
+OUTLOOK_MESSAGE = """
+<title>MARKERPAGETITLE</title><div id="appRoot"></div>
+<script>
+  setTimeout(async () => {
+    const answer = await fetch('/owa/service.svc?action=GetConversationItems&app=Mail', {method: 'POST', headers: {action: 'GetConversationItems'}});
+    const one = await answer.json();
+    document.getElementById('appRoot').innerHTML = '<div id="ReadingPaneContainerId" aria-label="Reading Pane">' +
+      '<div role="heading">' + one.subject + '</div><div aria-label="From: ' + one.name + '">' + one.name + ' &lt;' + one.address + '&gt;</div>' +
+      '<div data-testid="SentReceivedSavedTime">Mon 11/2/2026 10:32 AM</div>' +
+      '<div aria-label="Message body"><p class="x_MARKERCLASS">' + one.body + '</p></div></div>';
+    fetch('/owa/service.svc?action=UpdateItem&app=Mail', {method: 'POST', headers: {action: 'UpdateItem'}}).catch(() => {});
+    fetch('/owa/service.svc?action=GetItem&app=Mail', {method: 'POST', headers: {action: 'UpdateItem'}}).catch(() => {});
+    fetch('/owa/graphql', {method: 'POST', body: 'mutation'}).catch(() => {});
+  }, 1500);
+</script>
+"""
+
 REDIRECTS = {
     "/redirect-to-quiz": "/quizzes/1",
     # What Canvas does when a teacher has hidden a course's Grades page.
@@ -291,6 +331,7 @@ class Pages(BaseHTTPRequestHandler):
             return
         if self.path == "/ledger/clear":
             LEDGER.clear()
+            OUTLOOK_STATE["unread"] = True
             self.send_response(200)
             self.page_with_type("application/json", b"[]")
             return
@@ -332,6 +373,21 @@ class Pages(BaseHTTPRequestHandler):
         elif self.path in TUPORTAL_PAGES:
             self.send_response(200)
             self.page_with_type("text/html", f"<!doctype html>{TUPORTAL_PAGES[self.path]}".encode())
+        elif self.path == "/made-up-outlook-login":
+            self.send_response(200)
+            self.send_header("set-cookie", "outlook_session=signed-in; Path=/; HttpOnly")
+            self.page("Signed in", "<h1>Signed in</h1>")
+        elif self.path == "/made-up-microsoft-sign-in":
+            self.send_response(200)
+            self.page("MARKERPAGETITLE", '<form><input name="loginfmt" placeholder="MARKERSTUDENT"></form>')
+        elif self.path.startswith("/mail/inbox") and "outlook_session" not in cookies:
+            self.redirect("http://127.0.0.6:8000/made-up-microsoft-sign-in")
+        elif self.path == "/mail/inbox":
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{OUTLOOK_INBOX}".encode())
+        elif self.path.startswith("/mail/inbox/id/"):
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{OUTLOOK_MESSAGE}".encode())
         elif self.path in CANVAS_PAGES and "canvas_session" not in cookies:
             self.redirect("/login/made-up-saml")
         elif self.path in CANVAS_PAGES:
@@ -356,7 +412,16 @@ class Pages(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.receive()
-        if self.path == "/forms/send":
+        if self.path.startswith("/owa/service.svc?action=FindConversation"):
+            self.send_response(200)
+            self.page_with_type("application/json", json.dumps({"messages": OUTLOOK_MESSAGES, "unread": OUTLOOK_STATE["unread"]}).encode())
+        elif self.path.startswith("/owa/service.svc?action=GetConversationItems"):
+            self.send_response(200)
+            self.page_with_type("application/json", json.dumps(OUTLOOK_MESSAGES[0]).encode())
+        elif self.path.startswith("/owa/service.svc") or self.path.startswith("/owa/graphql"):
+            OUTLOOK_STATE["unread"] = False
+            self.answer(200)
+        elif self.path == "/forms/send":
             self.redirect("/forms/sent", 303)
         elif self.path == "/forms/307":
             self.redirect("/forms/landing", 307)

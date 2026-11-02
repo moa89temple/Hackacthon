@@ -12,6 +12,15 @@ export interface PageReading {
   html: string;
 }
 
+/**
+ * For an app that builds its page with script long after loading. The page is read once something
+ * matching this CSS selector is there or the wait runs out, in which case it's read as it stands, so
+ * that the reader can say it doesn't recognize it.
+ */
+export interface PageWait {
+  until: string;
+}
+
 /** Exactly what the Student approved: one form, its fields and the one button to press. */
 export interface FormToSubmit {
   /** The page that has the form. */
@@ -75,8 +84,11 @@ export interface BuddysBrowser {
   readonly liveView: { host: string; port: number };
   /** Puts this page on the screen for the Student, without reading anything from it. */
   show(url: string): Promise<void>;
-  /** Opens the page out of sight and reads it. Throws PageBlocked if the guard refuses the page. */
-  read(url: string, guard: RequestGuard): Promise<PageReading>;
+  /**
+   * Opens the page out of sight and reads it. Throws PageBlocked if the guard refuses the page. A page
+   * its script builds after it has loaded can say what to wait for. See PageWait.
+   */
+  read(url: string, guard: RequestGuard, wait?: PageWait): Promise<PageReading>;
   /** Takes whatever the Student left on the screen off it. */
   clearScreen(guard: RequestGuard): Promise<void>;
   /**

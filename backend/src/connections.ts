@@ -9,6 +9,7 @@ import {
 } from "./activity.ts";
 import { BrowserUnreachable, TakeoverInProgress, type BrowserAccess } from "./browser-access.ts";
 import { describeInPhiladelphia, philadelphiaClock, type Clock } from "./clock.ts";
+import type { ContactAddress } from "./guidebook.ts";
 import type { FactFromConnection, Profile } from "./profile.ts";
 import {
   THE_STUDENT,
@@ -38,6 +39,8 @@ export interface ReadContext {
   /** The only way a Connection reads a page in Buddy's Browser, which is what the guard watches. */
   browser: Pick<BrowserAccess, "read">;
   now: Date;
+  /** Every Contact there is right now, the same ones a Handoff can go to. */
+  contacts(): ContactAddress[];
   /** What this Connection's facts were before this read. */
   previous: FactFromConnection[];
   /** Part of this read didn't work. What it returns is still saved, and the Student is told this. */
@@ -166,11 +169,13 @@ export interface ConnectionsDeps {
   clock: Clock;
   store: Store;
   profile: Profile;
+  /** Where a Connection gets the Contacts. Left out, there are none. */
+  contacts?: () => ContactAddress[];
   logError: (error: unknown) => void;
 }
 
 export function createConnections(deps: ConnectionsDeps): Connections {
-  const { types, web, browserAccess, clock, store, profile, logError } = deps;
+  const { types, web, browserAccess, clock, store, profile, contacts = () => [], logError } = deps;
   const readsUnderWay = new Map<number, Promise<void>>();
   /** One at a time, so that nothing is deleted twice or said twice in Activity. */
   let loginDeletions: Promise<void> = Promise.resolve();
@@ -238,6 +243,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
         web,
         browser: browserAccess,
         now,
+        contacts,
         previous,
         reportMissed: (problem) => {
           missed = problem;

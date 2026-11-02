@@ -8,6 +8,8 @@ export interface RequestToCheck {
   opensPage: boolean;
   body?: string;
   contentType?: string;
+  /** By lower-case name. */
+  headers?: Record<string, string>;
 }
 
 export type GuardDecision = { allowed: true } | { allowed: false; why: string };
@@ -106,7 +108,7 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
     );
   }
 
-  function isKnownReadOnly(url: URL, method: string): boolean {
+  function isKnownReadOnly(url: URL, method: string, headers: Record<string, string> = {}): boolean {
     return siteEntries.some(
       ([, site]) =>
         isOnSite(url.hostname, site) &&
@@ -115,7 +117,9 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
             known.method.toUpperCase() === method &&
             known.host === url.hostname &&
             // The address as it is, undecoded: a list that allows something mustn't match more than it says.
-            known.path.test(url.pathname),
+            known.path.test(url.pathname) &&
+            (known.query === undefined || known.query.test(url.search)) &&
+            Object.entries(known.headers ?? {}).every(([name, value]) => headers[name] === undefined || value.test(headers[name])),
         ),
     );
   }
@@ -155,7 +159,7 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
     if (READING_METHODS.has(method)) return allow;
     // Before the read-only list, so that an approved step always counts as having been sent.
     if (takeApprovedRequest(request)) return allow;
-    if (isKnownReadOnly(url, method)) return allow;
+    if (isKnownReadOnly(url, method, request.headers)) return allow;
     return refuse(`A ${method} request changes something, and this one has no Action Permission: ${url.host}`);
   }
 

@@ -8,6 +8,10 @@ const PAGE_TIMEOUT_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 10_000;
 /** How long a page's own scripts get to finish loading what it shows, on top of the page itself. */
 const SETTLE_TIMEOUT_MS = 10_000;
+/** How long an app built by script gets to show what the reader is waiting for. */
+const APP_TIMEOUT_MS = 30_000;
+/** Once it has, what's left to come is small, and an app like this may never go quiet. */
+const APP_SETTLE_TIMEOUT_MS = 3_000;
 const BLOCKED_ERROR = "net::ERR_BLOCKED_BY_CLIENT";
 
 export interface ContainerBrowserSettings {
@@ -87,13 +91,20 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
       });
     },
 
-    read(url, guard) {
+    read(url, guard, wait) {
       return whileGuarded(guard, async (context, guarded): Promise<PageReading> => {
         const page = await guardedPage(context, guarded);
         try {
-          await page.goto(url, { timeout: PAGE_TIMEOUT_MS, waitUntil: "load" });
-          // Some pages only fetch their content once they've loaded. A page that never goes quiet is read as it stands.
-          await page.waitForLoadState("networkidle", { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+          if (wait) {
+            // An app may never finish loading in the sense "load" means, and it says itself when it's ready.
+            await page.goto(url, { timeout: PAGE_TIMEOUT_MS, waitUntil: "domcontentloaded" });
+            await page.waitForSelector(wait.until, { state: "attached", timeout: APP_TIMEOUT_MS }).catch(() => {});
+            await page.waitForLoadState("networkidle", { timeout: APP_SETTLE_TIMEOUT_MS }).catch(() => {});
+          } else {
+            await page.goto(url, { timeout: PAGE_TIMEOUT_MS, waitUntil: "load" });
+            // Some pages only fetch their content once they've loaded. A page that never goes quiet is read as it stands.
+            await page.waitForLoadState("networkidle", { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+          }
           return {
             url: page.url(),
             title: await page.title(),

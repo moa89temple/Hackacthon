@@ -8,6 +8,8 @@ import { MILESTONE_OFFICES } from "./milestone-pages.ts";
 import { OFFICES } from "./office-pages.ts";
 import { tuportal } from "./tuportal.ts";
 import { TUPORTAL_ID, TUPORTAL_SITE } from "./tuportal-rules.ts";
+import { tumail } from "./tumail.ts";
+import { INBOX_IS_READY, TUMAIL_APP_HOSTS, TUMAIL_HOME, TUMAIL_ID, TUMAIL_LOGIN_HOSTS, TUMAIL_READ_ONLY_REQUESTS, TUMAIL_READABLE_PAGES } from "./tumail-rules.ts";
 
 const secretsPath = fileURLToPath(new URL("../../.env.local", import.meta.url));
 
@@ -37,7 +39,7 @@ export const settings = {
     liveView: { host: "127.0.0.1", port: 6080 },
   },
   /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
-  connectionTypes: [googleCalendar, canvas, tuportal],
+  connectionTypes: [googleCalendar, canvas, tuportal, tumail],
   /**
    * Public pages Buddy's Browser may open, each as this exact host. A whole domain would be wrong:
    * Temple's single sign-on could log it in to a Connection that has no Read Permission.
@@ -72,6 +74,16 @@ export const settings = {
       blockedPages: CANVAS_BLOCKED_PAGES,
     },
     [TUPORTAL_ID]: TUPORTAL_SITE,
+    [TUMAIL_ID]: {
+      name: "TUmail",
+      homeUrl: TUMAIL_HOME,
+      appHosts: TUMAIL_APP_HOSTS,
+      loginCheckWait: { until: INBOX_IS_READY },
+      loginHosts: TUMAIL_LOGIN_HOSTS,
+      isConnection: true,
+      readablePages: TUMAIL_READABLE_PAGES,
+      readOnlyRequests: TUMAIL_READ_ONLY_REQUESTS,
+    },
   },
 };
 

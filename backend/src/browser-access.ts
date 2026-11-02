@@ -9,9 +9,10 @@ import {
   type FormSubmission,
   type FormToSubmit,
   type PageReading,
+  type PageWait,
 } from "./buddys-browser.ts";
 import type { Clock } from "./clock.ts";
-import type { GuardPolicy, RequestGuard } from "./network-guard.ts";
+import { isOnSite, type GuardPolicy, type RequestGuard } from "./network-guard.ts";
 import { keepToReadablePages } from "./readable-pages.ts";
 import { THE_STUDENT, type Store, type StoredTakeover } from "./store.ts";
 
@@ -34,6 +35,10 @@ export interface KnownRequest {
   host: string;
   /** Tested against the address's path exactly as sent, so write it to match nothing extra. */
   path: RegExp;
+  /** Tested against all that follows the path, question mark included, for an address that serves many things. */
+  query?: RegExp;
+  /** By lower-case name. A request that carries one of these must carry a value that matches. */
+  headers?: Record<string, RegExp>;
 }
 
 export interface Site {
@@ -48,6 +53,10 @@ export interface Site {
    * log it in to a Temple system with no Read Permission. This doesn't make the domain one of the site's.
    */
   signOnDomains?: string[];
+  /** Other hosts a logged-in home page can end up on, for a site that moves between them. */
+  appHosts?: string[];
+  /** What to wait for when reading the home page to check a login, for an app built by script. */
+  loginCheckWait?: PageWait;
   /** What the network guard lets through for this site without an Action Permission. See network-guard.ts. */
   readOnlyRequests?: KnownRequest[];
   /**
@@ -141,7 +150,7 @@ export interface BrowserAccess {
    * Reads a page. Throws TakeoverInProgress while the Student is in control, and PageBlocked unless
    * it's a public page or a Connection with its Read Permission.
    */
-  read(url: string): Promise<PageReading>;
+  read(url: string, wait?: PageWait): Promise<PageReading>;
   /**
    * Reads a site's home page to see whether the login works, and for nothing else. Throws PageBlocked
    * for a site that's a Connection with no Read Permission. For any other site it's the one read that
@@ -217,17 +226,17 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
     return stored && describeTakeover(stored);
   }
 
-  async function readUnderGuard(url: string, guard: RequestGuard): Promise<PageReading> {
+  async function readUnderGuard(url: string, guard: RequestGuard, wait?: PageWait): Promise<PageReading> {
     failIfStudentInControl();
     return oneAtATime(() => {
       // A Takeover may have started while this read was waiting its turn.
       failIfStudentInControl();
       failIfGuardRefuses(guard, url);
-      return browser.read(url, guard);
+      return browser.read(url, guard, wait);
     });
   }
 
-  const read = (url: string) => readUnderGuard(url, keepToReadablePages(guards.forReading(), sites));
+  const read = (url: string, wait?: PageWait) => readUnderGuard(url, keepToReadablePages(guards.forReading(), sites), wait);
 
   function lacksReadPermission(id: string, site: Site): boolean {
     return site.isConnection === true && store.readPermission(THE_STUDENT, id) === null;
@@ -256,7 +265,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
   const readToCheckLogin = async (id: string) => {
     const site = siteWithId(id);
     if (lacksReadPermission(id, site)) throw new PageBlocked(`There's no Read Permission for ${site.name}`);
-    return readUnderGuard(site.homeUrl, keepToReadablePages(guards.forLoginCheck(id), sites));
+    return readUnderGuard(site.homeUrl, keepToReadablePages(guards.forLoginCheck(id), sites), site.loginCheckWait);
   };
 
   /**
@@ -401,7 +410,7 @@ function failIfGuardRefuses(guard: RequestGuard, url: string): void {
 function isOnSiteAndPastLogin(finalUrl: string, site: Site): boolean {
   if (site.isLoginPage) return !site.isLoginPage(finalUrl);
   const final = new URL(finalUrl);
-  return final.hostname === new URL(site.homeUrl).hostname && !final.pathname.startsWith("/login");
+  return [new URL(site.homeUrl).hostname, ...(site.appHosts ?? [])].includes(final.hostname) && !final.pathname.startsWith("/login");
 }
 
 /** Runs each piece of work only after everything before it has finished, whether it worked or not. */
