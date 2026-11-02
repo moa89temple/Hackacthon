@@ -1,3 +1,4 @@
+import { newTurnRecord, noteFactsGiven, replyDecided, replyFailed, type TurnRecord } from "./activity.ts";
 import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./claude.ts";
 import { describeInPhiladelphia, type Clock } from "./clock.ts";
 import { NoReadPermission, type Connections } from "./connections.ts";
@@ -37,6 +38,8 @@ const TURN_INSTRUCTIONS: Record<CrisisOutcome, string> = {
  */
 const QUESTIONS_REMINDER =
   "Any getting-to-know question you've already asked in this conversation is finished, whether or not the Student answered it. Don't ask it again unless they bring it up.";
+
+const COULD_NOT_SAVE_FACT = "Tried to save something to your Profile, but couldn't.";
 
 /** A reply takes one request, or a few if Claude uses its tools first. This stops it looping. */
 const MAX_REQUESTS_PER_TURN = 6;
@@ -103,55 +106,93 @@ export function createConversation(deps: ConversationDeps): Conversation {
   const { claude, clock, store, chatModel, crisisCheck, profile, connections, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
-  /** Ends a turn Claude didn't finish. Saving can be what failed, so that can't stop the note. */
-  function endTurnWithoutClaude(note: string | null, now: Date): ConversationEvent {
-    if (!note) return { type: "error", message: FAILURE_NOTE };
+  /** The Student has seen this message, and the turn's tools may have done things before it failed. */
+  function recordFailedTurn(shown: string, turn: TurnRecord): void {
     try {
-      const [saved] = store.appendMessages(THE_STUDENT, [
-        {
-          role: "assistant",
-          content: [{ type: "text", text: note, citations: null }],
-          stopReason: "end_turn",
-          createdAt: now,
-        },
-      ]);
+      store.addActivity(THE_STUDENT, replyFailed(shown, turn, clock.now()));
+    } catch (error) {
+      logError(error);
+    }
+  }
+
+  /** Ends a turn Claude didn't finish. Saving can be what failed, so that can't stop the note. */
+  function endTurnWithoutClaude(note: string | null, now: Date, turn: TurnRecord): ConversationEvent {
+    if (!note) {
+      recordFailedTurn(FAILURE_NOTE, turn);
+      return { type: "error", message: FAILURE_NOTE };
+    }
+    turn.tools.push("The AI's reply didn't come through, so Buddy wrote this note itself.");
+    try {
+      const [saved] = store.appendMessages(
+        THE_STUDENT,
+        [
+          {
+            role: "assistant",
+            content: [{ type: "text", text: note, citations: null }],
+            stopReason: "end_turn",
+            createdAt: now,
+          },
+        ],
+        replyDecided(note, turn, clock.now()),
+      );
       return { type: "done", reply: toChatMessage(saved!) };
     } catch (error) {
       logError(error);
+      recordFailedTurn(note, turn);
       return { type: "error", message: note };
     }
   }
 
-  async function checkCalendar(call: ToolCall) {
+  async function checkCalendar(call: ToolCall, turn: TurnRecord) {
     try {
+      let looked = "Looked at what Buddy has from your Google Calendar.";
       if ((call.input as { read_again?: unknown } | null)?.read_again === true) {
         // A read that fails shows in the description, which falls back on the last reading.
-        await connections.read(GOOGLE_CALENDAR_ID);
+        const { lastReadProblem } = await connections.read(GOOGLE_CALENDAR_ID, "conversation");
+        looked = lastReadProblem
+          ? "Tried to read your Google Calendar again but couldn't, so looked at the last reading."
+          : "Read your Google Calendar again and looked at it.";
       }
-      return toolAnswer(call, connections.describeForClaude(GOOGLE_CALENDAR_ID));
+      const description = connections.describeForClaude(GOOGLE_CALENDAR_ID);
+      turn.tools.push(looked);
+      noteFactsGiven(turn, factsFromCalendar(profile));
+      return toolAnswer(call, description);
     } catch (error) {
       if (error instanceof NoReadPermission) {
+        turn.tools.push("Tried to look at your Google Calendar, but it isn't connected.");
         return toolFailure(
           call,
           `The Student hasn't given Google Calendar a Read Permission, so you can't see it. Use ${SUGGEST_CONNECTION_TOOL.name} if it would help.`,
         );
       }
       logError(error);
+      turn.tools.push("Tried to look at your Google Calendar, but something went wrong.");
       return toolFailure(call, "The calendar couldn't be checked. Tell the Student, and don't guess at their schedule.");
     }
   }
 
   /** The card appears only for a Connection Buddy has that's still off. */
-  function suggestConnection(call: ToolCall, suggestedThisTurn: Set<string>, afterMessageId: number, now: Date) {
+  function suggestConnection(
+    call: ToolCall,
+    suggestedThisTurn: Set<string>,
+    afterMessageId: number,
+    now: Date,
+    turn: TurnRecord,
+  ) {
     const id = (call.input as { connection?: unknown } | null)?.connection;
     const connection = connections.list().find((candidate) => candidate.id === id);
-    if (!connection) return { answer: toolFailure(call, "There's no such Connection.") };
+    if (!connection) {
+      turn.tools.push("Tried to show a Read Permission card for a Connection Buddy doesn't have.");
+      return { answer: toolFailure(call, "There's no such Connection.") };
+    }
     if (connection.on) {
+      turn.tools.push(`Didn't show the Read Permission card for ${connection.name}, because it's already connected.`);
       return { answer: toolFailure(call, `${connection.name} is already connected, so there's nothing to suggest.`) };
     }
     const onScreen = toolAnswer(call, "The card is on the Student's screen. Only their tap on it gives the Read Permission. Now reply to them.");
     if (suggestedThisTurn.has(connection.id)) return { answer: onScreen };
     suggestedThisTurn.add(connection.id);
+    turn.tools.push(`Showed you the Read Permission card for ${connection.name}.`);
     try {
       store.addReadPermissionCard(THE_STUDENT, { connection: connection.id, afterMessageId, createdAt: now });
     } catch (error) {
@@ -160,20 +201,28 @@ export function createConversation(deps: ConversationDeps): Conversation {
     return { answer: onScreen, card: connection.id };
   }
 
-  async function answerCall(call: ToolCall, originMessageId: number) {
-    if (call.name === CHECK_CALENDAR_TOOL.name) return checkCalendar(call);
+  async function answerCall(call: ToolCall, originMessageId: number, turn: TurnRecord) {
+    if (call.name === CHECK_CALENDAR_TOOL.name) return checkCalendar(call, turn);
     if (call.name === CRISIS_CARD_TOOL.name) {
       return toolAnswer(call, "The Crisis card is on the Student's screen. Now reply to them.");
     }
-    if (call.name !== REMEMBER_TOOL.name) return toolFailure(call, `There's no tool called ${call.name}.`);
+    if (call.name !== REMEMBER_TOOL.name) {
+      turn.tools.push("Tried to use a tool Buddy doesn't have.");
+      return toolFailure(call, `There's no tool called ${call.name}.`);
+    }
 
     const fact = (call.input as { fact?: unknown } | null)?.fact;
-    if (typeof fact !== "string" || fact.trim() === "") return toolFailure(call, "fact must be a non-empty string.");
+    if (typeof fact !== "string" || fact.trim() === "") {
+      turn.tools.push(COULD_NOT_SAVE_FACT);
+      return toolFailure(call, "fact must be a non-empty string.");
+    }
     try {
-      profile.remember(fact, { messageId: originMessageId });
+      const saved = profile.remember(fact, { messageId: originMessageId });
+      turn.tools.push(`Saved this to your Profile: ${JSON.stringify(saved.text)}`);
       return toolAnswer(call, "Saved to the Profile. Carry on with your reply.");
     } catch (error) {
       logError(error);
+      turn.tools.push(COULD_NOT_SAVE_FACT);
       return toolFailure(call, "This couldn't be saved. Carry on with your reply, and don't say it was saved.");
     }
   }
@@ -186,6 +235,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       let cardShown = false;
       let checkingIn = false;
       const suggestedThisTurn = new Set<string>();
+      const turn = newTurnRecord();
       const noteIfClaudeCant = () => (cardShown ? CRISIS_NOTE : checkingIn ? CHECK_IN_NOTE : null);
 
       try {
@@ -203,8 +253,9 @@ export function createConversation(deps: ConversationDeps): Conversation {
           saveFailure = error;
         }
 
-        const showCard = () => {
+        const showCard = (shownBy: string) => {
           cardShown = true;
+          turn.tools.push(shownBy);
           try {
             if (studentMessageId !== undefined) {
               store.addCrisisCard(THE_STUDENT, { afterMessageId: studentMessageId, createdAt: now });
@@ -216,13 +267,16 @@ export function createConversation(deps: ConversationDeps): Conversation {
         };
 
         const outcome = await crisisCheck.check(text);
-        if (outcome === "crisis") yield showCard();
+        if (outcome === "crisis") yield showCard("Buddy's safety check showed you the Crisis card.");
         checkingIn = outcome === "check-in";
+        if (checkingIn) turn.tools.push("Buddy's safety check asked it to check in with you.");
         if (saveFailure) throw saveFailure;
 
+        const factsGiven = factsToldToBuddy(profile);
+        noteFactsGiven(turn, factsGiven);
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsToldToBuddy(profile))}\n\n${connections.describeForTurn()}\n\n${QUESTIONS_REMINDER}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${connections.describeForTurn()}\n\n${QUESTIONS_REMINDER}`,
         };
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
@@ -250,21 +304,29 @@ export function createConversation(deps: ConversationDeps): Conversation {
             };
             if (message.stop_reason === "refusal") {
               // Tool rounds are left out too: Claude's history can't end on an unanswered call.
-              const [saved] = store.appendMessages(THE_STUDENT, [{ ...reply, shownText: noteIfClaudeCant() }]);
+              const refused = { ...reply, shownText: noteIfClaudeCant() };
+              turn.tools.push("The AI declined to answer, so Buddy showed a note of its own.");
+              const [saved] = store.appendMessages(
+                THE_STUDENT,
+                [refused],
+                replyDecided(wordsShownFor(refused), turn, clock.now()),
+              );
               yield { type: "done", reply: toChatMessage(saved!) };
               return;
             }
             if (message.stop_reason === "tool_use") {
               const calls = toolCallsIn(message.content);
-              if (!cardShown && calls.some((call) => call.name === CRISIS_CARD_TOOL.name)) yield showCard();
+              if (!cardShown && calls.some((call) => call.name === CRISIS_CARD_TOOL.name)) {
+                yield showCard("Showed you the Crisis card.");
+              }
               const answers = [];
               for (const call of calls) {
                 if (call.name === SUGGEST_CONNECTION_TOOL.name) {
-                  const { answer, card } = suggestConnection(call, suggestedThisTurn, studentMessageId!, now);
+                  const { answer, card } = suggestConnection(call, suggestedThisTurn, studentMessageId!, now, turn);
                   if (card) yield { type: "read_permission_card", connection: card };
                   answers.push(answer);
                 } else {
-                  answers.push(await answerCall(call, studentMessageId!));
+                  answers.push(await answerCall(call, studentMessageId!, turn));
                 }
               }
               toolRounds.push(reply, { role: "user", content: answers, createdAt: now });
@@ -281,11 +343,15 @@ export function createConversation(deps: ConversationDeps): Conversation {
             }
             // Saved together so a system message is always followed by an assistant
             // turn, as the API requires, even when a turn fails partway through.
-            const saved = store.appendMessages(THE_STUDENT, [
-              { role: "system", content: turnContext.content, createdAt: now },
-              ...toolRounds,
-              wordsSoFar ? { ...reply, shownText: words } : reply,
-            ]);
+            const saved = store.appendMessages(
+              THE_STUDENT,
+              [
+                { role: "system", content: turnContext.content, createdAt: now },
+                ...toolRounds,
+                wordsSoFar ? { ...reply, shownText: words } : reply,
+              ],
+              replyDecided(words, turn, clock.now()),
+            );
             yield { type: "done", reply: toChatMessage(saved.at(-1)!) };
             return;
           }
@@ -293,7 +359,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
         throw new Error(`Claude was still calling tools after ${MAX_REQUESTS_PER_TURN} requests`);
       } catch (error) {
         logError(error);
-        yield endTurnWithoutClaude(noteIfClaudeCant(), now);
+        yield endTurnWithoutClaude(noteIfClaudeCant(), now, turn);
       } finally {
         endTurn();
       }
@@ -416,10 +482,21 @@ function factsToldToBuddy(profile: Profile) {
   return profile.list().filter((fact) => fact.origin.type === "conversation");
 }
 
-function toChatMessage(message: StoredMessage): ChatMessage {
-  const text =
+function factsFromCalendar(profile: Profile) {
+  return profile
+    .list()
+    .filter((fact) => fact.origin.type === "connection" && fact.origin.connection === GOOGLE_CALENDAR_ID);
+}
+
+function wordsShownFor(message: NewMessage): string {
+  return (
     message.shownText ??
-    (message.stopReason === "refusal" ? REFUSAL_NOTE : textOf(message.content as ContentBlock[]));
+    (message.stopReason === "refusal" ? REFUSAL_NOTE : textOf(message.content as ContentBlock[]))
+  );
+}
+
+function toChatMessage(message: StoredMessage): ChatMessage {
+  const text = wordsShownFor(message);
   const note = message.role === "user" ? hiddenNote(text) : null;
   return {
     id: message.id,

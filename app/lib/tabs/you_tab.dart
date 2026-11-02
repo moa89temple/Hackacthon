@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../activity/activity_screen.dart';
 import '../backend/buddy_backend.dart';
 import '../connections/connections_controller.dart';
 import '../connections/connections_section.dart';
@@ -49,6 +50,12 @@ class _YouTabState extends State<YouTab> {
     } on Exception {
       // Starting a Takeover returns any Takeover under way, so the button still works.
     }
+  }
+
+  void _openActivity() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => ActivityScreen(backend: widget.backend)),
+    );
   }
 
   Future<void> _openLogin() async {
@@ -125,6 +132,18 @@ class _YouTabState extends State<YouTab> {
               child: Text(note, style: _noteIsProblem ? TextStyle(color: theme.colorScheme.error) : null),
             ),
           ),
+        const SizedBox(height: 32),
+        Semantics(
+          header: true,
+          child: Text('Activity', style: theme.textTheme.titleMedium),
+        ),
+        const SizedBox(height: 8),
+        const Text('Everything Buddy read and did for you, and how it decided each reply.'),
+        const SizedBox(height: 12),
+        OutlinedButton(
+          onPressed: _openActivity,
+          child: const Text('See your Activity'),
+        ),
         const SizedBox(height: 32),
         const Text(
           'Hackathon prototype, not an official Temple University service',

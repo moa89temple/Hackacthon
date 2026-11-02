@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { loginChecked } from "./activity.ts";
 import type { BuddysBrowser, PageReading } from "./buddys-browser.ts";
 import type { Clock } from "./clock.ts";
 import { THE_STUDENT, type Store, type StoredTakeover } from "./store.ts";
@@ -117,13 +118,21 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
   }
 
   async function checkLogin(site: Site): Promise<{ signedIn: boolean; title?: string }> {
+    let page: PageReading;
     try {
-      const page = await read(site.homeUrl);
-      return { signedIn: isOnSiteAndPastLogin(page.url, site), title: page.title };
+      page = await read(site.homeUrl);
     } catch (error) {
       logError(error);
       return { signedIn: false };
     }
+    try {
+      // Only that it happened: what was on the page stays out of the record.
+      store.addActivity(THE_STUDENT, loginChecked(site.name, clock.now()));
+    } catch (error) {
+      // The Student's login is fine whether or not this could be saved.
+      logError(error);
+    }
+    return { signedIn: isOnSiteAndPastLogin(page.url, site), title: page.title };
   }
 
   return {

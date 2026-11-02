@@ -55,6 +55,8 @@ class ProfileSection extends StatelessWidget {
   }
 }
 
+const _keptInActivity = 'Activity keeps a copy with any reply that saved it or had it.';
+
 class _FactRow extends StatelessWidget {
   const _FactRow({required this.fact, required this.profile});
 
@@ -85,8 +87,8 @@ class _FactRow extends StatelessWidget {
         scrollable: true,
         title: const Text('Delete this fact?'),
         content: Text(switch (fact.connectionName) {
-          final String name => '${fact.text}\n\nIt stays deleted when Buddy reads $name again.',
-          null => fact.text,
+          final String name => '${fact.text}\n\nIt stays deleted when Buddy reads $name again. $_keptInActivity',
+          null => '${fact.text}\n\n$_keptInActivity',
         }),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),

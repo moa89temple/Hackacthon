@@ -86,7 +86,7 @@ class _ConnectionRow extends StatelessWidget {
         scrollable: true,
         title: Text('Revoke the Read Permission for ${connection.name}?'),
         content: Text(
-          "Buddy stops reading ${connection.name}. This deletes the address and every fact from it. Whatever it already showed the AI stays in your conversation's history until that's deleted, and Buddy is told not to use it.",
+          "Buddy stops reading ${connection.name}. This deletes the address and every fact from it. Whatever it already showed the AI stays in your conversation's history and in Activity until those are deleted, and Buddy is told not to use it.",
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),

@@ -1,4 +1,5 @@
 import fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import { listActivity } from "./activity.ts";
 import type { Adapters } from "./adapters.ts";
 import {
   BrowserUnreachable,
@@ -148,6 +149,9 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     reply.raw.end();
   });
 
+  // Only this route, on purpose: no entry can be changed or removed one at a time.
+  app.get("/activity", async () => ({ entries: listActivity(store) }));
+
   addProfileRoutes(app, profile);
   addBrowserRoutes(app, browserAccess);
   addConnectionRoutes(app, connections);
@@ -195,7 +199,7 @@ function addConnectionRoutes(app: FastifyInstance, connections: Connections): vo
   }));
 
   app.post<{ Params: { id: string } }>("/connections/:id/read", async (request) => ({
-    connection: await connections.read(request.params.id),
+    connection: await connections.read(request.params.id, "asked"),
   }));
 }
 

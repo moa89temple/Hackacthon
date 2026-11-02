@@ -37,7 +37,7 @@ export const googleCalendar: ConnectionType = {
       "Buddy saves each event's name, place and times to your Profile, where you can change or delete them. When it's working out a time for you, it sends them to Claude, the AI behind Buddy.",
       "Buddy reads it at 7 a.m., 1 p.m. and 7 p.m., and when you ask. If your laptop was asleep at one of those times, it reads when the laptop wakes. It can't change anything on your calendar.",
       "The address is a secret: anyone who has it can read this calendar. Buddy keeps it on your laptop and never shows it to the AI.",
-      "You can revoke this at any time on the You tab. That deletes the address and every fact from this calendar. Whatever was already shown to Claude stays in your conversation's history until that's deleted, and Buddy is told not to use it.",
+      "You can revoke this at any time on the You tab. That deletes the address and every fact from this calendar. Whatever was already shown to Claude stays in your conversation's history and in Activity until those are deleted, and Buddy is told not to use it.",
     ],
     warning: null,
     address: {

@@ -69,6 +69,10 @@ describe("when the database can't save", () => {
     expect(events.map((event) => event.type)).toEqual(["crisis_card", "error"]);
     expect(events[1].message).toMatch(/card/i);
     expect(claude.requests).toEqual([]);
+    // The record of the turn doesn't depend on the message being saved.
+    expect(store.listActivity("the-student")).toMatchObject([
+      { kind: "reply_failed", decision: { reply: events[1].message } },
+    ]);
   });
 
   it("tells Claude when a fact can't be saved, and the Student still gets a reply", async () => {

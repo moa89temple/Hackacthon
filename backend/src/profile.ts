@@ -1,6 +1,12 @@
 import type { Clock } from "./clock.ts";
 import { maskSecrets } from "./masking.ts";
-import { THE_STUDENT, type ConnectionFactToStore, type Store, type StoredProfileFact } from "./store.ts";
+import {
+  THE_STUDENT,
+  type ConnectionFactToStore,
+  type NewActivityEntry,
+  type Store,
+  type StoredProfileFact,
+} from "./store.ts";
 
 /** Where a fact came from. Claude never says this: the backend records it. */
 export type FactOrigin =
@@ -28,8 +34,8 @@ export interface Profile {
   edit(id: number, text: string): ProfileFact | null;
   /** Returns whether there was such a fact. */
   remove(id: number): boolean;
-  /** Saves what a read found, if this Read Permission still stands. */
-  saveReading(permissionId: number, facts: ConnectionFactToStore[], readAt: Date): void;
+  /** Saves what a read found, if this Read Permission still stands, and the read's Activity entry. */
+  saveReading(permissionId: number, facts: ConnectionFactToStore[], readAt: Date, entry: NewActivityEntry): void;
   factsFromConnection(connection: string): { text: string; data: unknown }[];
 }
 
@@ -75,9 +81,9 @@ export function createProfile({ store, clock, connectionName }: ProfileDeps): Pr
       return store.deleteProfileFact(THE_STUDENT, id);
     },
 
-    saveReading(permissionId, facts, readAt) {
+    saveReading(permissionId, facts, readAt, entry) {
       const masked = facts.map((fact) => ({ ...fact, text: maskSecrets(fact.text.trim()) }));
-      store.saveConnectionReading(THE_STUDENT, permissionId, masked, readAt);
+      store.saveConnectionReading(THE_STUDENT, permissionId, masked, readAt, entry);
     },
 
     factsFromConnection(connection) {

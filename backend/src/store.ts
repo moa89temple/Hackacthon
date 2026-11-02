@@ -89,9 +89,54 @@ export interface StoredReadPermissionCard {
   createdAt: Date;
 }
 
+/** A Profile fact as Buddy had it when it wrote a reply. */
+export interface DecisionFact {
+  text: string;
+  detail?: string;
+  /** Where the fact came from, in words for the Student. */
+  from: string;
+}
+
+/** A page Buddy looked at for a reply. */
+export interface DecisionSource {
+  title: string;
+  url: string;
+}
+
+/** How Buddy decided one reply. Kept as it was at the time, so later changes can't rewrite it. */
+export interface ReplyDecision {
+  /** The reply as the Student saw it. */
+  reply: string;
+  /** What Buddy's tools did and what else shaped the turn, in words from Buddy's code. */
+  tools: string[];
+  sources: DecisionSource[];
+  facts: DecisionFact[];
+}
+
+export interface NewActivityEntry {
+  kind: string;
+  /** Written by Buddy's code, for the Student to read. */
+  title: string;
+  detail?: string | null;
+  decision?: ReplyDecision | null;
+  at: Date;
+}
+
+export interface StoredActivityEntry {
+  id: number;
+  kind: string;
+  title: string;
+  detail: string | null;
+  decision: ReplyDecision | null;
+  at: Date;
+}
+
 export interface Store {
-  /** Appends the messages together: either all of them are saved or none are. Messages never change once saved. */
-  appendMessages(studentId: string, messages: NewMessage[]): StoredMessage[];
+  /**
+   * Appends the messages, and any Activity entry for them, together: either all of them are saved
+   * or none are. Messages never change once saved.
+   */
+  appendMessages(studentId: string, messages: NewMessage[], entry?: NewActivityEntry): StoredMessage[];
   listMessages(studentId: string): StoredMessage[];
   addCrisisCard(studentId: string, card: StoredCrisisCard): void;
   listCrisisCards(studentId: string): StoredCrisisCard[];
@@ -119,17 +164,37 @@ export interface Store {
    */
   deleteProfileFact(studentId: string, id: number): boolean;
   readPermission(studentId: string, connection: string): StoredReadPermission | null;
-  giveReadPermission(studentId: string, connection: string, permission: { address: string | null; givenAt: Date }): void;
-  /** Deletes the Read Permission, its address and every fact from this Connection, on disk too. */
-  revokeReadPermission(studentId: string, connection: string): void;
+  /** Saves the Read Permission and its Activity entry together. */
+  giveReadPermission(
+    studentId: string,
+    connection: string,
+    permission: { address: string | null; givenAt: Date },
+    entry: NewActivityEntry,
+  ): void;
+  /**
+   * Deletes the Read Permission, its address and every fact from this Connection, on disk too.
+   * Activity's records of replies that had those facts keep their own copies.
+   */
+  revokeReadPermission(studentId: string, connection: string, entry: NewActivityEntry): void;
   /**
    * Brings this Connection's facts into line with a read, all together, and keeps the Student's
-   * edits and deletions. Does nothing if this Read Permission no longer stands.
+   * edits and deletions. If this Read Permission no longer stands, only the Activity entry is
+   * saved, because the read did happen.
    */
-  saveConnectionReading(studentId: string, permissionId: number, facts: ConnectionFactToStore[], readAt: Date): void;
-  recordReadProblem(permissionId: number, problem: string, triedAt: Date): void;
+  saveConnectionReading(
+    studentId: string,
+    permissionId: number,
+    facts: ConnectionFactToStore[],
+    readAt: Date,
+    entry: NewActivityEntry,
+  ): void;
+  recordReadProblem(studentId: string, permissionId: number, problem: string, triedAt: Date, entry: NewActivityEntry): void;
   addReadPermissionCard(studentId: string, card: StoredReadPermissionCard): void;
   listReadPermissionCards(studentId: string): StoredReadPermissionCard[];
+  /** Activity only ever grows: nothing here changes or removes one entry. */
+  addActivity(studentId: string, entry: NewActivityEntry): void;
+  /** Newest first. */
+  listActivity(studentId: string): StoredActivityEntry[];
   close(): void;
 }
 
@@ -210,6 +275,16 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX read_permission_cards_by_student ON read_permission_cards (student_id, id);`,
+  `CREATE TABLE activity (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     student_id TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     title TEXT NOT NULL,
+     detail TEXT,
+     decision TEXT,
+     at TEXT NOT NULL
+   );
+   CREATE INDEX activity_by_student ON activity (student_id, id);`,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -295,6 +370,22 @@ export function openStore(databasePath: string): Store {
   const selectPermissionCards = db.prepare(
     `SELECT connection, after_message_id, created_at FROM read_permission_cards WHERE student_id = ? ORDER BY id`,
   );
+  const insertActivity = db.prepare(
+    `INSERT INTO activity (student_id, kind, title, detail, decision, at) VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  const selectActivity = db.prepare(
+    `SELECT id, kind, title, detail, decision, at FROM activity WHERE student_id = ? ORDER BY id DESC`,
+  );
+  const addActivity = (studentId: string, entry: NewActivityEntry): void => {
+    insertActivity.run(
+      studentId,
+      entry.kind,
+      entry.title,
+      entry.detail ?? null,
+      entry.decision ? JSON.stringify(entry.decision) : null,
+      entry.at.toISOString(),
+    );
+  };
   const listFacts = (studentId: string): StoredProfileFact[] =>
     selectFacts.all(studentId).map((row: any) => ({
       id: row.id,
@@ -308,9 +399,10 @@ export function openStore(databasePath: string): Store {
     }));
 
   return {
-    appendMessages(studentId, messages) {
-      return inTransaction(db, () =>
-        messages.map((message) => {
+    appendMessages(studentId, messages, entry) {
+      return inTransaction(db, () => {
+        if (entry) addActivity(studentId, entry);
+        return messages.map((message) => {
           const stopReason = message.stopReason ?? null;
           const shownText = message.shownText ?? null;
           const { lastInsertRowid } = insert.run(
@@ -322,8 +414,8 @@ export function openStore(databasePath: string): Store {
             message.createdAt.toISOString(),
           );
           return { ...message, id: Number(lastInsertRowid), stopReason, shownText };
-        }),
-      );
+        });
+      });
     },
 
     listMessages(studentId) {
@@ -426,12 +518,16 @@ export function openStore(databasePath: string): Store {
       };
     },
 
-    giveReadPermission(studentId, connection, permission) {
-      insertPermission.run(studentId, connection, permission.address, permission.givenAt.toISOString());
+    giveReadPermission(studentId, connection, permission, entry) {
+      inTransaction(db, () => {
+        insertPermission.run(studentId, connection, permission.address, permission.givenAt.toISOString());
+        addActivity(studentId, entry);
+      });
     },
 
-    revokeReadPermission(studentId, connection) {
+    revokeReadPermission(studentId, connection, entry) {
       inTransaction(db, () => {
+        addActivity(studentId, entry);
         deleteConnectionFacts.run(studentId, connection);
         deleteDeletedFacts.run(studentId, connection);
         deletePermission.run(studentId, connection);
@@ -440,8 +536,9 @@ export function openStore(databasePath: string): Store {
       db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     },
 
-    saveConnectionReading(studentId, permissionId, facts, readAt) {
+    saveConnectionReading(studentId, permissionId, facts, readAt, entry) {
       inTransaction(db, () => {
+        addActivity(studentId, entry);
         const permission = selectPermissionById.get(studentId, permissionId) as any;
         if (!permission) return;
         const at = readAt.toISOString();
@@ -473,8 +570,11 @@ export function openStore(databasePath: string): Store {
       });
     },
 
-    recordReadProblem(permissionId, problem, triedAt) {
-      recordProblem.run(triedAt.toISOString(), problem, permissionId);
+    recordReadProblem(studentId, permissionId, problem, triedAt, entry) {
+      inTransaction(db, () => {
+        addActivity(studentId, entry);
+        recordProblem.run(triedAt.toISOString(), problem, permissionId);
+      });
     },
 
     addReadPermissionCard(studentId, card) {
@@ -486,6 +586,19 @@ export function openStore(databasePath: string): Store {
         connection: row.connection,
         afterMessageId: row.after_message_id,
         createdAt: new Date(row.created_at),
+      }));
+    },
+
+    addActivity,
+
+    listActivity(studentId) {
+      return selectActivity.all(studentId).map((row: any) => ({
+        id: row.id,
+        kind: row.kind,
+        title: row.title,
+        detail: row.detail,
+        decision: row.decision ? JSON.parse(row.decision) : null,
+        at: new Date(row.at),
       }));
     },
 

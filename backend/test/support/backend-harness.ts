@@ -179,6 +179,12 @@ export class BackendHarness {
     return ((await response.json()) as { connections: any[] }).connections;
   }
 
+  /** Newest first. */
+  async activity(): Promise<any[]> {
+    const response = await fetch(`${this.url}/activity`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { entries: any[] }).entries;
+  }
+
   /** The Student tapping to give the Read Permission on the card. */
   giveReadPermission(connection: string, address: unknown): Promise<any> {
     return fetch(`${this.url}/connections/${connection}/read-permission`, {

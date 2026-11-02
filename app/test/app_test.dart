@@ -32,6 +32,11 @@ void main() {
 
       await tester.tap(find.text('You'));
       await tester.pump();
+      await tester.dragUntilVisible(
+        find.text('Hackathon prototype, not an official Temple University service'),
+        find.byType(ListView).last,
+        const Offset(0, -200),
+      );
 
       expect(
         find.text('Hackathon prototype, not an official Temple University service'),

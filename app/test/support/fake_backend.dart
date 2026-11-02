@@ -52,6 +52,9 @@ class FakeBackend implements BuddyBackend {
     return updated;
   }
 
+  List<ActivityEntry> activity = [];
+  Object? activityError;
+
   Takeover? takeoverUnderWay;
   Takeover? takeoverToStart;
   Object? startTakeoverError;
@@ -133,6 +136,12 @@ class FakeBackend implements BuddyBackend {
     reads.add(id);
     if (holdRead) await _readGate.future;
     return _changed(id, connectionAfterRead);
+  }
+
+  @override
+  Future<List<ActivityEntry>> loadActivity() async {
+    if (activityError case final error?) throw error;
+    return activity;
   }
 
   @override

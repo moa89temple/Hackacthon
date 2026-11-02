@@ -158,6 +158,76 @@ class Connection {
   final ReadPermissionCardContent card;
 }
 
+/// A page Buddy looked at for a reply.
+class DecisionSource {
+  const DecisionSource({required this.title, required this.url});
+
+  factory DecisionSource.fromJson(Map<String, dynamic> json) =>
+      DecisionSource(title: json['title'] as String, url: json['url'] as String);
+
+  final String title;
+  final String url;
+}
+
+/// A Profile fact as Buddy had it when it wrote a reply.
+class DecisionFact {
+  const DecisionFact({required this.text, this.detail, required this.from});
+
+  factory DecisionFact.fromJson(Map<String, dynamic> json) => DecisionFact(
+        text: json['text'] as String,
+        detail: json['detail'] as String?,
+        from: json['from'] as String,
+      );
+
+  final String text;
+  final String? detail;
+
+  /// Where the fact came from, in the backend's words.
+  final String from;
+}
+
+/// How Buddy decided one reply, as it was at the time.
+class ReplyDecision {
+  const ReplyDecision({required this.reply, required this.tools, required this.sources, required this.facts});
+
+  factory ReplyDecision.fromJson(Map<String, dynamic> json) => ReplyDecision(
+        reply: json['reply'] as String,
+        tools: [for (final tool in json['tools'] as List<dynamic>) tool as String],
+        sources: [
+          for (final source in json['sources'] as List<dynamic>) DecisionSource.fromJson(source as Map<String, dynamic>),
+        ],
+        facts: [for (final fact in json['facts'] as List<dynamic>) DecisionFact.fromJson(fact as Map<String, dynamic>)],
+      );
+
+  final String reply;
+  final List<String> tools;
+  final List<DecisionSource> sources;
+  final List<DecisionFact> facts;
+}
+
+/// One thing in the Student's record of what Buddy read and did. All of it is in the backend's own
+/// words, so that an entry of a kind added later shows up without a new version of the app.
+class ActivityEntry {
+  const ActivityEntry({required this.title, this.detail, required this.at, this.decision});
+
+  factory ActivityEntry.fromJson(Map<String, dynamic> json) => ActivityEntry(
+        title: json['title'] as String,
+        detail: json['detail'] as String?,
+        at: DateTime.parse(json['at'] as String),
+        decision: switch (json['decision']) {
+          final Map<String, dynamic> decision => ReplyDecision.fromJson(decision),
+          _ => null,
+        },
+      );
+
+  final String title;
+  final String? detail;
+  final DateTime at;
+
+  /// How Buddy decided, on an entry for a reply.
+  final ReplyDecision? decision;
+}
+
 sealed class ReplyEvent {
   const ReplyEvent();
 }
@@ -279,6 +349,9 @@ abstract interface class BuddyBackend {
   /// Reads now. A read that fails shows in what comes back.
   Future<Connection> readConnection(String id);
 
+  /// Newest first. There's nothing here to change or remove an entry, because nothing can.
+  Future<List<ActivityEntry>> loadActivity();
+
   /// The Takeover under way, if there is one.
   Future<Takeover?> currentTakeover();
 
@@ -341,6 +414,7 @@ class HttpBuddyBackend implements BuddyBackend {
         _takeoverUrl = baseUrl.resolve('/takeover'),
         _factsUrl = baseUrl.resolve('/profile/facts'),
         _connectionsUrl = baseUrl.resolve('/connections'),
+        _activityUrl = baseUrl.resolve('/activity'),
         _keyHeader = {'authorization': 'Bearer $deviceKey'},
         _client = client ?? http.Client();
 
@@ -349,6 +423,7 @@ class HttpBuddyBackend implements BuddyBackend {
   final Uri _takeoverUrl;
   final Uri _factsUrl;
   final Uri _connectionsUrl;
+  final Uri _activityUrl;
   final Map<String, String> _keyHeader;
   final void Function() _onKeyRefused;
   final http.Client _client;
@@ -446,6 +521,16 @@ class HttpBuddyBackend implements BuddyBackend {
     final response = await _client.post(_connectionUrl(id, 'read'), headers: _keyHeader);
     _check(response.statusCode, 'Reading a Connection');
     return _parseConnection(response);
+  }
+
+  @override
+  Future<List<ActivityEntry>> loadActivity() async {
+    final response = await _client.get(_activityUrl, headers: _keyHeader);
+    _check(response.statusCode, 'Loading Activity');
+    return [
+      for (final entry in _decode(response)['entries'] as List<dynamic>)
+        ActivityEntry.fromJson(entry as Map<String, dynamic>),
+    ];
   }
 
   @override

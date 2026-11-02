@@ -1,3 +1,10 @@
+import {
+  connectionRead,
+  connectionReadFailed,
+  readPermissionGiven,
+  readPermissionRevoked,
+  type ReadReason,
+} from "./activity.ts";
 import { describeInPhiladelphia, philadelphiaClock, type Clock } from "./clock.ts";
 import type { Profile } from "./profile.ts";
 import { THE_STUDENT, type ConnectionFactToStore, type Store, type StoredReadPermission } from "./store.ts";
@@ -86,7 +93,7 @@ export interface Connections {
   /** Deletes the Read Permission, its address and every Profile fact from this Connection. */
   revoke(id: string): ConnectionStatus;
   /** Reads now. Throws NoReadPermission without one. A read that fails shows in the status. */
-  read(id: string): Promise<ConnectionStatus>;
+  read(id: string, reason: ReadReason): Promise<ConnectionStatus>;
   /** Reads each Connection that has come due, going by the times below. */
   readDue(): Promise<void>;
   /** Calls readDue from now on. The timer stops when the backend closes. */
@@ -134,36 +141,42 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     };
   }
 
-  async function runRead(type: ConnectionType, permission: StoredReadPermission): Promise<void> {
+  async function runRead(type: ConnectionType, permission: StoredReadPermission, reason: ReadReason): Promise<void> {
     const now = clock.now();
     try {
       const facts = await type.read({ address: permission.address, web, now });
       // Saves only if this Read Permission still stands, so a revoke made meanwhile stays revoked.
-      profile.saveReading(permission.id, facts, now);
+      profile.saveReading(permission.id, facts, now, connectionRead(type.name, reason, clock.now()));
     } catch (error) {
       // Only words from Buddy's own code reach the log, so that the address can't get there in an error.
       const problem = problemFor(type, error);
       logError(new Error(`Reading ${type.name} failed: ${problem}`));
-      store.recordReadProblem(permission.id, problem, now);
+      store.recordReadProblem(
+        THE_STUDENT,
+        permission.id,
+        problem,
+        now,
+        connectionReadFailed(type.name, reason, problem, clock.now()),
+      );
     }
   }
 
   /** Two reads of one Read Permission at once share the first one's trip to the web. */
-  async function readThroughGate(type: ConnectionType): Promise<void> {
+  async function readThroughGate(type: ConnectionType, reason: ReadReason): Promise<void> {
     const permission = store.readPermission(THE_STUDENT, type.id);
     if (!permission) throw new NoReadPermission(type.name);
 
     let read = readsUnderWay.get(permission.id);
     if (!read) {
-      read = runRead(type, permission).finally(() => readsUnderWay.delete(permission.id));
+      read = runRead(type, permission, reason).finally(() => readsUnderWay.delete(permission.id));
       readsUnderWay.set(permission.id, read);
     }
     await read;
   }
 
-  async function read(id: string): Promise<ConnectionStatus> {
+  async function read(id: string, reason: ReadReason): Promise<ConnectionStatus> {
     const type = typeWithId(id);
-    await readThroughGate(type);
+    await readThroughGate(type, reason);
     return statusOf(type);
   }
 
@@ -175,7 +188,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
           const permission = store.readPermission(THE_STUDENT, type.id);
           return permission && (!permission.lastTriedAt || readRound(permission.lastTriedAt) !== currentRound);
         })
-        .map((type) => readThroughGate(type).catch(logError)),
+        .map((type) => readThroughGate(type, "schedule").catch(logError)),
     );
   }
 
@@ -186,13 +199,17 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       const type = typeWithId(id);
       if (store.readPermission(THE_STUDENT, id)) throw new ReadPermissionAlreadyGiven(type.name);
       const address = type.card.address ? type.checkAddress!(pastedAddress) : null;
-      store.giveReadPermission(THE_STUDENT, id, { address, givenAt: clock.now() });
-      return read(id);
+      const givenAt = clock.now();
+      store.giveReadPermission(THE_STUDENT, id, { address, givenAt }, readPermissionGiven(type.name, givenAt));
+      return read(id, "given");
     },
 
     revoke(id) {
       const type = typeWithId(id);
-      store.revokeReadPermission(THE_STUDENT, id);
+      if (store.readPermission(THE_STUDENT, id)) {
+        const entry = readPermissionRevoked(type.name, type.card.address !== null, clock.now());
+        store.revokeReadPermission(THE_STUDENT, id, entry);
+      }
       return statusOf(type);
     },
 
