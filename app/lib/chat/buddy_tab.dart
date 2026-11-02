@@ -57,6 +57,7 @@ class _MessageList extends StatefulWidget {
 class _MessageListState extends State<_MessageList> {
   final _scroll = ScrollController();
   CrisisCardItem? _cardScrolledTo;
+  ChatMessage? _sentScrolledTo;
 
   @override
   void dispose() {
@@ -69,6 +70,19 @@ class _MessageListState extends State<_MessageList> {
     final card = widget.chat.newestCard;
     if (card == null || identical(card, _cardScrolledTo)) return;
     _cardScrolledTo = card;
+    _scrollToBottomAfterFrame();
+  }
+
+  /// Sending takes the Student to their message, once. The list stays anchored to its bottom from
+  /// there, so the reply stays in view as it grows, and if they scroll up to read they stay put.
+  void _scrollToNewMessage() {
+    final sent = widget.chat.newestSent;
+    if (sent == null || identical(sent, _sentScrolledTo)) return;
+    _sentScrolledTo = sent;
+    _scrollToBottomAfterFrame();
+  }
+
+  void _scrollToBottomAfterFrame() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) _scroll.jumpTo(0);
     });
@@ -77,6 +91,7 @@ class _MessageListState extends State<_MessageList> {
   @override
   Widget build(BuildContext context) {
     final chat = widget.chat;
+    _scrollToNewMessage();
     _scrollToNewCard();
     final items = <Widget>[
       if (chat.turnError case final error?) _TurnError(message: error),

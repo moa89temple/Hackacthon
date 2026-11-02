@@ -23,6 +23,9 @@ class ChatController extends ChangeNotifier {
   /// Why the latest turn failed, for the Student to read.
   String? turnError;
 
+  /// The message the Student sent last, which should be brought into view. Null until they send one.
+  ChatMessage? newestSent;
+
   /// The reply that just finished, which screen readers should read out.
   /// Replies loaded from history are never announced.
   ChatMessage? newestReply;
@@ -77,7 +80,9 @@ class ChatController extends ChangeNotifier {
 
   Future<void> send(String text) async {
     final studentMessageAt = items.length;
-    items = [...items, ChatMessage(isFromBuddy: false, text: text)];
+    final sent = ChatMessage(isFromBuddy: false, text: text);
+    items = [...items, sent];
+    newestSent = sent;
     replyInProgress = '';
     turnError = null;
     newestReply = null;
