@@ -12,7 +12,7 @@ import { OFFICES } from "./office-pages.ts";
 import { tuportal } from "./tuportal.ts";
 import { TUPORTAL_ID, TUPORTAL_SITE } from "./tuportal-rules.ts";
 import { tumail } from "./tumail.ts";
-import { INBOX_IS_READY, TUMAIL_APP_HOSTS, TUMAIL_HOME, TUMAIL_ID, TUMAIL_LOGIN_HOSTS, TUMAIL_READ_ONLY_REQUESTS, TUMAIL_READABLE_PAGES } from "./tumail-rules.ts";
+import { INBOX_IS_READY, TUMAIL_APP_HOSTS, TUMAIL_HOME, TUMAIL_ID, TUMAIL_LOGIN_HOSTS, TUMAIL_READ_ONLY_REQUESTS, TUMAIL_READABLE_PAGES, TUMAIL_SENDING } from "./tumail-rules.ts";
 
 const secretsPath = fileURLToPath(new URL("../../.env.local", import.meta.url));
 
@@ -86,6 +86,7 @@ export const settings = {
       isConnection: true,
       readablePages: TUMAIL_READABLE_PAGES,
       readOnlyRequests: TUMAIL_READ_ONLY_REQUESTS,
+      sending: TUMAIL_SENDING,
     },
     [NAVIGATE360_ID]: {
       name: "Navigate360",

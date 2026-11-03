@@ -185,6 +185,13 @@ export class BackendHarness {
     });
   }
 
+  /** Makes every later Activity entry fail to save, as a full disk would. */
+  stopActivityWrites(): void {
+    this.#withDatabase((database) => {
+      database.exec("CREATE TRIGGER no_more_activity BEFORE INSERT ON activity BEGIN SELECT RAISE(ABORT, 'made up'); END");
+    });
+  }
+
   /** Leaves a card as a backend that stopped in the middle of its step would. */
   stopCardPartway(id: number): void {
     const store = openStore(join(this.#directory, "buddy.sqlite"));

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../backend/buddy_backend.dart';
+import '../sending/sending_backend.dart';
 import '../roadmap/roadmap_backend.dart';
 
 /// Lives as long as the app, so that a reply keeps streaming while the Student
@@ -50,6 +53,9 @@ class ChatController extends ChangeNotifier {
   /// The Action cards from the latest turn, which should be read out.
   /// Cards loaded from history are never announced.
   List<ActionCardItem> newestActionCards = const [];
+
+  /// The Action card the Student's tap on Buddy sends it just made, which the list should move to.
+  ActionCardItem? newestTappedCard;
 
   /// The Action cards with a tap on its way, which can't take another until it's answered.
   final Set<int> _cardsBeingDecided = {};
@@ -215,6 +221,37 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  /// The Student's tap on Buddy sends it, which makes a card and sends nothing. Tapping again shows the
+  /// same card. Returns why there's no card, when there isn't. Throws if the backend can't be reached.
+  Future<String?> askForSendCard(Draft draft) async {
+    final ActionCard card;
+    try {
+      card = await _backend.askForSendCard(draft.id);
+    } on SendingRefused catch (refused) {
+      return refused.message;
+    }
+    final item = ActionCardItem(card);
+    items = [...items.where((existing) => !(existing is ActionCardItem && existing.card.id == card.id)), item];
+    newestActionCards = [item];
+    newestTappedCard = item;
+    _changed();
+    return null;
+  }
+
+  /// A change somewhere else can stop a waiting card, so these ask the backend how each stands. If it
+  /// can't be reached the card stays as it was, and an Approve tap would still be refused.
+  Future<void> checkWaitingCards() async {
+    for (final item in items.whereType<ActionCardItem>().toList()) {
+      if (!item.card.canDecide) continue;
+      try {
+        _showCard(await _backend.loadActionCard(item.card.id));
+      } on Exception {
+        continue;
+      }
+    }
+    _changed();
+  }
+
   /// Asks the backend how a card that was running has got on.
   Future<void> checkCard(ActionCard card) async {
     _showCard(await _backend.loadActionCard(card.id));
@@ -237,6 +274,7 @@ class ChatController extends ChangeNotifier {
         if (existing is DraftCardItem && existing.draft.id == id) DraftCardItem(edited.draft) else existing,
     ];
     _changed();
+    unawaited(checkWaitingCards());
     return edited.hiddenNote;
   }
 

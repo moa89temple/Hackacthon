@@ -1,5 +1,7 @@
 import type { CardDescription, StepResult } from "./action-cards.ts";
+import type { EmailStep } from "./buddys-browser.ts";
 import type { ProfileFact } from "./profile.ts";
+import type { SendingMode } from "./sending-store.ts";
 import {
   THE_STUDENT,
   type DecisionFact,
@@ -85,12 +87,12 @@ export function actionCardReplaced(card: CardDescription, at: Date): NewActivity
   };
 }
 
-/** Says nothing about what the card holds now, because that can't be trusted. */
-export function actionCardInvalid(at: Date): NewActivityEntry {
+/** Says nothing about what the card holds now, because that can't be trusted. Any reason is in words from Buddy's code. */
+export function actionCardInvalid(at: Date, why?: string): NewActivityEntry {
   return {
     kind: "action_card_invalid",
     title: "An Action card stopped working",
-    detail: "What Buddy had stored no longer matched what you were shown, so it didn't do this.",
+    detail: why ?? "What Buddy had stored no longer matched what you were shown, so it didn't do this.",
     at,
   };
 }
@@ -172,6 +174,33 @@ export function draftWritten(contactName: string, words: DraftWords, at: Date): 
 
 export function draftEdited(contactName: string, words: DraftWords, at: Date): NewActivityEntry {
   return { kind: "draft_edited", title: `You edited the Draft to ${contactName}`, detail: draftDetail(words), at };
+}
+
+/** A Draft's words are masked when they're written and edited, and the card only ever held those. */
+const emailDetail = ({ to, mode, contactName, subject, body }: EmailStep): string =>
+  `To: ${to}${mode === "practice" ? ` (Practice mode, in place of ${contactName})` : ""}\nSubject: ${subject}\n\n${body}`;
+
+/** Saved before Send is pressed, so that the record says so whatever happens next. */
+export function emailSendStarted(email: EmailStep, at: Date): NewActivityEntry {
+  return { kind: "email_send_started", title: `Buddy is about to press Send on an email to ${email.to}`, detail: emailDetail(email), at };
+}
+
+export function emailSent(email: EmailStep, at: Date): NewActivityEntry {
+  return { kind: "email_sent", title: `Buddy sent an email from your TUmail to ${email.to}`, detail: emailDetail(email), at };
+}
+
+export function emailMaybeSent(email: EmailStep, at: Date): NewActivityEntry {
+  return { kind: "email_maybe_sent", title: `Buddy may have sent an email from your TUmail to ${email.to}`, detail: emailDetail(email), at };
+}
+
+export function sendingModeChanged(mode: SendingMode, at: Date): NewActivityEntry {
+  return mode === "live"
+    ? { kind: "sending_mode_changed", title: "You switched to Live", detail: "What you approve Buddy to send now goes to the Contact it's written to.", at }
+    : { kind: "sending_mode_changed", title: "You switched back to Practice mode", detail: "What you approve Buddy to send now goes to your own TUmail address.", at };
+}
+
+export function ownAddressSaved(address: string, at: Date): NewActivityEntry {
+  return { kind: "own_address_saved", title: "You told Buddy your TUmail address", detail: `Practice emails go to ${address}.`, at };
 }
 
 export function discoveryRead(pagesRead: number, pagesInAll: number, couldNotRead: string[], at: Date): NewActivityEntry {

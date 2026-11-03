@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createRoadmapStore, ROADMAP_MIGRATION, type RoadmapStore } from "./roadmap-store.ts";
+import { createSendingStore, SENDING_MIGRATION, type SendingStore } from "./sending-store.ts";
 
 /** This version has one Student, but all data is keyed by Student so more can come later. */
 export const THE_STUDENT = "the-student";
@@ -282,6 +283,8 @@ export interface StoredMilestoneCard {
 export interface Store {
   /** Goals and the Roadmap, kept in roadmap-store.ts. */
   roadmap: RoadmapStore;
+  /** Practice mode, kept in sending-store.ts. */
+  sending: SendingStore;
   /**
    * Appends the messages, and any Activity entry for them, together: either all of them are saved
    * or none are. Messages never change once saved.
@@ -644,6 +647,7 @@ const MIGRATIONS = [
      PRIMARY KEY (student_id, site)
    );`,
   ROADMAP_MIGRATION,
+  SENDING_MIGRATION,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -1449,6 +1453,7 @@ export function openStore(databasePath: string): Store {
     },
 
     roadmap: createRoadmapStore(db, (work) => inTransaction(db, work), addActivity),
+    sending: createSendingStore(db, (work) => inTransaction(db, work), addActivity),
 
     close() {
       db.close();

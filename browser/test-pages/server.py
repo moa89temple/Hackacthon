@@ -272,6 +272,52 @@ LONG_LIST = """
 
 # A made-up Outlook on the web. The server sends an empty page, and its script asks for the mail by POST
 # and builds what the reader wants late, as the real app does. Nothing here came from a real account.
+# A made-up new email, in the shape Buddy assumes Outlook's has. Nothing sends anywhere but this server.
+# Each ?variant= does one thing a real page might: see the send routine's checks.
+OUTLOOK_COMPOSE = """
+<title>New email</title>
+<div id="to" role="textbox" aria-label="To" contenteditable="true"></div>
+<div id="cc-place"></div>
+<input id="subject" aria-label="Add a subject">
+<div id="body" role="textbox" aria-label="Message body" contenteditable="true"><div>Sent from a signature</div></div>
+<button id="send" aria-label="Send">Send</button>
+<script>
+  const variant = new URLSearchParams(location.search).get("variant") || "";
+  const to = document.getElementById("to");
+  const subject = document.getElementById("subject");
+  const body = document.getElementById("body");
+  const recipient = () => to.querySelector("[title]")?.title ?? to.innerText.replace(/[;\\s]/g, "");
+  const request = (disposition, address, more = "") =>
+    fetch(`/owa/service.svc?action=CreateItem&app=Mail${more}`, {
+      method: "POST",
+      headers: { action: "CreateItem", "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        Body: {
+          Items: [{ Subject: subject.value, Body: { BodyType: "HTML", Value: body.innerHTML }, ToRecipients: [{ EmailAddress: address }], CcRecipients: [], BccRecipients: [] }],
+          MessageDisposition: disposition,
+        },
+      }),
+    }).catch(() => {});
+  if (variant === "chips") {
+    to.addEventListener("keydown", (event) => {
+      if (event.key !== ";") return;
+      event.preventDefault();
+      to.innerHTML = `<span title="${to.innerText.trim()}">A Made-Up Name</span>`;
+    });
+  }
+  if (variant === "has-a-copy") document.getElementById("cc-place").innerHTML = '<div aria-label="Cc">someone-else@temple.edu</div>';
+  if (variant === "rewrites-subject") subject.addEventListener("input", () => { subject.value = "Something else"; });
+  if (variant === "saves-first") setTimeout(() => request("SaveOnly", ""), 0);
+  document.getElementById("send").addEventListener("click", () => {
+    if (variant === "does-nothing") return;
+    if (variant === "swaps-recipient") return request("SendAndSaveCopy", "someone-else@temple.edu");
+    if (variant === "answers-with-an-error") return request("SendAndSaveCopy", recipient(), "&made_up=error");
+    request("SendAndSaveCopy", recipient());
+    if (variant === "sends-twice") { request("SendAndSaveCopy", recipient()); setTimeout(() => request("SendAndSaveCopy", recipient()), 100); }
+  });
+</script>
+"""
+
 OUTLOOK_MESSAGES = [
     {"id": "AAQkMadeUpOne=", "address": "made.up.markerperson@temple.edu", "name": "MARKERNAME", "subject": "MARKERSUBJECT", "body": "MARKERWORDS"},
     {"id": "AAQkMadeUpTwo=", "address": "markerstranger@elsewhere.test", "name": "MARKERNAME", "subject": "MARKERSUBJECT", "body": "MARKERNEVEROPENED"},
@@ -427,6 +473,9 @@ class Pages(BaseHTTPRequestHandler):
             self.page("Dashboard", '<h1>Dashboard</h1><p>Your courses</p><button>Open a course</button>')
         elif self.path == "/home":
             self.redirect("/login-required")
+        elif self.path.split("?")[0] == "/mail/deeplink/compose":
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{OUTLOOK_COMPOSE}".encode())
         elif self.path == "/login-required":
             self.send_response(200)
             self.page("Please log in", "<h1>Please log in</h1>")
@@ -520,6 +569,12 @@ class Pages(BaseHTTPRequestHandler):
         elif self.path.startswith("/owa/service.svc?action=GetConversationItems"):
             self.send_response(200)
             self.page_with_type("application/json", json.dumps(OUTLOOK_MESSAGES[0]).encode())
+        elif self.path.startswith("/owa/service.svc?action=CreateItem"):
+            if "made_up=error" in self.path:
+                self.answer(500)
+            else:
+                self.send_response(200)
+                self.page_with_type("application/json", json.dumps({"Body": {"ResponseMessages": {"Items": [{"ResponseClass": "Success"}]}}}).encode())
         elif self.path.startswith("/owa/service.svc") or self.path.startswith("/owa/graphql"):
             OUTLOOK_STATE["unread"] = False
             self.answer(200)

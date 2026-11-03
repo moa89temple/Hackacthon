@@ -1,4 +1,5 @@
-import type { ArmableGuard, RequestGuard } from "./network-guard.ts";
+import type { ApprovedEmail, ArmableGuard, RequestGuard, SendGuard } from "./network-guard.ts";
+import type { SendingMode } from "./sending-store.ts";
 
 /** What Buddy read from one page. Reading never involves a screenshot. */
 export interface PageReading {
@@ -103,6 +104,40 @@ export type FormSubmission =
   /** The request left, and there's no knowing whether it worked. It must never be tried again. */
   | { outcome: "no_clear_answer" };
 
+/** The kind of Action card that sends an email from the Student's TUmail. */
+export const SEND_EMAIL = "send_email";
+
+/** What a card to send an email holds. Nothing else about the step can vary. */
+export interface EmailStep extends ApprovedEmail {
+  /** Which of Buddy's sites sends it. */
+  site: string;
+  /** The Draft it was made from, to see whether it has been edited since. */
+  draftId: number;
+  /** The mode when the card was made. If that changes, the card stops working. */
+  mode: SendingMode;
+  /** Who the Draft is for. In Practice mode this isn't who it goes to, which is `to`. */
+  contactName: string;
+  contactAddress: string;
+}
+
+export interface EmailToSend extends ApprovedEmail {
+  /** Where to write a new email. */
+  composeUrl: string;
+}
+
+/** How the send routine ended. Only "sent" means it worked. */
+export type EmailSending =
+  /** The one request left, and Outlook answered that it took it. */
+  | { outcome: "sent" }
+  /** Outlook asked for a login, so nothing was filled in and nothing was sent. */
+  | { outcome: "login_needed" }
+  /** What was in the new email isn't what the card shows, so Send wasn't pressed. */
+  | { outcome: "compose_differs"; problems: string[] }
+  /** Send wasn't pressed, or the guard stopped everything it led to. */
+  | { outcome: "not_sent"; why: string }
+  /** The request may have left, and there's no knowing whether it worked. It must never be tried again. */
+  | { outcome: "no_clear_answer" };
+
 /** The guard wouldn't let Buddy's Browser open this page. */
 export class PageBlocked extends Error {
   constructor(why: string) {
@@ -111,15 +146,15 @@ export class PageBlocked extends Error {
 }
 
 /**
- * Buddy's Browser, as the backend controls it from outside. The only way for Buddy to click or type
- * in it is submitForm, for one approved step. Everything else on a page is only the Student's to do,
- * through the live view during a Takeover.
+ * Buddy's Browser, as the backend controls it from outside. The only ways for Buddy to click or type
+ * in it are submitForm and sendEmail, each for one approved step. Everything else on a page is only the
+ * Student's to do, through the live view during a Takeover.
  *
  * Whatever Buddy does here is under a guard that's asked about every request. show is the exception,
  * because it's for the Student: from then on Buddy isn't attached until the Student taps Done.
  *
  * Use this only through BrowserAccess, which keeps Buddy out during a Takeover and is the gate in
- * front of submitForm.
+ * front of submitForm and sendEmail.
  */
 export interface BuddysBrowser {
   /** Where the backend connects for the live view. The app only ever reaches it through the backend. */
@@ -139,6 +174,13 @@ export interface BuddysBrowser {
    * left, so it must never be tried again.
    */
   submitForm(form: FormToSubmit, guard: ArmableGuard): Promise<FormSubmission>;
+  /**
+   * Opens a new email, fills it in, reads it back and presses Send once, having opened the guard for that
+   * one request. `beforePressing` comes right before opening the guard: if it says why not, or throws,
+   * Send isn't pressed. If this throws and the guard had been opened, the request may have left, so it
+   * must never be tried again. See compose-in-page.ts.
+   */
+  sendEmail(email: EmailToSend, guard: SendGuard, beforePressing: () => string | null): Promise<EmailSending>;
   /** Forgets everything the browser holds for these hosts and their subdomains. */
   forgetLogin(hosts: string[]): Promise<void>;
 }

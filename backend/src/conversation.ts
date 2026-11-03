@@ -82,7 +82,7 @@ const NO_CONTACT_IN_THE_GUIDEBOOK =
   "The Guidebook has no Contact for those words. Try wider words, for whoever is most likely to know. A Handoff needs a Contact from the Guidebook, so if none fits, tell the Student you couldn't find one, and don't name one from memory.";
 
 const HANDOFF_MADE =
-  "The Contact's card and the Draft card are on the Student's screen. The Draft hasn't been sent, and only the Student can send it. The card says why you picked this Contact and that you can explain the issue yourself instead. Now reply in a sentence or two, without repeating the Draft.";
+  "The Contact's card and the Draft card are on the Student's screen. The Draft hasn't been sent, and only the Student can send it, or tap Buddy sends it on the card and then Approve. The card says why you picked this Contact, that you can explain the issue yourself instead, and that Buddy can send it for them. Now reply in a sentence or two, without repeating the Draft.";
 
 const COULD_NOT_SAVE_FACT = "Tried to save something to your Profile, but couldn't.";
 
@@ -174,6 +174,8 @@ export interface Conversation {
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
   history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry | MilestoneCardEntry | RoadmapCardEntry)[];
+  /** The newest message on the Student's screen, for a card that a tap makes rather than a turn. */
+  lastMessageShown(): number | null;
 }
 
 export interface ConversationDeps {
@@ -698,6 +700,8 @@ export function createConversation(deps: ConversationDeps): Conversation {
         endTurn();
       }
     },
+
+    lastMessageShown: () => store.listMessages(THE_STUDENT).filter(isShownToStudent).at(-1)?.id ?? null,
 
     history() {
       const cards = store.listCrisisCards(THE_STUDENT);

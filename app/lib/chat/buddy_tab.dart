@@ -62,6 +62,7 @@ class _MessageListState extends State<_MessageList> {
   final _scroll = ScrollController();
   CrisisCardItem? _cardScrolledTo;
   ChatMessage? _sentScrolledTo;
+  ActionCardItem? _tappedCardScrolledTo;
 
   @override
   void dispose() {
@@ -86,6 +87,14 @@ class _MessageListState extends State<_MessageList> {
     _scrollToBottomAfterFrame();
   }
 
+  /// A card the Student has just asked for with a tap is what they're waiting to see.
+  void _scrollToTappedCard() {
+    final card = widget.chat.newestTappedCard;
+    if (card == null || identical(card, _tappedCardScrolledTo)) return;
+    _tappedCardScrolledTo = card;
+    _scrollToBottomAfterFrame();
+  }
+
   void _scrollToBottomAfterFrame() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) _scroll.jumpTo(0);
@@ -97,6 +106,7 @@ class _MessageListState extends State<_MessageList> {
     final chat = widget.chat;
     _scrollToNewMessage();
     _scrollToNewCard();
+    _scrollToTappedCard();
     final items = <Widget>[
       if (chat.turnError case final error?) _TurnError(message: error),
       if (chat.replyInProgress case final text?) _ReplyInProgress(text: text),

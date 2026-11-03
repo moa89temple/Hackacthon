@@ -26,6 +26,7 @@ import { createConversation } from "./conversation.ts";
 import { createCrisisCheck } from "./crisis-check.ts";
 import { createDiscovery, type Discovery } from "./discovery.ts";
 import { createDrafts, type Drafts } from "./drafts.ts";
+import { emailSendRoutine } from "./email-send.ts";
 import { createGuidebook, type Guidebook } from "./guidebook.ts";
 import { createStandardMilestones, type StandardMilestones } from "./standard-milestones.ts";
 import type { Office } from "./office-pages.ts";
@@ -37,6 +38,8 @@ import { createGuardPolicy } from "./network-guard.ts";
 import { createProfile, type Profile } from "./profile.ts";
 import { addRoadmapRoutes } from "./roadmap-routes.ts";
 import { createRoadmap } from "./roadmap.ts";
+import { createSending } from "./sending.ts";
+import { addSendingRoutes } from "./sending-routes.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { BUDDY_OPENING } from "./system-prompt.ts";
 
@@ -114,11 +117,22 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     contacts: () => guidebook.contacts(),
     logError: (error) => app.log.error(error),
   });
+  const sending = createSending({ store, clock: options.adapters.clock, afterChange: () => actionCards.expireDue() });
   const actionCards = createActionCards({
     store,
     clock: options.adapters.clock,
     routines: [
       formSubmitRoutine({ sites: options.sites, guards, browserAccess, logError: (error) => app.log.error(error) }),
+      emailSendRoutine({
+        sites: options.sites,
+        drafts,
+        sending,
+        browserAccess,
+        hasReadPermission: (site) => store.readPermission(THE_STUDENT, site) !== null,
+        store,
+        clock: options.adapters.clock,
+        logError: (error) => app.log.error(error),
+      }),
     ],
     logError: (error) => app.log.error(error),
   });
@@ -223,6 +237,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addGuidebookRoutes(app, guidebook);
   addActionCardRoutes(app, actionCards, isStoredId);
   addDraftRoutes(app, drafts);
+  addSendingRoutes(app, { sending, actionCards, drafts, lastMessageShown: conversation.lastMessageShown, isStoredId });
   addRoadmapRoutes(app, roadmap, isStoredId);
   app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
 

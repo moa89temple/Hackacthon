@@ -1,12 +1,14 @@
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
-import { PageBlocked, type BuddysBrowser, type FormSubmission, type FormToSubmit, type FrameReading, type PageAnswer, type PageReading, type ReadOptions } from "../../src/buddys-browser.ts";
-import type { ArmableGuard, RequestGuard } from "../../src/network-guard.ts";
+import { PageBlocked, type BuddysBrowser, type EmailSending, type EmailToSend, type FormSubmission, type FormToSubmit, type FrameReading, type PageAnswer, type PageReading, type ReadOptions } from "../../src/buddys-browser.ts";
+import type { ArmableGuard, RequestGuard, SendGuard } from "../../src/network-guard.ts";
 import { isAnswerToKeep } from "../../src/page-answers.ts";
+import { madeUpSendRequest } from "./outlook-send.ts";
 
 export type RecordedAction =
   | { type: "show"; url: string }
   | { type: "read"; url: string }
   | { type: "submit"; form: FormToSubmit }
+  | { type: "send-email"; email: EmailToSend }
   | { type: "clear-screen" }
   | { type: "forget-login"; hosts: string[] };
 
@@ -45,6 +47,10 @@ export class RecordingBrowser implements BuddysBrowser {
   holdSubmits: Promise<void> | undefined;
   /** When set, decides what submitting a form does. By default it goes as a real form would. */
   nextSubmit: ((form: FormToSubmit, guard: ArmableGuard) => Promise<FormSubmission>) | undefined;
+  /** When set, sending an email waits on this. */
+  holdSends: Promise<void> | undefined;
+  /** When set, decides what sending an email does. By default it goes as a real send would. Nothing here reaches any mail. */
+  nextSend: ((email: EmailToSend, guard: SendGuard, beforePressing: () => string | null) => Promise<EmailSending>) | undefined;
 
   #liveViewServer: Server | undefined;
   readonly #liveViewSockets = new Set<Socket>();
@@ -129,6 +135,19 @@ export class RecordingBrowser implements BuddysBrowser {
       contentType: "application/x-www-form-urlencoded",
     });
     return decision.allowed ? { outcome: "submitted", status: 200 } : { outcome: "not_sent", why: decision.why };
+  }
+
+  async sendEmail(email: EmailToSend, guard: SendGuard, beforePressing: () => string | null): Promise<EmailSending> {
+    this.#failIfUnreachable();
+    this.actions.push({ type: "send-email", email });
+    await this.holdSends;
+    if (this.nextSend) return this.nextSend(email, guard, beforePressing);
+    const why = beforePressing();
+    if (why) return { outcome: "not_sent", why };
+    guard.open(email);
+    const decision = guard.check(madeUpSendRequest(email));
+    guard.close();
+    return decision.allowed ? { outcome: "sent" } : { outcome: "not_sent", why: decision.why };
   }
 
   async clearScreen(): Promise<void> {

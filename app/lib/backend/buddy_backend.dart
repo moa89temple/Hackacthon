@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../device/device_store.dart';
 import '../device/pairing_details.dart';
 import '../roadmap/roadmap_backend.dart';
+import '../sending/sending_backend.dart';
 
 /// A pairing request gets this long. Without Tailscale on, the phone would otherwise wait minutes.
 const _pairingTimeout = Duration(seconds: 20);
@@ -612,7 +613,7 @@ class FinishedTakeover {
 }
 
 /// What the app needs from the backend.
-abstract interface class BuddyBackend implements RoadmapBackend {
+abstract interface class BuddyBackend implements RoadmapBackend, SendingBackend {
   Future<List<ConversationItem>> loadHistory();
 
   /// Sends the Student's message. The stream carries Buddy's turn.
@@ -711,7 +712,7 @@ class HttpBackendAccess implements BackendAccess {
       );
 }
 
-class HttpBuddyBackend with HttpRoadmapCalls implements BuddyBackend {
+class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls implements BuddyBackend {
   HttpBuddyBackend(
     Uri baseUrl, {
     required String deviceKey,
@@ -963,6 +964,19 @@ class HttpBuddyBackend with HttpRoadmapCalls implements BuddyBackend {
     }
     final response = await http.Response.fromStream(await _client.send(request));
     _check(response.statusCode, 'A Roadmap request');
+    return _decode(response);
+  }
+
+  @override
+  Future<Map<String, dynamic>> sendingCall(String method, String path, [Object? body]) async {
+    final request = http.Request(method, _baseUrl.resolve(path))..headers.addAll(_keyHeader);
+    if (body != null) {
+      request.headers['content-type'] = 'application/json';
+      request.body = jsonEncode(body);
+    }
+    final response = await http.Response.fromStream(await _client.send(request));
+    if (response.statusCode == 400 || response.statusCode == 409) throw SendingRefused(_decode(response)['error'] as String);
+    _check(response.statusCode, 'A request about sending');
     return _decode(response);
   }
 
