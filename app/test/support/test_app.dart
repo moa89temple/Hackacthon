@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:buddy/app.dart';
 import 'package:buddy/backend/buddy_backend.dart';
+import 'package:buddy/briefings/phone_notifications.dart';
 import 'package:buddy/chat/crisis_card.dart';
 import 'package:buddy/chat/outlook.dart';
 import 'package:buddy/device/app_lock.dart';
@@ -13,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fake_backend.dart';
+import 'fake_briefings.dart';
 
 final canvasTakeover = Takeover(
   site: 'canvas',
@@ -121,6 +123,7 @@ BuddyApp testApp({
   QrScannerBuilder scannerBuilder = noScanner,
   PhoneOpener openPhone = pretendToOpenPhone,
   DraftOpener openDraft = pretendToOpenDraft,
+  PhoneNotifications? phoneNotifications,
 }) =>
     BuddyApp(
       deviceStore: store,
@@ -130,6 +133,7 @@ BuddyApp testApp({
       qrScannerBuilder: scannerBuilder,
       openPhone: openPhone,
       openDraft: openDraft,
+      phoneNotifications: phoneNotifications ?? FakePhoneNotifications(),
     );
 
 ChatMessage student(String text) => ChatMessage(isFromBuddy: false, text: text);
@@ -155,6 +159,7 @@ Future<void> openUnlockedApp(
   FakeBackend backend, {
   PhoneOpener openPhone = pretendToOpenPhone,
   DraftOpener openDraft = pretendToOpenDraft,
+  PhoneNotifications? phoneNotifications,
 }) async {
   await tester.pumpWidget(
     testApp(
@@ -163,6 +168,7 @@ Future<void> openUnlockedApp(
       access: FakeBackendAccess(backend),
       openPhone: openPhone,
       openDraft: openDraft,
+      phoneNotifications: phoneNotifications,
     ),
   );
   await settleApp(tester);

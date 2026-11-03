@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../briefings/briefing_backend.dart';
 import '../device/device_store.dart';
 import '../device/pairing_details.dart';
 import '../roadmap/roadmap_backend.dart';
@@ -679,7 +680,7 @@ class FinishedTakeover {
 }
 
 /// What the app needs from the backend.
-abstract interface class BuddyBackend implements RoadmapBackend, SendingBackend {
+abstract interface class BuddyBackend implements RoadmapBackend, SendingBackend, BriefingBackend {
   Future<List<ConversationItem>> loadHistory();
 
   /// Sends the Student's message. The stream carries Buddy's turn.
@@ -787,7 +788,7 @@ class HttpBackendAccess implements BackendAccess {
       );
 }
 
-class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls implements BuddyBackend {
+class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls, HttpBriefingCalls implements BuddyBackend {
   HttpBuddyBackend(
     Uri baseUrl, {
     required String deviceKey,
@@ -1077,6 +1078,19 @@ class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls implements BuddyB
     final response = await http.Response.fromStream(await _client.send(request));
     if (response.statusCode == 400 || response.statusCode == 409) throw SendingRefused(_decode(response)['error'] as String);
     _check(response.statusCode, 'A request about sending');
+    return _decode(response);
+  }
+
+  @override
+  Future<Map<String, dynamic>> briefingCall(String method, String path, [Object? body]) async {
+    final request = http.Request(method, _baseUrl.resolve(path))..headers.addAll(_keyHeader);
+    if (body != null) {
+      request.headers['content-type'] = 'application/json';
+      request.body = jsonEncode(body);
+    }
+    final response = await http.Response.fromStream(await _client.send(request));
+    if (response.statusCode == 204) return const {};
+    _check(response.statusCode, 'A request about Briefings');
     return _decode(response);
   }
 

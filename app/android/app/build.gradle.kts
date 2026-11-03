@@ -47,3 +47,11 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// The Student's own Firebase project. Git ignores this file, so a build without it has to work too:
+// the app then runs and says that phone notifications aren't set up.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.lifecycle("No google-services.json in app/android/app, so this build has no phone notifications.")
+}

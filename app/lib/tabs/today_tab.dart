@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../briefings/briefing_part.dart';
+import '../briefings/briefings_controller.dart';
 import '../chat/crisis_card.dart';
 import '../connections/connections_controller.dart';
 import '../connections/login_request.dart';
@@ -11,10 +13,11 @@ import '../opportunities/opportunity_card.dart';
 
 const _shownAtATime = 10;
 
-/// What the Student saved, then the Standard Milestones coming up, soonest first, each from its Source.
+/// The latest Briefing, what the Student saved, then the Standard Milestones coming up, soonest first, each from its Source.
 class TodayTab extends StatefulWidget {
-  const TodayTab({super.key, required this.milestones, required this.opportunities, required this.connections, required this.openPhone});
+  const TodayTab({super.key, required this.briefings, required this.milestones, required this.opportunities, required this.connections, required this.openPhone});
 
+  final BriefingsController briefings;
   final MilestonesController milestones;
   final OpportunitiesController opportunities;
 
@@ -28,6 +31,28 @@ class TodayTab extends StatefulWidget {
 
 class _TodayTabState extends State<TodayTab> {
   int _shown = _shownAtATime;
+  final _scroll = ScrollController();
+  late int _timesAskedToShow = widget.briefings.timesAskedToShow;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.briefings.addListener(_showBriefingIfAsked);
+  }
+
+  @override
+  void dispose() {
+    widget.briefings.removeListener(_showBriefingIfAsked);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// A tapped notification should find the Briefing on the screen, wherever the Student left the list.
+  void _showBriefingIfAsked() {
+    if (widget.briefings.timesAskedToShow == _timesAskedToShow) return;
+    _timesAskedToShow = widget.briefings.timesAskedToShow;
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
 
   Widget _message(BuildContext context, String words, {Widget? action, bool isProblem = false}) {
     return Padding(
@@ -91,11 +116,14 @@ class _TodayTabState extends State<TodayTab> {
 
   Widget _comingUp(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([widget.milestones, widget.opportunities]),
+      listenable: Listenable.merge([widget.briefings, widget.milestones, widget.opportunities]),
       builder: (context, _) {
         final upcoming = widget.milestones.upcoming;
-        final opportunitiesPart = _opportunitiesPart(context);
-        Widget withOpportunities(Widget below) => ListView(padding: const EdgeInsets.all(12), children: [...opportunitiesPart, below]);
+        final opportunitiesPart = [
+          ...briefingPart(context, briefings: widget.briefings, opportunities: widget.opportunities, openPhone: widget.openPhone),
+          ..._opportunitiesPart(context),
+        ];
+        Widget withOpportunities(Widget below) => ListView(controller: _scroll, padding: const EdgeInsets.all(12), children: [...opportunitiesPart, below]);
         if (widget.milestones.couldNotLoad) {
           return withOpportunities(_message(
             context,
@@ -116,6 +144,7 @@ class _TodayTabState extends State<TodayTab> {
         final more = upcoming.length - shown.length;
         final nextBatch = more < _shownAtATime ? more : _shownAtATime;
         return ListView(
+          controller: _scroll,
           padding: const EdgeInsets.all(12),
           children: [
             ...opportunitiesPart,

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'backend/buddy_backend.dart';
+import 'briefings/briefings_controller.dart';
+import 'briefings/phone_notifications.dart';
+import 'briefings/phone_notifications_controller.dart';
 import 'chat/buddy_tab.dart';
 import 'chat/chat_controller.dart';
 import 'chat/crisis_card.dart';
@@ -36,6 +39,7 @@ class BuddyApp extends StatefulWidget {
     this.qrScannerBuilder = cameraQrScanner,
     this.openPhone = openWithPhone,
     this.openDraft = openDraftInOutlook,
+    this.phoneNotifications = const NoPhoneNotifications(),
   });
 
   final DeviceStore deviceStore;
@@ -45,6 +49,7 @@ class BuddyApp extends StatefulWidget {
   final QrScannerBuilder qrScannerBuilder;
   final PhoneOpener openPhone;
   final DraftOpener openDraft;
+  final PhoneNotifications phoneNotifications;
 
   @override
   State<BuddyApp> createState() => _BuddyAppState();
@@ -70,6 +75,8 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // So that a tap on a notification is noticed from the start, even behind the lock. It asks the backend nothing.
+    widget.phoneNotifications.setUp();
     _readDevice();
   }
 
@@ -175,6 +182,7 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
       liveViewBuilder: widget.liveViewBuilder,
       openPhone: widget.openPhone,
       openDraft: widget.openDraft,
+      phoneNotifications: widget.phoneNotifications,
     );
   }
 
@@ -212,12 +220,13 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
 }
 
 class _Tabs extends StatefulWidget {
-  const _Tabs({required this.backend, required this.liveViewBuilder, required this.openPhone, required this.openDraft});
+  const _Tabs({required this.backend, required this.liveViewBuilder, required this.openPhone, required this.openDraft, required this.phoneNotifications});
 
   final BuddyBackend backend;
   final LiveViewBuilder liveViewBuilder;
   final PhoneOpener openPhone;
   final DraftOpener openDraft;
+  final PhoneNotifications phoneNotifications;
 
   @override
   State<_Tabs> createState() => _TabsState();
@@ -244,9 +253,42 @@ class _TabsState extends State<_Tabs> {
   late final RoadmapController _roadmap = RoadmapController(widget.backend)..load();
   late final OpportunitiesController _opportunities = OpportunitiesController(widget.backend)..load();
   late final SendingController _sending = SendingController(widget.backend, onChanged: () => _chat.checkWaitingCards())..load();
+  late final BriefingsController _briefings = BriefingsController(widget.backend)..load();
+  late final PhoneNotificationsController _phoneNotifications = PhoneNotificationsController(
+    widget.backend,
+    widget.phoneNotifications,
+    onOpened: _openBriefing,
+    onArrived: _briefingArrived,
+  );
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
   int _selected = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _phoneNotifications.start();
+  }
+
+  /// A tapped notification opens Today, with the newest Briefing at the top.
+  void _openBriefing() {
+    if (!mounted) return;
+    _selectTab(_todayTab);
+    _briefings.askToShow();
+  }
+
+  /// The phone shows nothing of its own while Buddy is open.
+  void _briefingArrived() {
+    if (!mounted) return;
+    _briefings.load();
+    if (_selected == _todayTab) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Your Briefing is ready.'),
+        action: SnackBarAction(label: 'See it', onPressed: _openBriefing),
+      ),
+    );
+  }
 
   /// Buddy saves facts and reads Connections during a turn, and the You tab may be open when it finishes.
   void _refreshProfileAfterTurn() {
@@ -262,6 +304,7 @@ class _TabsState extends State<_Tabs> {
     if (index == _youTab) _refreshYouTab();
     if (index == _roadmapTab) _roadmap.load();
     if (index == _todayTab) {
+      _briefings.load();
       _milestones.load();
       _opportunities.load();
       // A read since the last look may have found that a login expired.
@@ -287,6 +330,8 @@ class _TabsState extends State<_Tabs> {
     _connections.load();
     _roadmap.load();
     _sending.load();
+    _briefings.load();
+    _phoneNotifications.check();
   }
 
   /// The Roadmap tab's way into the conversation. If Buddy is still replying, the Student is shown that instead.
@@ -312,6 +357,8 @@ class _TabsState extends State<_Tabs> {
     _roadmap.dispose();
     _opportunities.dispose();
     _sending.dispose();
+    _briefings.dispose();
+    _phoneNotifications.dispose();
     super.dispose();
   }
 
@@ -327,7 +374,7 @@ class _TabsState extends State<_Tabs> {
         index: _selected,
         children: [
           BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, opportunities: _opportunities, openPhone: widget.openPhone, openDraft: widget.openDraft),
-          TodayTab(milestones: _milestones, opportunities: _opportunities, connections: _connections, openPhone: widget.openPhone),
+          TodayTab(briefings: _briefings, milestones: _milestones, opportunities: _opportunities, connections: _connections, openPhone: widget.openPhone),
           RoadmapTab(roadmap: _roadmap, openPhone: widget.openPhone, askBuddy: _askBuddy),
           YouTab(
             backend: widget.backend,
@@ -335,6 +382,8 @@ class _TabsState extends State<_Tabs> {
             connections: _connections,
             roadmap: _roadmap,
             sending: _sending,
+            briefings: _briefings,
+            phoneNotifications: _phoneNotifications,
           ),
         ],
       ),
