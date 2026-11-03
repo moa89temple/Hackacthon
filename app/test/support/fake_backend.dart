@@ -120,6 +120,49 @@ class FakeBackend with FakeRoadmapCalls implements BuddyBackend {
     return upcoming;
   }
 
+  List<Opportunity> opportunities = [];
+  Object? opportunitiesError;
+  Object? saveOpportunityError;
+  Object? reportOpportunityError;
+  final List<(int, bool)> savedTaps = [];
+  final List<int> reportedOpportunities = [];
+  int opportunityLoads = 0;
+
+  @override
+  Future<List<Opportunity>> loadOpportunities() async {
+    opportunityLoads++;
+    if (opportunitiesError case final error?) throw error;
+    return [
+      for (final opportunity in opportunities)
+        if (!reportedOpportunities.contains(opportunity.id))
+          Opportunity(
+            id: opportunity.id,
+            name: opportunity.name,
+            summary: opportunity.summary,
+            when: opportunity.when,
+            cost: opportunity.cost,
+            worthItBecause: opportunity.worthItBecause,
+            outsideTemple: opportunity.outsideTemple,
+            place: opportunity.place,
+            forGoals: opportunity.forGoals,
+            saved: savedTaps.reversed.where((tap) => tap.$1 == opportunity.id).firstOrNull?.$2 ?? opportunity.saved,
+            sources: opportunity.sources,
+          ),
+    ];
+  }
+
+  @override
+  Future<void> setOpportunitySaved(int id, bool saved) async {
+    if (saveOpportunityError case final error?) throw error;
+    savedTaps.add((id, saved));
+  }
+
+  @override
+  Future<void> reportOpportunity(int id) async {
+    if (reportOpportunityError case final error?) throw error;
+    reportedOpportunities.add(id);
+  }
+
   List<ActivityEntry> activity = [];
   Object? activityError;
 

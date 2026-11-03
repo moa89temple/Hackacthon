@@ -15,6 +15,7 @@ import type { ConnectionType } from "../../src/connections.ts";
 import { containerBrowser } from "../../src/container-browser.ts";
 import { createGuardPolicy } from "../../src/network-guard.ts";
 import { navigate360At } from "../../src/navigate360.ts";
+import { readEventPage } from "../../src/now-temple-pages.ts";
 import { runNavigate360Check } from "../../src/navigate360-check.ts";
 import { isNavigate360LoginPage } from "../../src/navigate360-pages.ts";
 import { NAVIGATE360_BLOCKED_PAGES, navigate360Home, navigate360ReadablePages } from "../../src/navigate360-rules.ts";
@@ -425,6 +426,33 @@ describe("the network guard while reading", () => {
     await expect(read(page("/redirect-to-quiz"))).rejects.toThrow(PageBlocked);
 
     expect(ledger().map((entry) => entry.path)).toEqual(["/redirect-to-quiz"]);
+  });
+});
+
+describe("reading one public page", () => {
+  const SCRIPT_BUILT = "http://cdn.elsewhere.test:8000/made-up-event-built-by-script";
+  const readPublic = (url: string) => browser.read(url, guards.forPublicPage(url));
+
+  it("reads what only a script shows, from a host on no list", async () => {
+    const reading = await readPublic(SCRIPT_BUILT);
+
+    expect(readEventPage(reading.html)?.text).toContain("An event only a script shows.");
+  });
+
+  it("stops what it tries to send, and keeps it out of the Connection it tries to reach", async () => {
+    await readPublic(SCRIPT_BUILT);
+    await settle();
+
+    const paths = ledger().map((entry) => entry.path);
+    expect(paths).toContain("/made-up-event-built-by-script");
+    expect(paths).not.toContain("/from-public-page");
+    expect(paths).not.toContain("/connection-from-public-page");
+  });
+
+  it("doesn't let it go on to another host", async () => {
+    await expect(readPublic(page("/public"))).rejects.toThrow(PageBlocked);
+
+    expect(ledger()).toEqual([]);
   });
 });
 

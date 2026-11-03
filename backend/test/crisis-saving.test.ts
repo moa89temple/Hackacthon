@@ -7,6 +7,7 @@ import { createConversation } from "../src/conversation.ts";
 import { createCrisisCheck } from "../src/crisis-check.ts";
 import { createDrafts } from "../src/drafts.ts";
 import { createGuidebook } from "../src/guidebook.ts";
+import { createOpportunities } from "../src/opportunities.ts";
 import type { Connections } from "../src/connections.ts";
 import { createProfile } from "../src/profile.ts";
 import type { Roadmap } from "../src/roadmap.ts";
@@ -49,6 +50,7 @@ function send(text: string, storeInUse: Store): Promise<any[]> {
     drafts: createDrafts({ store: storeInUse, clock, guidebook }),
     milestones: createStandardMilestones({ store: storeInUse, clock }),
     roadmap: { describeForTurn: () => "" } as unknown as Roadmap,
+    opportunities: createOpportunities({ store: storeInUse, clock }),
     logError,
   });
   return Array.fromAsync(conversation.send(text));

@@ -159,6 +159,12 @@ export interface BrowserAccess {
    */
   read(url: string, options?: ReadOptions): Promise<PageReading>;
   /**
+   * Reads one public page that needs a full browser, such as a search result built by script, under the
+   * guard's forPublicPage. Throws TakeoverInProgress while the Student is in control, and PageBlocked for
+   * anything but a public page.
+   */
+  readPublicPage(url: string): Promise<PageReading>;
+  /**
    * Reads a site's home page to see whether the login works, and for nothing else. Throws PageBlocked
    * for a site that's a Connection with no Read Permission. For any other site it's the one read that
    * needs none. It's for the moments right after the Student logs in, so the Student can be told it
@@ -335,6 +341,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
 
   return {
     read,
+    readPublicPage: (url) => readUnderGuard(url, guards.forPublicPage(url)),
     readToCheckLogin,
     submitApprovedForm,
     currentTakeover,

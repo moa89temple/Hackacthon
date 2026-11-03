@@ -108,6 +108,12 @@ PAGES = {
     "/forms/sent": "<title>Sent</title><h1>Your form was sent</h1>",
     "/forms/landing": "<title>Landing</title><h1>Landing</h1>",
     "/public": "<title>Public page</title><h1>A public page</h1>",
+    # An event that's only there once a script has built it, and that tries to reach a Connection and to send something.
+    "/made-up-event-built-by-script": '<title>Built by script</title><body><div id="app">Please wait</div><script>'
+    'document.getElementById("app").innerHTML = \'<article class="page page__calendar-event"><p>An event only a script shows.</p></article>\';'
+    "fetch('/from-public-page', {method: 'POST', body: 'x=1'}).catch(() => {});"
+    "fetch('http://127.0.0.1:8000/connection-from-public-page').catch(() => {});"
+    "</script></body>",
     "/secret": "<title>Secret</title><h1>Somewhere Buddy may not go</h1>",
 }
 

@@ -64,8 +64,8 @@ export interface Guidebook {
 
 const MOST_RESULTS = 6;
 const MOST_CARDS_FOR_NAMES_IN_A_REPLY = 3;
-const FREE = "Free";
-const COST_NOT_STATED = "Its Source doesn't say what this costs.";
+export const FREE = "Free";
+export const COST_NOT_STATED = "Its Source doesn't say what this costs.";
 const NO_AMOUNT = "There's a fee, but its Source doesn't say how much. Ask before you sign up.";
 
 /** Words that would match nearly everything. A question made only of these finds nothing. */

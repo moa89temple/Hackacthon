@@ -34,6 +34,9 @@ import { formSubmitRoutine } from "./form-submit.ts";
 import { createLiveViewProxy } from "./live-view-proxy.ts";
 import { hiddenNote } from "./masking.ts";
 import { createGuardPolicy } from "./network-guard.ts";
+import { createOpportunities, type Opportunities } from "./opportunities.ts";
+import { createOpportunityDiscovery, type OpportunityDiscovery } from "./opportunity-discovery.ts";
+import { addOpportunityRoutes } from "./opportunity-routes.ts";
 import { createProfile, type Profile } from "./profile.ts";
 import { addRoadmapRoutes } from "./roadmap-routes.ts";
 import { createRoadmap } from "./roadmap.ts";
@@ -68,6 +71,8 @@ export interface RunningBackend {
   guidebook: Guidebook;
   milestones: StandardMilestones;
   discovery: Discovery;
+  opportunities: Opportunities;
+  opportunityDiscovery: OpportunityDiscovery;
   close(): Promise<void>;
 }
 
@@ -102,6 +107,16 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     sites: options.sites,
     guards,
     onControlEnded: () => liveView.closeAll(),
+    logError: (error) => app.log.error(error),
+  });
+  const opportunities = createOpportunities({ store, clock: options.adapters.clock });
+  const opportunityDiscovery = createOpportunityDiscovery({
+    claude: options.adapters.claude,
+    web: options.adapters.web,
+    browserAccess,
+    clock: options.adapters.clock,
+    store,
+    model: options.discovery.model,
     logError: (error) => app.log.error(error),
   });
   const connections = createConnections({
@@ -148,6 +163,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     drafts,
     milestones,
     roadmap,
+    opportunities,
     logError: (error) => app.log.error(error),
   });
 
@@ -163,6 +179,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   app.addHook("onClose", async () => {
     connections.stopSchedule();
     discovery.stopSchedule();
+    opportunityDiscovery.stopSchedule();
     store.close();
   });
 
@@ -224,10 +241,11 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addActionCardRoutes(app, actionCards, isStoredId);
   addDraftRoutes(app, drafts);
   addRoadmapRoutes(app, roadmap, isStoredId);
+  addOpportunityRoutes(app, opportunities, isStoredId);
   app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, close: () => app.close() };
+  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, opportunities, opportunityDiscovery, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {

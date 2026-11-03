@@ -20,6 +20,7 @@ const backend = await startBackend({
 backend.actionCards.endInterrupted();
 backend.connections.startSchedule();
 backend.discovery.startSchedule();
+backend.opportunityDiscovery.startSchedule();
 
 if (!backend.devices.anyPaired()) {
   console.log("No phone is paired yet. In another terminal, run: npm run pair");

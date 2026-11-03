@@ -101,7 +101,7 @@ function monthAndDayPattern(day: Date): string {
  * How the words give this date: with their own proof of the year, which can be the weekday or the
  * year itself, or with nothing to say which year, which makes it the next time that date comes around.
  */
-function howWordsGiveDay(words: string, iso: string, today: string): "with-year" | "next-occurrence" | null {
+export function howWordsGiveDay(words: string, iso: string, today: string): "with-year" | "next-occurrence" | null {
   const day = realDay(iso)!;
   const pattern = new RegExp(`(?:\\b(${WEEKDAYS.join("|")}),?\\s+)?${monthAndDayPattern(day)}(?:,?\\s+(\\d{4})\\b)?`, "g");
   const year = iso.slice(0, 4);
