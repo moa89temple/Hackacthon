@@ -116,11 +116,13 @@ export const SEND_EMAIL = "send_email";
 export interface EmailStep extends ApprovedEmail {
   /** Which of Buddy's sites sends it. */
   site: string;
-  /** The Draft it was made from, to see whether it has been edited since. */
-  draftId: number;
+  /** The Draft it was made from, to see whether it has been edited since. Null for an email from the Crisis card, which has no Draft. */
+  draftId: number | null;
+  /** Written on the Crisis card, to someone the Student chose, who needn't be a Contact. */
+  crisis?: true;
   /** The mode when the card was made. If that changes, the card stops working. */
   mode: SendingMode;
-  /** Who the Draft is for. In Practice mode this isn't who it goes to, which is `to`. */
+  /** Who it's for. In Practice mode this isn't who it goes to, which is `to`. */
   contactName: string;
   contactAddress: string;
 }

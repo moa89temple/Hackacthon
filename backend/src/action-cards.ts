@@ -57,6 +57,8 @@ export interface CardDescription {
   title: string;
   /** Exactly what will happen, line by line. */
   shows: CardLine[];
+  /** Only on an email from the Crisis card. It says whether the card should offer to switch to Live. */
+  crisisEmail?: { offersLive: boolean };
 }
 
 /** One card as the app gets it. The app shows the words as they are. */
