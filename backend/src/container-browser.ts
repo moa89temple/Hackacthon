@@ -215,6 +215,11 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
       });
     },
 
+    // No guard, because this makes no request. It only asks each tab where it is, and keeps only the one it's looking for.
+    addressOnScreenStarting(start) {
+      return whileConnected(async (context) => context.pages().map((page) => page.url()).find((address) => address.startsWith(start)) ?? null);
+    },
+
     forgetLogin(hosts) {
       return whileConnected(async (context) => {
         const cookies = await context.cookies();

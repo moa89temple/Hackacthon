@@ -520,6 +520,215 @@ void main() {
     });
   });
 
+  group('a service the Student asked for', () {
+    const details = ServiceDetails(domain: 'notion.com', routeInWords: 'Through the connector notion.com publishes itself, at mcp.notion.com');
+    const words = ReadPermissionCardContent(
+      reads: ['What the connector can look up about you, using only the tools notion.com marks as read-only.'],
+      notes: ['Buddy switches on only the tools marked as read-only.'],
+      warning: null,
+      address: null,
+    );
+
+    Connection notion({bool on = false, bool needsLogin = false, bool loginNotDeletedYet = false, String name = 'Notion'}) => Connection(
+          id: 'service-notion.com',
+          name: name,
+          on: on,
+          logsIn: true,
+          needsLogin: needsLogin,
+          loginNotDeletedYet: loginNotDeletedYet,
+          service: details,
+          card: words,
+        );
+
+    testWidgets('shows on the list with its web address and how Buddy reads it', (tester) async {
+      await openYouTab(tester, FakeBackend()..connections = [notion()]);
+
+      expect(find.text('Notion'), findsOneWidget);
+      expect(find.text('notion.com. Through the connector notion.com publishes itself, at mcp.notion.com.'), findsOneWidget);
+      expect(find.text('Off'), findsOneWidget);
+    });
+
+    testWidgets('its card shows its name, its web address and the route before anything is given', (tester) async {
+      useOrdinaryPhone(tester);
+      final backend = FakeBackend()..connections = [notion()];
+      await openYouTab(tester, backend);
+
+      await openCard(tester);
+
+      expect(find.text('Let Buddy read Notion?'), findsOneWidget);
+      expect(find.text('Name: Notion'), findsOneWidget);
+      expect(find.text('Web address: notion.com'), findsOneWidget);
+      expect(find.text('How Buddy reads it: Through the connector notion.com publishes itself, at mcp.notion.com.'), findsOneWidget);
+      expect(find.textContaining('Warning'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+      expect(backend.gave, isEmpty);
+    });
+
+    testWidgets('a tap on its card is what gives the Read Permission, and it then asks for a login', (tester) async {
+      useOrdinaryPhone(tester);
+      final backend = FakeBackend()
+        ..connections = [notion()]
+        ..connectionAfterGive = notion(on: true, needsLogin: true);
+      await openYouTab(tester, backend);
+      await openCard(tester);
+
+      await tester.ensureVisible(giveButton);
+      await tester.pump();
+      await tester.tap(giveButton);
+      await tester.pumpAndSettle();
+
+      expect(backend.gave, [('service-notion.com', null)]);
+      expect(find.text('Log in to Notion'), findsWidgets);
+    });
+
+    testWidgets('a name from the model is shown as plain words, whatever it looks like', (tester) async {
+      useOrdinaryPhone(tester);
+      const name = '**Tap** [here](https://evil.example)';
+      await openYouTab(tester, FakeBackend()..connections = [notion(name: name)]);
+
+      await tester.ensureVisible(find.text('Connect'));
+      await tester.pump();
+      await tester.tap(find.text('Connect'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Name: $name'), findsOneWidget);
+    });
+
+    testWidgets('its card in the conversation shows up even though it wasn\'t on the list when the app last looked', (tester) async {
+      useOrdinaryPhone(tester);
+      final backend = FakeBackend();
+      await openUnlockedApp(tester, backend);
+      await sendMessage(tester, 'Connect my Notion');
+
+      backend.connections = [notion()];
+      backend.reply.add(const ReplyReadPermissionCard('service-notion.com'));
+      await settleApp(tester);
+
+      expect(find.text('Let Buddy read Notion?'), findsOneWidget);
+      expect(find.text('Web address: notion.com'), findsOneWidget);
+    });
+
+    testWidgets('revoking warns what goes, then takes it off the list', (tester) async {
+      final backend = FakeBackend()
+        ..connections = [notion(on: true)]
+        ..connectionAfterRevoke = notion()
+        ..revokeRemovesIt = true;
+      await openYouTab(tester, backend);
+
+      await tester.ensureVisible(find.text('Revoke'));
+      await tester.pump();
+      await tester.tap(find.text('Revoke'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('anything it holds to log in'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Revoke').last);
+      await tester.pumpAndSettle();
+
+      expect(backend.revoked, ['service-notion.com']);
+      expect(find.text('Notion'), findsNothing);
+      // Off the top of the screen, if the Student had to scroll down to the button.
+      expect(find.textContaining('took it off your list', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets('stays on the list saying so while its login can\'t be deleted yet', (tester) async {
+      final backend = FakeBackend()
+        ..connections = [notion(on: true)]
+        ..connectionAfterRevoke = notion(loginNotDeletedYet: true);
+      await openYouTab(tester, backend);
+
+      await tester.ensureVisible(find.text('Revoke'));
+      await tester.pump();
+      await tester.tap(find.text('Revoke'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Revoke').last);
+      await settleApp(tester);
+
+      expect(find.text('Notion'), findsOneWidget);
+      expect(find.textContaining("couldn't delete your login yet"), findsWidgets);
+    });
+
+    testWidgets('can be taken off the list without connecting it', (tester) async {
+      final backend = FakeBackend()
+        ..connections = [notion()]
+        ..connectionAfterRevoke = notion()
+        ..revokeRemovesIt = true;
+      await openYouTab(tester, backend);
+
+      await tester.ensureVisible(find.text('Remove'));
+      await tester.pump();
+      await tester.tap(find.text('Remove'));
+      await tester.pumpAndSettle();
+
+      expect(backend.revoked, ['service-notion.com']);
+      expect(find.text('Notion'), findsNothing);
+      expect(find.text('Buddy took Notion off your list.', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets('one of Buddy\'s own Connections has no Remove and no section about the service', (tester) async {
+      useOrdinaryPhone(tester);
+      await openYouTab(tester, FakeBackend()..connections = [calendar()]);
+
+      expect(find.text('Remove'), findsNothing);
+      await openCard(tester);
+      expect(find.text('The service'), findsNothing);
+    });
+
+    testWidgets('says plainly that a login worked when Buddy has no page to name', (tester) async {
+      final backend = FakeBackend()
+        ..connections = [notion(on: true, needsLogin: true)]
+        ..connectionAfterRead = notion(on: true);
+      backend.takeoverToStart = Takeover(site: 'service-notion.com', siteName: 'Notion', liveViewUrl: canvasTakeover.liveViewUrl);
+      backend.finished = const FinishedTakeover(siteName: 'Notion', signedIn: true);
+
+      await openYouTab(tester, backend);
+      await tester.ensureVisible(find.text('Log in to Notion').first);
+      await tester.pump();
+      await tester.tap(find.text('Log in to Notion').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(find.text("You're logged in to Notion."), findsOneWidget);
+      expect(find.textContaining('null'), findsNothing);
+    });
+
+    group('accessibility', () {
+      testWidgets('a screen reader hears each part of its row, and which service each button is for', (tester) async {
+        final handle = tester.ensureSemantics();
+        await openYouTab(tester, FakeBackend()..connections = [notion()]);
+
+        expect(find.bySemanticsLabel('Notion\nnotion.com. Through the connector notion.com publishes itself, at mcp.notion.com.\nOff'), findsOneWidget);
+        expect(find.bySemanticsLabel('Connect Notion'), findsOneWidget);
+        expect(find.bySemanticsLabel('Remove Notion from your list'), findsOneWidget);
+        handle.dispose();
+      });
+
+      testWidgets('its card marks the new heading as one', (tester) async {
+        useOrdinaryPhone(tester);
+        final handle = tester.ensureSemantics();
+        await openYouTab(tester, FakeBackend()..connections = [notion()]);
+        await openCard(tester);
+
+        expect(tester.getSemantics(find.bySemanticsLabel('The service')).flagsCollection.isHeader, isTrue);
+        handle.dispose();
+      });
+
+      testWidgets('its row and its card fit with larger text', (tester) async {
+        useOrdinaryPhone(tester);
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await openYouTab(tester, FakeBackend()..connections = [notion(name: 'A service with a rather long name')]);
+
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text('Connect'));
+        await tester.pump();
+        await tester.tap(find.text('Connect'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Web address: notion.com'), findsOneWidget);
+      });
+    });
+  });
+
   group('accessibility', () {
     testWidgets('a screen reader hears which Connection each button is for', (tester) async {
       final handle = tester.ensureSemantics();

@@ -109,6 +109,20 @@ export interface Site {
   isLoginPage?: (address: string) => boolean;
   /** How this site sends an email. With none, Buddy can't send from it. */
   sending?: SendingRules;
+  /** Every host on this domain counts as somewhere a logged-in home page can end up, for a service Buddy knows nothing else about. */
+  appDomain?: string;
+  /** For a service reached through its own connector, whose Takeover is a login that ends with a token. */
+  connectorLogin?: ConnectorSiteLogin;
+}
+
+/** Keeps the password in the Takeover, and everything else about getting a token on the backend's side. See service-connections.ts. */
+export interface ConnectorSiteLogin {
+  /** Where the service sends the Student back to. Only an address starting with this is ever looked at. */
+  returnsTo: string;
+  /** The page to put on the screen. Throws if the service can't be reached. */
+  start(): Promise<string>;
+  /** Whether Buddy now has a token. It's given where the browser ended up, if that's returnsTo. */
+  finish(addressOnScreen: string | null): Promise<boolean>;
 }
 
 export interface Takeover {
@@ -154,6 +168,13 @@ export class UnknownSite extends Error {
 export class BrowserUnreachable extends Error {
   constructor(cause: unknown) {
     super("Buddy's Browser can't be reached", { cause });
+  }
+}
+
+/** A service's own connector didn't answer when the Student went to log in to it. */
+export class ConnectorUnreachable extends Error {
+  constructor() {
+    super("The service's connector can't be reached");
   }
 }
 
@@ -400,6 +421,25 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
     return { signedIn: isOnSiteAndPastLogin(page.url, site), title: page.title };
   }
 
+  async function startConnectorLogin(login: ConnectorSiteLogin): Promise<string> {
+    try {
+      return await login.start();
+    } catch (error) {
+      logError(new Error(`A connector's login couldn't start: ${error instanceof Error ? error.name : "unknown error"}`));
+      throw new ConnectorUnreachable();
+    }
+  }
+
+  /** The Student's login is theirs, whatever happens with this. Only words from Buddy's own code reach the log. */
+  async function finishConnectorLogin(login: ConnectorSiteLogin, returned: string | null): Promise<boolean> {
+    try {
+      return await login.finish(returned);
+    } catch (error) {
+      logError(new Error(`A connector's login couldn't finish: ${error instanceof Error ? error.name : "unknown error"}`));
+      return false;
+    }
+  }
+
   return {
     read,
     readPublicPage: (url) => readUnderGuard(url, guards.forPublicPage(url), { apartFromLogins: true }),
@@ -415,6 +455,10 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
       if (underWay) throw new TakeoverInProgress();
       if (lacksReadPermission(id, site)) throw new NoReadPermissionForLogin(site.name);
 
+      // Before the Takeover begins, so that a service that can't be reached doesn't hold the browser. It may also find
+      // the connector can't be used, in which case this is the service's own page and the site has changed.
+      const firstPage = site.connectorLogin ? await startConnectorLogin(site.connectorLogin) : site.homeUrl;
+
       // Buddy is locked out from this line on, even if the backend restarts. Anything
       // already in the browser finishes before the Student gets the screen.
       const takeover: StoredTakeover = {
@@ -425,7 +469,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
       store.beginTakeover(THE_STUDENT, takeover);
       tokenBeingShown = takeover.liveViewToken;
       try {
-        await oneAtATime(() => browser.show(site.homeUrl));
+        await oneAtATime(() => browser.show(firstPage));
       } catch (error) {
         // The Student may have given up on this one and started another by now.
         if (store.currentTakeover(THE_STUDENT)?.liveViewToken === takeover.liveViewToken) {
@@ -446,12 +490,23 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
       onControlEnded();
       store.endTakeover(THE_STUDENT);
 
+      // It has to be now: clearing the screen is what takes it away.
+      let returned: string | null = null;
+      if (site.connectorLogin) {
+        const { returnsTo } = site.connectorLogin;
+        returned = await oneAtATime(() => browser.addressOnScreenStarting(returnsTo)).catch((error: unknown) => {
+          logError(error);
+          return null;
+        });
+      }
+
       try {
         // Buddy is back from here on, so the guard is too.
         await oneAtATime(() => browser.clearScreen(guards.forReading()));
       } catch (error) {
         logError(error);
       }
+      if (site.connectorLogin) return { site: stored.site, siteName: site.name, signedIn: await finishConnectorLogin(site.connectorLogin, returned) };
       return { site: stored.site, siteName: site.name, ...(await checkLogin(stored.site, site)) };
     },
 
@@ -486,7 +541,10 @@ function failIfGuardRefuses(guard: RequestGuard, url: string): void {
 export function isOnSiteAndPastLogin(finalUrl: string, site: Site): boolean {
   const final = new URL(finalUrl);
   if (site.isLoginPage?.(finalUrl)) return false;
-  return [new URL(site.homeUrl).hostname, ...(site.appHosts ?? [])].includes(final.hostname) && !final.pathname.startsWith("/login");
+  const onHomeHost =
+    [new URL(site.homeUrl).hostname, ...(site.appHosts ?? [])].includes(final.hostname) ||
+    (site.appDomain !== undefined && (final.hostname === site.appDomain || final.hostname.endsWith(`.${site.appDomain}`)));
+  return onHomeHost && !final.pathname.startsWith("/login");
 }
 
 /** Runs each piece of work only after everything before it has finished, whether it worked or not. */

@@ -190,6 +190,11 @@ export interface BuddysBrowser {
    * must never be tried again. See compose-in-page.ts.
    */
   sendEmail(email: EmailToSend, guard: SendGuard, beforePressing: () => string | null): Promise<EmailSending>;
+  /**
+   * Whichever tab has an address starting with this, right after the Student taps Done. Nothing else about the screen comes
+   * back, and nothing is loaded to find out. Null if no tab does.
+   */
+  addressOnScreenStarting(start: string): Promise<string | null>;
   /** Forgets everything the browser holds for these hosts and their subdomains. */
   forgetLogin(hosts: string[]): Promise<void>;
 }

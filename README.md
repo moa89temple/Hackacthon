@@ -233,6 +233,40 @@ Read what each prints, because `check-canvas` exits 0 even if a page had a probl
 - Nobody has read Temple's, Microsoft's, EAB's or Handshake's terms on this. The cards say so where it matters.
 - While a Takeover is open, Buddy can't read anything, and the guard is off for the Student. The app says which Connection's Takeover it is if you leave without tapping Done.
 
+## Connect another service
+
+You can ask Buddy to connect a service that isn't on the list, such as "connect my Notion". Buddy shows a Read Permission card with the service's name, its web address and how it would read it. Nothing is read, and no login is asked for, until you tap **Give Read Permission**. The list on the You tab then shows it like any other Connection. **Revoke** deletes its facts, any token, your login in Buddy's Browser and the site, and takes it off the list.
+
+Buddy uses the service's own connector, through the Claude API's MCP connector, when both of these are true. Otherwise it uses Buddy's Browser, and it says so if that changes later.
+
+- **It's the service's own.** The connector, and every step of logging in to it, has to be on the service's own domain or a subdomain of it. There's no list of approved domains, so a sister domain of the same company doesn't count. See `backend/src/service-domain.ts`.
+- **You can use it alone.** It takes no login, or it lets anyone sign up as a client with no secret (dynamic client registration, `none` as the client's way of proving itself and PKCE with S256). Anything else needs someone's approval. See `backend/src/connector-login.ts`.
+
+Buddy looks in the usual places on the service's own domain: `mcp.<domain>` at `/mcp`, `/` and `/v1/mcp`, then `/mcp` on `<domain>`, `www.<domain>` and `api.<domain>`. There's no standard for where a connector lives yet, so one anywhere else won't be found.
+
+You log in through a Takeover, on the service's own login page, so Buddy never learns your password. The service sends you back to a page inside Buddy's Browser (`browser/login-done.html`). After you tap **Done**, Buddy reads the code from that tab's address and swaps it for a token, using a proof only the backend has. The token goes only to the service's domain and to the Claude API. Rebuild the browser's image once to get that page: `docker compose up -d --build` in `browser/`.
+
+Buddy turns on only the tools the service marks as read-only (`readOnlyHint`), using the API's allowlist with everything else off, and checks them again at every read. If none are left, it uses Buddy's Browser.
+
+Through Buddy's Browser, it opens only the page the service shows once you've logged in, and the guard refuses anything that would change something. Haiku turns what's read into facts in both cases.
+
+A new service is refused if it overlaps Temple's domain, an existing Connection's hosts or a public page Buddy opens. A name you know, or a host of an existing Connection, goes to that Connection's card instead.
+
+### Known limits
+
+- **Nobody has logged in to a real connector yet.** What Buddy assumes about one with no login was run against real ones on 2026-11-03: Notion, Linear, Atlassian, Stripe, Cloudflare and Sentry. Nothing has been registered with any of them, and no real token, tool result or Claude call with a connector has been seen. The tests use made-up connectors in the shape of those real answers. The first real login is what will test this.
+- **Nobody has run the login's return through the real container.** `npm run test:browser` has a check for it, which hasn't been run.
+- That a tool only reads is the service's own word. Buddy can't check it. A service could mark a tool wrongly, or change what one does.
+- Going by the domain is strict on purpose, so Notion through `notion.so` gets Buddy's Browser, because its connector is at `mcp.notion.com`. Buddy goes by the web address Claude gives for the service, and the card shows it.
+- Only a service the Student names in their message can start this. Claude is told what to say if they didn't, so asking "yes, that one" after Buddy has asked which they mean gets another question.
+- Buddy doesn't warn you if the service's rules forbid automated tools. You chose on 2026-11-03 to leave that out for now, so the warning on these cards is empty.
+- Through Buddy's Browser, "logged in" is a guess from the address, a password box and what Haiku makes of the page. It reads only that first page, so a service whose first page says little gives few facts.
+- A name that leads to a public address when Buddy checks could point elsewhere later. Buddy's own requests check it at each connection. Buddy's Browser's guard goes by names, as it does everywhere.
+- The token is stored like everything else in this version, without encryption. See Out of scope in the spec.
+- A connector that only speaks the older SSE protocol can't be used, because Buddy can't ask it for its tools.
+- Revoking deletes the login on the service's own domain. If you logged in with another account, such as Google, Buddy's Browser stays logged in to that account, because Buddy can't tell which you used. The guard still keeps Buddy out of it, and the card says so.
+- A service whose own domain doesn't answer by itself, only at `www.`, can't be connected, because Buddy checks the domain first and opens it there.
+
 ## Goals and your Roadmap
 
 Tell Buddy what you want to achieve, and it saves that as a Goal. You can see, change and add Goals on the You tab. Goals aren't Profile facts.

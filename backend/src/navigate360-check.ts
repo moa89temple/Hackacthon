@@ -200,6 +200,7 @@ export function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, vi
     sendEmail: async () => notInACheck(),
     clearScreen: async () => notInACheck(),
     forgetLogin: async () => notInACheck(),
+    addressOnScreenStarting: async () => notInACheck(),
 
     async read(url, guard, options) {
       if (!mayGoOn()) throw new TakeoverInProgress();

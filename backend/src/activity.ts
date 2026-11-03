@@ -52,6 +52,11 @@ export function loginNotDeletedYet(connectionName: string, at: Date): NewActivit
   };
 }
 
+/** The words are Buddy's own, and say why, so that nothing the connector said ends up here. */
+export function connectorNotUsed(connectionName: string, why: string, at: Date): NewActivityEntry {
+  return { kind: "connector_not_used", title: `Buddy stopped using the connector for ${connectionName}`, detail: `${why}. Buddy reads it through Buddy's Browser instead.`, at };
+}
+
 export function loginChecked(siteName: string, at: Date): NewActivityEntry {
   return { kind: "login_check", title: `Buddy opened ${siteName} to check your login`, at };
 }

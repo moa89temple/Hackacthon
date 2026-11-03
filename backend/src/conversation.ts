@@ -19,6 +19,8 @@ import { describeProfile, type Profile } from "./profile.ts";
 import { newRoadmapTurn } from "./roadmap-chat.ts";
 import { ROADMAP_TOOLS } from "./roadmap-tools.ts";
 import type { Roadmap, RoadmapCard } from "./roadmap.ts";
+import { CHECK_SERVICE_TOOL, checkServiceInput, CONNECT_SERVICE_TOOL, connectServiceInput } from "./service-chat.ts";
+import type { ServiceConnections } from "./service-connections.ts";
 import type { StandardMilestone, StandardMilestones } from "./standard-milestones.ts";
 import {
   BUDDY_SYSTEM_PROMPT,
@@ -204,11 +206,12 @@ export interface ConversationDeps {
   milestones: StandardMilestones;
   roadmap: Roadmap;
   opportunities: Opportunities;
+  services: ServiceConnections;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, roadmap, opportunities, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, roadmap, opportunities, services, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -310,6 +313,17 @@ export function createConversation(deps: ConversationDeps): Conversation {
     turn: TurnRecord,
   ) {
     const id = (call.input as { connection?: unknown } | null)?.connection;
+    return showReadPermissionCard(call, id, suggestedThisTurn, afterMessageId, now, turn);
+  }
+
+  function showReadPermissionCard(
+    call: ToolCall,
+    id: unknown,
+    suggestedThisTurn: Set<string>,
+    afterMessageId: number,
+    now: Date,
+    turn: TurnRecord,
+  ) {
     const connection = connections.list().find((candidate) => candidate.id === id);
     if (!connection) {
       turn.tools.push("Tried to show a Read Permission card for a Connection Buddy doesn't have.");
@@ -329,6 +343,50 @@ export function createConversation(deps: ConversationDeps): Conversation {
       logError(error);
     }
     return { answer: onScreen, card: connection.id };
+  }
+
+  /** The Student asked to connect something. It only ever makes a card, and only for what they named themselves. */
+  async function connectService(call: ToolCall, studentWords: string, suggestedThisTurn: Set<string>, afterMessageId: number, now: Date, turn: TurnRecord) {
+    const input = connectServiceInput(call.input);
+    if (!input) {
+      turn.tools.push("Tried to connect to a service, but without saying which one properly.");
+      return { answer: toolFailure(call, "name and website must both be strings, and nothing else may be sent.") };
+    }
+    try {
+      const asked = await services.ask({ ...input, studentWords });
+      if (asked.outcome === "refused") {
+        turn.tools.push("Buddy refused to connect to a service you asked for.");
+        return { answer: toolFailure(call, asked.why) };
+      }
+      if (asked.outcome === "ready") {
+        turn.tools.push(`Looked for ${asked.domain}'s own connector, and ${asked.route === "own_connector" ? "found one" : "didn't find one you could use alone"}.`);
+      }
+      return showReadPermissionCard(call, asked.connection, suggestedThisTurn, afterMessageId, now, turn);
+    } catch (error) {
+      logError(error);
+      turn.tools.push("Tried to look for a service's connector, but something went wrong.");
+      return { answer: toolFailure(call, "Buddy couldn't look for that service just now. No card was shown, so tell the Student.") };
+    }
+  }
+
+  /** A service they connected. What's read there stays out of Activity, so that it doesn't outlast a revoke. */
+  async function checkService(call: ToolCall, mailTurn: ReturnType<typeof newMailTurn>, suggestedThisTurn: Set<string>, afterMessageId: number, now: Date, turn: TurnRecord) {
+    const input = checkServiceInput(call.input);
+    if (!input || !services.isService(input.connection)) {
+      turn.tools.push("Tried to look at a service that isn't connected.");
+      return { answer: toolFailure(call, "That isn't a service the Student connected. The system message names the ones they have.") };
+    }
+    const domain = connections.list().find(({ id }) => id === input.connection)?.service?.domain ?? "that service";
+    const answer = await lookAtConnection(
+      call,
+      turn,
+      input.connection,
+      domain,
+      "That service couldn't be checked. Tell the Student, and don't guess at what's there.",
+      () => {},
+    );
+    if (!("is_error" in answer)) mailTurn.noteServiceRead(call.id);
+    return { answer, card: askForLoginIfNeeded(input.connection, suggestedThisTurn, afterMessageId, now) };
   }
 
   function searchGuidebook(call: ToolCall, turn: TurnRecord, kind?: GuidebookKind) {
@@ -623,6 +681,14 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   const { answer, card } = suggestConnection(call, suggestedThisTurn, studentMessageId!, now, turn);
                   if (card) yield { type: "read_permission_card", connection: card };
                   answers.push(answer);
+                } else if (call.name === CONNECT_SERVICE_TOOL.name) {
+                  const { answer, card } = await connectService(call, text, suggestedThisTurn, studentMessageId!, now, turn);
+                  if (card) yield { type: "read_permission_card", connection: card };
+                  answers.push(answer);
+                } else if (call.name === CHECK_SERVICE_TOOL.name) {
+                  const { answer, card } = await checkService(call, mailTurn, suggestedThisTurn, studentMessageId!, now, turn);
+                  if (card) yield { type: "read_permission_card", connection: card };
+                  answers.push(answer);
                 } else if (call.name === SHOW_GUIDEBOOK_CARDS_TOOL.name) {
                   const { answer, cards } = showGuidebookCards(call, cardsThisTurn, studentMessageId!, now, turn);
                   for (const item of cards) yield { type: "guidebook_card", item };
@@ -831,6 +897,8 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       CHECK_NAVIGATE360_TOOL,
       CHECK_DARS_TOOL,
       SUGGEST_CONNECTION_TOOL,
+      CONNECT_SERVICE_TOOL,
+      CHECK_SERVICE_TOOL,
       SEARCH_GUIDEBOOK_TOOL,
       FIND_CONTACTS_TOOL,
       SHOW_GUIDEBOOK_CARDS_TOOL,

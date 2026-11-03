@@ -132,13 +132,14 @@ const refuse = (why: string): GuardDecision => ({ allowed: false, why });
  * BrowserAccess. Whatever Buddy does after the Student taps Done is guarded again.
  */
 export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: GuardPolicyDeps): GuardPolicy {
-  const siteEntries = Object.entries(sites);
+  /** Asked afresh each time, because a service the Student asks for adds a site while Buddy is running. */
+  const siteEntries = () => Object.entries(sites);
   const publicHostSet = new Set(publicHosts);
 
   function isBlockedPage(url: string): boolean {
     const parsed = URL.parse(url);
     if (!parsed) return false;
-    return siteEntries.some(
+    return siteEntries().some(
       ([, site]) =>
         isOnSite(parsed.hostname, site) &&
         (site.blockedPages ?? []).some(
@@ -153,20 +154,20 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
   }
 
   function isKnownReadOnly(url: URL, method: string, headers: Record<string, string> = {}): boolean {
-    return siteEntries.some(
+    return siteEntries().some(
       ([, site]) => isOnSite(url.hostname, site) && (site.readOnlyRequests ?? []).some((known) => isKnownRequest(known, url, method, headers)),
     );
   }
 
   function isOnSignOnDomain(hostname: string): boolean {
     const name = withoutFinalDot(hostname);
-    return siteEntries.some(([, site]) => (site.signOnDomains ?? []).some((domain) => name === domain || name.endsWith(`.${domain}`)));
+    return siteEntries().some(([, site]) => (site.signOnDomains ?? []).some((domain) => name === domain || name.endsWith(`.${domain}`)));
   }
 
   /** Rules 1 and 2. */
   function placeDecision(url: URL, request: RequestToCheck, mayEnter: (siteId: string) => boolean): GuardDecision {
     if (isBlockedPage(request.url)) return refuse(`Buddy never opens this page, even with an approved card: ${url.host}`);
-    const owners = siteEntries.filter(([, site]) => isOnSite(url.hostname, site));
+    const owners = siteEntries().filter(([, site]) => isOnSite(url.hostname, site));
     if (owners.length > 0) {
       if (owners.some(([id]) => mayEnter(id))) return allow;
       return refuse(`There's no Read Permission for ${owners.map(([, site]) => site.name).join(" or ")}: ${url.host}`);
@@ -217,7 +218,7 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
           if (LOCAL_SCHEMES.has(url.protocol)) return allow;
           if (!WEB_SCHEMES.has(url.protocol)) return refuse(`Buddy's Browser only goes on the web, not to ${url.protocol}`);
           if (!READING_METHODS.has(request.method.toUpperCase())) return refuse(`A public page only gets read, so a ${request.method} request is refused: ${url.host}`);
-          if (siteEntries.some(([, site]) => isOnSite(url.hostname, site))) return refuse(`A public page stays out of the Student's Connections: ${url.host}`);
+          if (siteEntries().some(([, site]) => isOnSite(url.hostname, site))) return refuse(`A public page stays out of the Student's Connections: ${url.host}`);
           // Before the list below, because what the tab ends up on gets kept as having come from the address asked for.
           if (request.opensPage && withoutFinalDot(url.hostname) !== openedHost) return refuse(`This page may only open its own host: ${url.host}`);
           if (publicHostSet.has(url.hostname)) return allow;

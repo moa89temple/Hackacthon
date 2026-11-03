@@ -25,6 +25,7 @@ import { isNavigate360LoginPage } from "../../src/navigate360-pages.ts";
 import { NAVIGATE360_BLOCKED_PAGES, navigate360Home, navigate360ReadablePages } from "../../src/navigate360-rules.ts";
 import { keepToReadablePages } from "../../src/readable-pages.ts";
 import { startBackend, type RunningBackend } from "../../src/server.ts";
+import { LOGIN_RETURN_ADDRESS } from "../../src/service-connections.ts";
 import { openStore } from "../../src/store.ts";
 import { systemClock } from "../../src/clock.ts";
 import { partToRead, tuportalAt } from "../../src/tuportal.ts";
@@ -174,6 +175,10 @@ async function bootBackend(): Promise<void> {
       clock: systemClock,
       browser,
       web: { get: () => { throw new Error("The web isn't part of these checks"); } },
+      connectorWeb: {
+        request: () => { throw new Error("Connectors aren't part of these checks"); },
+        leadsOnlyToPublicAddresses: () => { throw new Error("Connectors aren't part of these checks"); },
+      },
       notifier: offNotifier("Notifications aren't part of these checks"),
     },
     sites: SITES,
@@ -263,6 +268,29 @@ afterAll(async () => {
 beforeEach(async () => {
   await browser.forgetLogin(["127.0.0.1", "localhost"]);
   clearLedger();
+});
+
+describe("coming back from a connector's login", () => {
+  const returned = `${LOGIN_RETURN_ADDRESS}?code=made-up-code&state=made-up-state`;
+
+  afterAll(async () => {
+    await browser.clearScreen({ check: () => ({ allowed: true }) });
+  });
+
+  it("has a page to come back to, next to the live view, so that the tab isn't left on an error", async () => {
+    const page = await fetch(`http://127.0.0.1:${LIVE_VIEW_PORT}${new URL(LOGIN_RETURN_ADDRESS).pathname}`);
+
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("Tap Done");
+    expect(new URL(LOGIN_RETURN_ADDRESS).port).toBe("6080");
+  });
+
+  it("gives Buddy the tab's address when it's that page, and nothing when it isn't", async () => {
+    await browser.show(returned);
+
+    expect(await browser.addressOnScreenStarting(LOGIN_RETURN_ADDRESS)).toBe(returned);
+    expect(await browser.addressOnScreenStarting("http://127.0.0.1:6080/somewhere-else")).toBeNull();
+  });
 });
 
 describe("the network guard while reading", () => {

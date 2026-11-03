@@ -91,6 +91,30 @@ void main() {
       expect(connection.card.address?.steps, ['Copy it.']);
     });
 
+    test('reads what a service the Student asked for says about itself, which others leave empty', () async {
+      final backend = backendAnswering((request) async {
+        return http.Response(
+          jsonEncode({
+            'connections': [
+              {...connectionJson, 'service': null},
+              {
+                ...connectionJson,
+                'id': 'service-notion.com',
+                'service': {'domain': 'notion.com', 'route': 'own_connector', 'routeInWords': 'Through its own connector'},
+              },
+            ],
+          }),
+          200,
+        );
+      });
+
+      final [ownConnection, service] = await backend.loadConnections();
+
+      expect(ownConnection.service, isNull);
+      expect(service.service?.domain, 'notion.com');
+      expect(service.service?.routeInWords, 'Through its own connector');
+    });
+
     test('reads a card with a warning and no address', () async {
       final backend = backendAnswering((request) async {
         return http.Response(

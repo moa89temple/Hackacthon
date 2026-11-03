@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ServiceConnections } from "../src/service-connections.ts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createActionCards } from "../src/action-cards.ts";
 import { createConversation } from "../src/conversation.ts";
@@ -51,6 +52,7 @@ function send(text: string, storeInUse: Store): Promise<any[]> {
     milestones: createStandardMilestones({ store: storeInUse, clock }),
     roadmap: { describeForTurn: () => "" } as unknown as Roadmap,
     opportunities: createOpportunities({ store: storeInUse, clock }),
+    services: {} as unknown as ServiceConnections,
     logError,
   });
   return Array.fromAsync(conversation.send(text));
