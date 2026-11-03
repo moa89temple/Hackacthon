@@ -1,6 +1,7 @@
 import {
   connectionRead,
   connectionReadFailed,
+  connectionReadStopped,
   loginDeleted,
   loginNotDeletedYet,
   readPermissionGiven,
@@ -24,7 +25,10 @@ import {
 } from "./store.ts";
 import type { Web } from "./web.ts";
 
-/** The Read Permission card. All of it comes from Buddy's code, never from the model. */
+/**
+ * The Read Permission card. All of it comes from Buddy's code, never from the model. The one exception is a service the
+ * Student asked for: its name and its domain, once checked, are shown so that they can see what they're approving.
+ */
 export interface ReadPermissionCard {
   /** Exactly what Buddy will read. */
   reads: string[];
@@ -325,14 +329,15 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     } catch (error) {
       // Only words from Buddy's own code reach the log, so that the address can't get there in an error.
       const problem = problemFor(type, error);
-      // The limit stopping a read is Buddy working as it should, and it's still told to the Student below.
-      if (!(error instanceof BackgroundLimitReached)) logError(new Error(`Reading ${type.name} failed: ${problem}`));
+      // The limit stopping a read is Buddy working as it should, so it isn't logged or called a failure.
+      const stopped = error instanceof BackgroundLimitReached;
+      if (!stopped) logError(new Error(`Reading ${type.name} failed: ${problem}`));
       store.recordReadProblem(
         THE_STUDENT,
         permission.id,
         problem,
         now,
-        connectionReadFailed(type.name, reason, problem, clock.now()),
+        (stopped ? connectionReadStopped : connectionReadFailed)(type.name, reason, problem, clock.now()),
         error instanceof LoginNeeded,
       );
     }

@@ -1,4 +1,4 @@
-import { connectorNotUsed } from "./activity.ts";
+import { connectorNotUsed, loginNotFinished } from "./activity.ts";
 import { TakeoverInProgress, type Site } from "./browser-access.ts";
 import { PageBlocked, type PageReading } from "./buddys-browser.ts";
 import type { Claude } from "./claude.ts";
@@ -37,6 +37,9 @@ const LOGIN_PATH = /(?:^|\/)(?:log-?in|sign-?in|sign_in|auth|authorize|sso|sessi
 const PASSWORD_FIELD = /<input\b[^>]*\btype\s*=\s*["']?password\b/i;
 
 const NEEDS_APPROVAL = "needs someone else's approval";
+const WOULD_NOT_FINISH = "wouldn't let you finish logging in";
+/** What a service answers when this client isn't allowed, whoever is logging in. Trying again won't change these. */
+const NEEDS_SOMEONE_ELSE = new Set(["unauthorized_client", "invalid_client", "unsupported_response_type"]);
 const NO_READ_TOOLS = "has no tools it marks as read-only, and Buddy only ever reads";
 
 export type AskOutcome =
@@ -225,6 +228,13 @@ export function createServiceConnections(deps: ServiceConnectionsDeps): ServiceC
   const fellBackWords = (service: StoredService, because: string) =>
     `${service.domain}'s connector ${because}, so Buddy will read ${service.name} through Buddy's Browser instead. Tap Log in to ${service.name} on the You tab.`;
 
+  /**
+   * Logins that didn't finish, by service. One is usually the Student tapping Deny or taking too long, which says
+   * nothing about the connector. A second in a row may be someone else's approval, under a name Buddy doesn't know,
+   * and that mustn't dead-end. A restart forgets this, which only gives the Student one more try.
+   */
+  const unfinishedLogins = new Set<string>();
+
   async function startLogin(id: string): Promise<string> {
     const service = current(id);
     const plan = service?.loginPlan;
@@ -256,16 +266,27 @@ export function createServiceConnections(deps: ServiceConnectionsDeps): ServiceC
     data.endAttempt(THE_STUDENT, id);
 
     const answer =
-      back.kind === "code" ? await exchangeCode(keptToOwnDomain(web, service.domain), plan, login.clientId, back.code, login.verifier, LOGIN_RETURN_ADDRESS) : ({ kind: "refused" } as const);
+      back.kind === "code" ? await exchangeCode(keptToOwnDomain(web, service.domain), plan, login.clientId, back.code, login.verifier, LOGIN_RETURN_ADDRESS) : ({ kind: "refused", error: back.error } as const);
     if (answer.kind === "tokens") {
       // The Student may have revoked this while the answer was on its way, and then it's not to be kept.
       if (!store.readPermission(THE_STUDENT, id)) return false;
       data.saveTokens(THE_STUDENT, id, answer.tokens, expiryOf(answer.tokens));
+      unfinishedLogins.delete(id);
       return true;
     }
-    fallBackToBrowser(service, NEEDS_APPROVAL);
     const permission = store.readPermission(THE_STUDENT, id);
-    if (permission) store.recordReadProblem(THE_STUDENT, permission.id, fellBackWords(service, NEEDS_APPROVAL), clock.now(), connectorNotUsed(service.name, fellBackWords(service, NEEDS_APPROVAL), clock.now()), true);
+    const needsSomeoneElse = NEEDS_SOMEONE_ELSE.has(answer.error ?? "");
+    if (!needsSomeoneElse && !unfinishedLogins.has(id)) {
+      unfinishedLogins.add(id);
+      const words = `Logging in to ${service.name} didn't finish, so nothing changed. Tap Log in to ${service.name} on the You tab to try again.`;
+      if (permission) store.recordReadProblem(THE_STUDENT, permission.id, words, clock.now(), loginNotFinished(service.name, clock.now()), true);
+      return false;
+    }
+    unfinishedLogins.delete(id);
+    const because = needsSomeoneElse ? NEEDS_APPROVAL : WOULD_NOT_FINISH;
+    fallBackToBrowser(service, because);
+    // Falling back has said so in Activity, so this is only for the You tab.
+    if (permission) store.recordReadProblem(THE_STUDENT, permission.id, fellBackWords(service, because), clock.now(), null, true);
     return false;
   }
 
@@ -378,10 +399,13 @@ export function createServiceConnections(deps: ServiceConnectionsDeps): ServiceC
         return { outcome: "refused", why: "That isn't a web address Buddy can connect to. Buddy won't connect to private addresses, addresses that hide where they lead, or names in look-alike letters. Ask the Student what the service's own web address is." };
       }
       const { domain, sharedHosting } = parsed;
-      // Only the Student can start this. It can't come from something Claude read, however it's worded.
+      // Only the Student can start this. It can't come from something Claude read, however it's worded. So the Student
+      // has to have said the domain's own name, or a name that is the domain's. Any word of theirs as a name isn't enough,
+      // because the website could then be anywhere.
       const label = domain.split(".")[0]!;
-      if (!mentions(said, comparable(cleaned)) && !mentions(said, label)) {
-        return { outcome: "refused", why: "Buddy only connects a service the Student names in their message. Ask them which service they mean, and have them say its name." };
+      const nameIsTheDomains = comparable(cleaned).replace(/[^\p{L}\p{N}]/gu, "") === label && mentions(said, comparable(cleaned));
+      if (!mentions(said, label) && !nameIsTheDomains) {
+        return { outcome: "refused", why: "Buddy only connects a service the Student names in their message. Ask them which service they mean, and have them say its name or its web address." };
       }
       const id = `service-${domain}`;
       if (current(id)) return { outcome: "existing", connection: id };
@@ -416,6 +440,7 @@ export function createServiceConnections(deps: ServiceConnectionsDeps): ServiceC
     removeIfFinished(id) {
       if (!current(id) || store.readPermission(THE_STUDENT, id) || store.loginsToDelete(THE_STUDENT).includes(id)) return;
       data.remove(THE_STUDENT, id);
+      unfinishedLogins.delete(id);
       const at = types.findIndex((type) => type.id === id);
       if (at !== -1) types.splice(at, 1);
       delete sites[id];

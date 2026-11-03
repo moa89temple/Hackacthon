@@ -57,6 +57,10 @@ export function connectorNotUsed(connectionName: string, why: string, at: Date):
   return { kind: "connector_not_used", title: `Buddy stopped using the connector for ${connectionName}`, detail: `${why}. Buddy reads it through Buddy's Browser instead.`, at };
 }
 
+export function loginNotFinished(connectionName: string, at: Date): NewActivityEntry {
+  return { kind: "login_not_finished", title: `Logging in to ${connectionName} didn't finish`, detail: "Buddy kept what it had and asked you to try again.", at };
+}
+
 export function loginChecked(siteName: string, at: Date): NewActivityEntry {
   return { kind: "login_check", title: `Buddy opened ${siteName} to check your login`, at };
 }
@@ -249,6 +253,11 @@ const READ_REASONS: Record<ReadReason, string> = {
 export function connectionRead(connectionName: string, reason: ReadReason, at: Date, whatsNew?: string, missed?: string | null): NewActivityEntry {
   const detail = [READ_REASONS[reason], whatsNew && `What's new: ${whatsNew}.`, missed].filter(Boolean).join(" ");
   return { kind: "connection_read", title: `Buddy read ${connectionName}`, detail, at };
+}
+
+/** The limit on background work stopped this read, which isn't a read failing. */
+export function connectionReadStopped(connectionName: string, reason: ReadReason, problem: string, at: Date): NewActivityEntry {
+  return { kind: "connection_read_stopped", title: `Buddy stopped reading ${connectionName} for today`, detail: `${READ_REASONS[reason]} ${problem}`, at };
 }
 
 /** The problem is in words from Buddy's own code, so it can't carry a secret address. */

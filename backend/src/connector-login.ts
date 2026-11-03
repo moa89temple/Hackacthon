@@ -33,8 +33,8 @@ export interface Tokens {
 
 export type TokenAnswer =
   | { kind: "tokens"; tokens: Tokens }
-  /** The service said no, which no amount of trying again will change. */
-  | { kind: "refused" };
+  /** The service said no. `error` is its reason in OAuth's words, if it gave one. */
+  | { kind: "refused"; error: string | null };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -199,7 +199,7 @@ export function authorizationAddress(plan: LoginPlan, clientId: string, redirect
 export type LoginReturn =
   | { kind: "code"; code: string }
   /** The service sent the Student back with a refusal. It says which kind, in OAuth's words. */
-  | { kind: "error" }
+  | { kind: "error"; error: string }
   /** It isn't an answer to this attempt, or there's none. */
   | { kind: "nothing" };
 
@@ -212,7 +212,8 @@ export function readLoginReturn(address: string | null, redirectUri: string, exp
   if (url.searchParams.get("state") !== expectedState) return { kind: "nothing" };
   const namedIssuer = url.searchParams.get("iss");
   if (namedIssuer !== null && withoutFinalSlash(namedIssuer) !== withoutFinalSlash(issuer)) return { kind: "nothing" };
-  if (url.searchParams.has("error")) return { kind: "error" };
+  const error = url.searchParams.get("error");
+  if (error !== null) return { kind: "error", error };
   const code = url.searchParams.get("code");
   return code ? { kind: "code", code } : { kind: "nothing" };
 }
@@ -225,10 +226,10 @@ async function askForTokens(send: Send, plan: LoginPlan, form: Record<string, st
     body: new URLSearchParams({ ...form, resource: plan.resource }).toString(),
   });
   if (response.status >= 500) throw new Error("The connector's login didn't answer properly");
-  if (response.status !== 200) return { kind: "refused" };
   const answer = parseObject(response.text);
-  if (typeof answer?.access_token !== "string" || answer.access_token === "") return { kind: "refused" };
-  if (typeof answer.token_type === "string" && answer.token_type.toLowerCase() !== "bearer") return { kind: "refused" };
+  if (response.status !== 200) return { kind: "refused", error: typeof answer?.error === "string" ? answer.error : null };
+  if (typeof answer?.access_token !== "string" || answer.access_token === "") return { kind: "refused", error: null };
+  if (typeof answer.token_type === "string" && answer.token_type.toLowerCase() !== "bearer") return { kind: "refused", error: null };
   return {
     kind: "tokens",
     tokens: {

@@ -91,7 +91,7 @@ export function createServiceStore(
   const deleteLogin = db.prepare(`DELETE FROM connector_logins WHERE student_id = ? AND connection = ?`);
   const clearNeedsLogin = db.prepare(`UPDATE read_permissions SET needs_login = 0 WHERE student_id = ? AND connection = ?`);
 
-  const emptyLogin = () => db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  const emptyDatabaseLog = () => db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
 
   return {
     list(studentId) {
@@ -115,7 +115,7 @@ export function createServiceStore(
         updateToBrowser.run(because, studentId, id);
         deleteLogin.run(studentId, id);
       });
-      emptyLogin();
+      emptyDatabaseLog();
     },
 
     remove(studentId, id) {
@@ -124,7 +124,7 @@ export function createServiceStore(
         deleteCards.run(studentId, id);
         deleteLogin.run(studentId, id);
       });
-      emptyLogin();
+      emptyDatabaseLog();
     },
 
     login(studentId, id) {
@@ -153,19 +153,19 @@ export function createServiceStore(
 
     endAttempt(studentId, id) {
       updateAttempt.run(null, null, studentId, id);
-      emptyLogin();
+      emptyDatabaseLog();
     },
 
     saveTokens(studentId, id, tokens, expiresAt) {
       ensureLogin.run(studentId, id);
       updateTokens.run(tokens.accessToken, tokens.refreshToken, expiresAt?.toISOString() ?? null, studentId, id);
       // So that a token that's been swapped doesn't stay in the log of recent changes.
-      emptyLogin();
+      emptyDatabaseLog();
     },
 
     forgetTokens(studentId, id) {
       updateTokens.run(null, null, null, studentId, id);
-      emptyLogin();
+      emptyDatabaseLog();
     },
 
     noteBrowserLogin(studentId, id, loggedIn) {

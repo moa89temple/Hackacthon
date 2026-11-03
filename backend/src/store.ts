@@ -371,7 +371,8 @@ export interface Store {
     permissionId: number,
     problem: string,
     triedAt: Date,
-    entry: NewActivityEntry,
+    /** Null when Activity has already been told. */
+    entry: NewActivityEntry | null,
     needsLogin?: boolean,
   ): void;
   addReadPermissionCard(studentId: string, card: StoredReadPermissionCard): void;
@@ -1213,7 +1214,7 @@ export function openStore(databasePath: string): Store {
 
     recordReadProblem(studentId, permissionId, problem, triedAt, entry, needsLogin = false) {
       inTransaction(db, () => {
-        addActivity(studentId, entry);
+        if (entry) addActivity(studentId, entry);
         recordProblem.run(triedAt.toISOString(), problem, needsLogin ? 1 : 0, permissionId);
       });
     },

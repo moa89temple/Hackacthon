@@ -970,6 +970,86 @@ describe("a Claude call that throws", () => {
   });
 });
 
+describe("what the review of this ticket found", () => {
+  it("masks a page in Buddy's Browser before Claude sees it", async () => {
+    await ask("connect my LinkedIn", { name: "LinkedIn", website: "linkedin.com" });
+    await give("service-linkedin.com");
+    backend.browser.savedPages.set("https://linkedin.com/", { title: "Home", text: "Hello. My SSN is 078-05-1120 and my card is 4242 4242 4242 4242.", accessibilitySnapshot: "" });
+    backend.claude.willReply({ content: [textBlock(JSON.stringify({ logged_in: true, items: [] }))] });
+    await backend.startTakeover("service-linkedin.com");
+    await backend.finishTakeover();
+    await backend.untilReadsFinish("service-linkedin.com");
+
+    const sent = JSON.stringify(readRequests().at(-1)!.messages);
+    expect(sent).toContain("Hello.");
+    expect(sent).not.toContain("078-05-1120");
+    expect(sent).not.toContain("4242 4242");
+  });
+
+  it("won't connect a domain the Student never named just because a word of theirs is the name given for it", async () => {
+    new MadeUpConnector(backend.connectorWeb, "evilsite.com");
+
+    await ask("what's due in my course?", { name: "course", website: "evilsite.com" });
+
+    expect(backend.connectorWeb.requests.filter(({ url }) => url.includes("evilsite.com"))).toEqual([]);
+    expect((await backend.connections()).map(({ id }) => id)).not.toContain("service-evilsite.com");
+  });
+
+  it("still connects a service whose name, run together, is its domain", async () => {
+    await ask("connect Bank of America", { name: "Bank of America", website: "bankofamerica.com" });
+
+    expect((await backend.connections()).map(({ id }) => id)).toContain("service-bankofamerica.com");
+  });
+
+  describe("a login that doesn't finish", () => {
+    const denied = (state: string) => `${LOGIN_RETURN_ADDRESS}?error=access_denied&state=${state}`;
+
+    it("keeps the connector when the Student taps Deny, says nothing about anyone's approval, and lets them try again", async () => {
+      new MadeUpConnector(backend.connectorWeb, "notion.com");
+      await askAndGive();
+
+      await logInThroughTakeover(NOTION, denied);
+      await backend.untilReadsFinish(NOTION);
+
+      const status = await connection(NOTION);
+      expect(status).toMatchObject({ on: true, needsLogin: true, service: { route: "own_connector" } });
+      expect(status.lastReadProblem).not.toContain("approval");
+      expect((await backend.activity()).map(({ kind }) => kind)).not.toContain("connector_not_used");
+
+      backend.claude.willReply(readingAnswer([{ text: A_FACT }]));
+      await logInThroughTakeover();
+      await backend.untilReadsFinish(NOTION);
+
+      expect(await connection(NOTION)).toMatchObject({ on: true, needsLogin: false, service: { route: "own_connector" } });
+      expect((await backend.profileFacts()).map(({ text }) => text)).toEqual([A_FACT]);
+    });
+
+    it("keeps the connector when a slow login's code has run out", async () => {
+      const connector = new MadeUpConnector(backend.connectorWeb, "notion.com");
+      await askAndGive();
+      connector.nextTokens = json({ error: "invalid_grant" }, 400);
+
+      await logInThroughTakeover();
+      await backend.untilReadsFinish(NOTION);
+
+      expect(await connection(NOTION)).toMatchObject({ needsLogin: true, service: { route: "own_connector" } });
+    });
+
+    it("moves to Buddy's Browser after a second one in a row, because that may be someone else's approval, and says so once", async () => {
+      new MadeUpConnector(backend.connectorWeb, "notion.com");
+      await askAndGive();
+
+      await logInThroughTakeover(NOTION, denied);
+      await backend.untilReadsFinish(NOTION);
+      await logInThroughTakeover(NOTION, denied);
+      await backend.untilReadsFinish(NOTION);
+
+      expect((await connection(NOTION)).service.route).toBe("buddys_browser");
+      expect((await backend.activity()).filter(({ kind }) => kind === "connector_not_used")).toHaveLength(1);
+    });
+  });
+});
+
 describe("the $2 limit on background work", () => {
   /** The test models have no price, so each costs the table's highest: $50 per million output tokens makes this $2. */
   const USES_UP_THE_DAY = { usage: { output_tokens: 40_000 } };
@@ -996,6 +1076,8 @@ describe("the $2 limit on background work", () => {
     await readUsesUpTheDay();
     const asked = backend.claude.requests.length;
     const errorsBefore = errorsLogged().length;
+    const couldNotRead = async () => (await backend.activity()).filter(({ title }) => title === "Buddy couldn't read Notion").length;
+    const failedBefore = await couldNotRead();
 
     await backend.readNow(NOTION);
 
@@ -1005,6 +1087,9 @@ describe("the $2 limit on background work", () => {
     expect(status).toMatchObject({ on: true, needsLogin: false, service: { route: "own_connector" } });
     expect(status.lastReadProblem).toContain("today's limit");
     expect(status.lastReadProblem).not.toContain("couldn't reach");
+    const latest = (await backend.activity()).map(({ kind, title }) => ({ kind, title }));
+    expect(latest).toContainEqual({ kind: "connection_read_stopped", title: "Buddy stopped reading Notion for today" });
+    expect(await couldNotRead()).toBe(failedBefore);
     expect(errorsLogged().slice(errorsBefore)).toEqual([]);
   });
 

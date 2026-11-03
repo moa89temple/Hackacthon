@@ -328,7 +328,7 @@ describe("the login", () => {
     });
 
     it("says when the service refused, only for this attempt", () => {
-      expect(readLoginReturn(back("error=access_denied&state=a-state"), BACK, "a-state", plan.issuer)).toEqual({ kind: "error" });
+      expect(readLoginReturn(back("error=access_denied&state=a-state"), BACK, "a-state", plan.issuer)).toEqual({ kind: "error", error: "access_denied" });
       expect(readLoginReturn(back("error=access_denied&state=other"), BACK, "a-state", plan.issuer)).toEqual({ kind: "nothing" });
     });
   });

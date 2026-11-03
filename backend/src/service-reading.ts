@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Claude, ClaudeMessage, ClaudeRequest } from "./claude.ts";
 import { allNumbersAmong, comparable, filled, numbersIn } from "./extraction.ts";
+import { maskSecrets } from "./masking.ts";
 import type { McpTool } from "./mcp-client.ts";
 import type { ConnectionFactToStore } from "./store.ts";
 
@@ -160,13 +161,14 @@ export type PageFacts = { loggedIn: false } | { loggedIn: true; facts: Connectio
 
 /** Turns the page a service shows into facts, and says if it wasn't for someone logged in. Throws if it can't. */
 export async function readPageForFacts(claude: Claude, model: string, page: { url: string; title: string; text: string }): Promise<PageFacts> {
-  const text = page.text.slice(0, MOST_PAGE_CHARACTERS);
+  // Masked first, so that what's checked against is what Claude saw. A connector's answers can't be masked like this: they go straight to the API.
+  const text = maskSecrets(page.text.slice(0, MOST_PAGE_CHARACTERS));
   const message = await finalMessage(claude, {
     model,
     max_tokens: 16000,
     output_config: { effort: "low", format: { type: "json_schema", schema: PAGE_SCHEMA } },
     system: PAGE_PROMPT,
-    messages: [{ role: "user", content: `Page address: ${page.url}\nPage title: ${page.title}\n\nThe page's text:\n\n${text}` }],
+    messages: [{ role: "user", content: `Page address: ${maskSecrets(page.url)}\nPage title: ${maskSecrets(page.title)}\n\nThe page's text:\n\n${text}` }],
   });
   const answer = answerIn(message);
   return answer.logged_in === true ? { loggedIn: true, facts: factsFrom(answer, text) } : { loggedIn: false };
