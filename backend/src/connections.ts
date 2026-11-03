@@ -12,6 +12,7 @@ import { describeInPhiladelphia, philadelphiaClock, type Clock } from "./clock.t
 import type { ContactAddress } from "./guidebook.ts";
 import { NO_OPPORTUNITY_PAGES, type OpportunityPagesFromConnection } from "./opportunities-from-connection.ts";
 import type { FactFromConnection, Profile } from "./profile.ts";
+import { BackgroundLimitReached } from "./spending.ts";
 import {
   THE_STUDENT,
   type ConnectionEventToStore,
@@ -324,7 +325,8 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     } catch (error) {
       // Only words from Buddy's own code reach the log, so that the address can't get there in an error.
       const problem = problemFor(type, error);
-      logError(new Error(`Reading ${type.name} failed: ${problem}`));
+      // The limit stopping a read is Buddy working as it should, and it's still told to the Student below.
+      if (!(error instanceof BackgroundLimitReached)) logError(new Error(`Reading ${type.name} failed: ${problem}`));
       store.recordReadProblem(
         THE_STUDENT,
         permission.id,
@@ -477,6 +479,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
 
 function problemFor(type: ConnectionType, error: unknown): string {
   if (error instanceof ReadProblem) return error.message;
+  if (error instanceof BackgroundLimitReached) return `Buddy has used today's limit for background work, so it will read ${type.name} again tomorrow. What it already found stays as it was.`;
   return `Buddy couldn't reach ${type.name}. It will try again at its next read, or you can tap Read now.`;
 }
 

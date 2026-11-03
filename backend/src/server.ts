@@ -120,7 +120,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
   const services = createServiceConnections({
     // The one Claude for reading the services a Student asked to connect.
-    claude: options.adapters.claude,
+    claude: backgroundClaude,
     model: options.discovery.model,
     web: options.adapters.connectorWeb,
     store,

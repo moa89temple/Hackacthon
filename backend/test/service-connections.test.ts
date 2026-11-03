@@ -970,6 +970,76 @@ describe("a Claude call that throws", () => {
   });
 });
 
+describe("the $2 limit on background work", () => {
+  /** The test models have no price, so each costs the table's highest: $50 per million output tokens makes this $2. */
+  const USES_UP_THE_DAY = { usage: { output_tokens: 40_000 } };
+  const errorsLogged = () => backend.errorsLogged.filter((line) => !line.includes("no price"));
+
+  async function readUsesUpTheDay(): Promise<void> {
+    await connectAndRead();
+    backend.claude.willReply({ ...readingAnswer([{ text: A_FACT }]), ...USES_UP_THE_DAY });
+    await backend.readNow(NOTION);
+    expect(backend.spending.backgroundStoppedForToday()).toBe(true);
+  }
+
+  it("counts a service's read as background work", async () => {
+    await connectAndRead();
+    backend.claude.willReply({ ...readingAnswer([{ text: A_FACT }]), ...USES_UP_THE_DAY });
+
+    await backend.readNow(NOTION);
+
+    expect(backend.spending.today().background).toBeGreaterThanOrEqual(2_000_000_000);
+    expect(backend.spending.today().chat).toBe(0);
+  });
+
+  it("stops a read through a connector, says so plainly, and isn't logged as an error", async () => {
+    await readUsesUpTheDay();
+    const asked = backend.claude.requests.length;
+    const errorsBefore = errorsLogged().length;
+
+    await backend.readNow(NOTION);
+
+    expect(backend.claude.requests).toHaveLength(asked);
+    expect((await backend.profileFacts()).map(({ text }) => text)).toEqual([A_FACT]);
+    const status = await connection(NOTION);
+    expect(status).toMatchObject({ on: true, needsLogin: false, service: { route: "own_connector" } });
+    expect(status.lastReadProblem).toContain("today's limit");
+    expect(status.lastReadProblem).not.toContain("couldn't reach");
+    expect(errorsLogged().slice(errorsBefore)).toEqual([]);
+  });
+
+  it("stops a read through Buddy's Browser the same way, and asks for no new login", async () => {
+    await ask("connect my LinkedIn", { name: "LinkedIn", website: "linkedin.com" });
+    await give("service-linkedin.com");
+    backend.browser.savedPages.set("https://linkedin.com/", { title: "Home", text: "Hello.", accessibilitySnapshot: "" });
+    backend.claude.willReply({ content: [textBlock(JSON.stringify({ logged_in: true, items: [] }))], ...USES_UP_THE_DAY });
+    await backend.startTakeover("service-linkedin.com");
+    await backend.finishTakeover();
+    await backend.untilReadsFinish("service-linkedin.com");
+    expect(backend.spending.backgroundStoppedForToday()).toBe(true);
+    const errorsBefore = errorsLogged().length;
+
+    await backend.readNow("service-linkedin.com");
+
+    const status = await connection("service-linkedin.com");
+    expect(status).toMatchObject({ on: true, needsLogin: false });
+    expect(status.lastReadProblem).toContain("today's limit");
+    expect(errorsLogged().slice(errorsBefore)).toEqual([]);
+  });
+
+  it("reads again the next day", async () => {
+    await readUsesUpTheDay();
+    await backend.readNow(NOTION);
+
+    backend.clock.moveTo("2026-11-03T13:00:00Z");
+    backend.claude.willReply(readingAnswer([{ text: "A newer fact from 2026." }]));
+    await backend.readNow(NOTION);
+
+    expect((await backend.profileFacts()).map(({ text }) => text)).toEqual(["A newer fact from 2026."]);
+    expect(await connection(NOTION)).toMatchObject({ on: true, lastReadProblem: null });
+  });
+});
+
 describe("a token running out", () => {
   it("is swapped before a read, using the refresh token, for one tied to the connector", async () => {
     const connector = await connectAndRead();
