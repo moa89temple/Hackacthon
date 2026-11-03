@@ -219,7 +219,7 @@ describe("pages that need a full browser", () => {
 
     await backend.opportunityDiscovery.runDue();
 
-    expect(backend.browser.actions).toContainEqual({ type: "read", url: EVENTS_LIST_PAGE });
+    expect(backend.browser.actions).toContainEqual({ type: "read", url: EVENTS_LIST_PAGE, apartFromLogins: true });
     expect((await calls.list())[0].name).toBe("Flu Shot Clinic");
   });
 
@@ -231,7 +231,7 @@ describe("pages that need a full browser", () => {
 
     await backend.opportunityDiscovery.runDue();
 
-    expect(backend.browser.actions).toContainEqual({ type: "read", url: FLU_CLINIC_PAGE });
+    expect(backend.browser.actions).toContainEqual({ type: "read", url: FLU_CLINIC_PAGE, apartFromLogins: true });
     expect((await calls.list())[0].cost).toBe("Free");
   });
 
@@ -245,7 +245,7 @@ describe("pages that need a full browser", () => {
 
     await backend.opportunityDiscovery.runDue();
 
-    expect(backend.browser.actions).toContainEqual({ type: "read", url: SCHOLARSHIP_PAGE });
+    expect(backend.browser.actions).toContainEqual({ type: "read", url: SCHOLARSHIP_PAGE, apartFromLogins: true });
     expect((await calls.list()).map((opportunity) => opportunity.name)).toEqual(["Nursing Scholarship"]);
   });
 
@@ -442,7 +442,7 @@ describe("searching the web for the Student's Goals", () => {
 
     for (const address of privateAddresses) {
       expect(backend.web.requests).not.toContain(address);
-      expect(backend.browser.actions).not.toContainEqual({ type: "read", url: address });
+      expect(backend.browser.actions).not.toContainEqual({ type: "read", url: address, apartFromLogins: true });
     }
   });
 
