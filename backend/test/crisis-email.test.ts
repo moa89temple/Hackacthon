@@ -4,7 +4,7 @@ import { settings } from "../src/settings.ts";
 import { tumail } from "../src/tumail.ts";
 import { TUMAIL_ID } from "../src/tumail-rules.ts";
 import { BackendHarness } from "./support/backend-harness.ts";
-import { haikuFinds, TUTTLEMAN_CONTACT_PAGE } from "./support/office-pages.ts";
+import { haikuFinds, TUTTLEMAN_CONTACT_PAGE, WRITING_CENTER_PAGE } from "./support/office-pages.ts";
 import { toolUseBlock } from "./support/scripted-claude.ts";
 import { expireTumailLogin, saveTumailPages } from "./support/tumail-pages.ts";
 
@@ -102,6 +102,18 @@ describe("emailing someone the Student chose, from the Crisis card", () => {
 
     expect(events.filter((event) => event.type === "action_card")).toEqual([]);
     expect(sends()).toEqual([]);
+  });
+
+  it("won't send the same words twice, and says so without talking about a Draft, which this has none of", async () => {
+    await approve(await makeCard());
+
+    const response = await askForCard();
+
+    expect(response.status).toBe(409);
+    const why = await errorIn(response);
+    expect(why).toContain("won't do it again");
+    expect(why).not.toContain("Draft");
+    expect(sends()).toHaveLength(1);
   });
 
   it("is refused without the paired phone's key", async () => {
@@ -311,6 +323,22 @@ describe("what the Crisis card is told", () => {
   // The real Let's Talk page gives this for emailing a consent form, so nobody may be reading it for this.
   it("doesn't give the Let's Talk consent form address, the only one Temple's counseling pages publish", async () => {
     await discoverTuttleman("lets.talk@temple.edu");
+    expect((await offer()).tuttleman).toBeNull();
+  });
+
+  it("doesn't take another Contact with Tuttleman in its name for the counseling service", async () => {
+    backend.web.save(TUTTLEMAN_CONTACT_PAGE, `<html><head><title>Contact Us</title></head><body><p>${"Words. ".repeat(50)} Write to learning.madeup@temple.edu.</p></body></html>`);
+    backend.claude.willReply(haikuFinds(), haikuFinds({ name: "Tuttleman Learning Center", kind: "contact", summary: "A building.", email: "learning.madeup@temple.edu" }), haikuFinds());
+    await backend.discovery.run();
+
+    expect((await offer()).tuttleman).toBeNull();
+  });
+
+  it("doesn't take an address for Tuttleman from any page but its own office's", async () => {
+    backend.web.save(WRITING_CENTER_PAGE, `<html><head><title>Elsewhere</title></head><body><p>${"Words. ".repeat(50)} Write to elsewhere.madeup@temple.edu.</p></body></html>`);
+    backend.claude.willReply(haikuFinds({ name: "Tuttleman Counseling Services", kind: "contact", summary: "Counseling.", email: "elsewhere.madeup@temple.edu" }), haikuFinds(), haikuFinds());
+    await backend.discovery.run();
+
     expect((await offer()).tuttleman).toBeNull();
   });
 

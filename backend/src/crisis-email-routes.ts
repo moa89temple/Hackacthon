@@ -25,10 +25,14 @@ export interface CrisisEmailRoutesDeps {
   isStoredId: (id: string) => boolean;
 }
 
+/** Only pages on this host can say what Tuttleman's address is, whatever another page calls itself. */
+const TUTTLEMAN_HOST = "counseling.temple.edu";
+
 /** Only from the Guidebook, so with its Source, and only if there's one address to go by. It's never made up here. */
 function tuttlemanIn(contacts: GuidebookItem[]): GuidebookItem | null {
   for (const contact of contacts) {
-    if (!/tuttleman/i.test(contact.name)) continue;
+    if (!/tuttleman counseling/i.test(contact.name)) continue;
+    if (!contact.sources.some((source) => URL.parse(source.url)?.hostname === TUTTLEMAN_HOST)) continue;
     const addresses = [...new Set(addressesIn(contact.email ?? ""))];
     if (addresses.length === 1 && addresses[0] !== NOT_FOR_REACHING_SOMEONE) return { ...contact, email: addresses[0]! };
   }
@@ -37,9 +41,10 @@ function tuttlemanIn(contacts: GuidebookItem[]): GuidebookItem | null {
 
 /**
  * What the Crisis card's offer to email someone calls. Like an Approve tap, each comes straight from the
- * paired phone and never passes through Claude, so nothing Buddy reads can choose who gets an email. The
- * crisis Resources are in the app's own code and wait for none of this. The backend's request hook has
- * already refused anything but a paired phone's key.
+ * paired phone and never passes through Claude. Who gets an email is what the Student's tap sends, and the
+ * only part of that from anywhere else is Tuttleman's address from the Guidebook, which fills the form for
+ * them to see. The crisis Resources are in the app's own code and wait for none of this. The backend's
+ * request hook has already refused anything but a paired phone's key.
  */
 export function addCrisisEmailRoutes(app: FastifyInstance, deps: CrisisEmailRoutesDeps): void {
   const { sites, store, sending, actionCards, contacts, lastMessageShown, isStoredId } = deps;
