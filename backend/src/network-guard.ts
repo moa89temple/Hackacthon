@@ -96,6 +96,12 @@ const WEB_SCHEMES = new Set(["http:", "https:"]);
 /** Names that only mean something on a private network. Docker's address for this laptop is one. */
 const PRIVATE_SUFFIXES = [".local", ".localhost", ".internal", ".lan", ".home", ".corp", ".intranet"];
 
+/** A page can ask for anything any number of times, and this ends up in Activity. */
+const MOST_NOTED_REFUSALS = 8;
+/** Only an address plain enough that it can't be holding anything of the Student's. */
+const PLAIN_PATH = /^\/[A-Za-z0-9_./-]{0,80}$/;
+const PLAIN_ACTION = /^[A-Za-z]{1,40}$/;
+
 const allow: GuardDecision = { allowed: true };
 const refuse = (why: string): GuardDecision => ({ allowed: false, why });
 
@@ -229,6 +235,15 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
       let progress: SendProgress = "shut";
       const refusals: string[] = [];
 
+      /** What was stopped while open, by its place and action only, so that a real send shows what Outlook really did. */
+      function noteWhatWasStopped(request: RequestToCheck): void {
+        const url = URL.parse(request.url);
+        if (progress !== "open" || !url || READING_METHODS.has(request.method.toUpperCase()) || !isOnSite(url.hostname, site!)) return;
+        if (refusals.length >= MOST_NOTED_REFUSALS || !PLAIN_PATH.test(url.pathname)) return;
+        const action = url.searchParams.get("action");
+        refusals.push(`The guard stopped a ${request.method} to ${url.pathname}${action && PLAIN_ACTION.test(action) ? ` for ${action}` : ""}.`);
+      }
+
       function takeTheSend(request: RequestToCheck): boolean {
         if (!approved || !rules) return false;
         const url = new URL(request.url);
@@ -259,6 +274,7 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
         refusals: () => [...refusals],
         check(request) {
           const decision = checkRequest(request, hasReadPermission, takeTheSend);
+          if (!decision.allowed) noteWhatWasStopped(request);
           if (!decision.allowed || !request.opensPage) return decision;
           const url = URL.parse(request.url);
           if (!url || !WEB_SCHEMES.has(url.protocol)) return decision;

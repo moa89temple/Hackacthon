@@ -145,6 +145,52 @@ describe("with the guard open, it still refuses", () => {
   });
 });
 
+describe("what the guard says it stopped while open, for working out what Outlook really does", () => {
+  const open = () => {
+    const guard = policy().forSending(TUMAIL_ID);
+    guard.open(EMAIL);
+    return guard;
+  };
+  const posted = (address: string, body = "SECRET WORDS") => ({ url: address, method: "POST", opensPage: false, body, contentType: "application/json" });
+
+  it("names the place and the action, and none of what was in the request", () => {
+    const guard = open();
+
+    guard.check(posted("https://outlook.office.com/owa/graphql?secret=SECRET"));
+    guard.check(posted("https://outlook.office.com/owa/service.svc?action=SendItem&id=SECRET"));
+
+    const said = guard.refusals().join(" ");
+    expect(said).toContain("/owa/graphql");
+    expect(said).toContain("/owa/service.svc");
+    expect(said).toContain("SendItem");
+    expect(said).not.toContain("SECRET");
+  });
+
+  it("leaves out anything on another host, and an odd-looking address", () => {
+    const guard = open();
+
+    guard.check(posted("https://evil.test/collect"));
+    guard.check(posted("https://outlook.office.com/owa/SECRET%40temple.edu/thing"));
+
+    expect(guard.refusals().join(" ")).not.toMatch(/evil|SECRET/);
+  });
+
+  it("says nothing of what it stopped before opening or after closing", () => {
+    const guard = policy().forSending(TUMAIL_ID);
+    guard.check(posted("https://outlook.office.com/owa/graphql"));
+    guard.open(EMAIL);
+    guard.close();
+    guard.check(posted("https://outlook.office.com/owa/graphql"));
+    expect(guard.refusals()).toEqual([]);
+  });
+
+  it("doesn't let a chatty page make a long story of it", () => {
+    const guard = open();
+    for (let count = 0; count < 50; count++) guard.check(posted(`https://outlook.office.com/owa/path${count}`));
+    expect(guard.refusals().length).toBeLessThanOrEqual(8);
+  });
+});
+
 describe("reaching the window to write in", () => {
   it.each(TUMAIL_APP_HOSTS)("opens on %s only for the send routine", (host) => {
     const address = `https://${host}/mail/deeplink/compose`;
