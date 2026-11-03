@@ -122,6 +122,8 @@ export interface SpendingTotals {
  * - forBackground: Discovery, Opportunity discovery and Connection reading. Alert classification (#24 to #26)
  *   must use this too when it comes, because it's named as background work and nothing else would stop it.
  *
+ * Tasks, when they come, aren't this kind of background work: the spec has them carry on with their own $1 pause.
+ *
  * Briefings use no model, so they have nothing to stop, and neither does anything else that doesn't call
  * Claude: the limit lives only in forBackground, so that free work goes on after it.
  *

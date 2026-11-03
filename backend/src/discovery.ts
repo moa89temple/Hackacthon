@@ -236,17 +236,19 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
         await takeIn(office, url, page, now);
       } catch (error) {
         // It goes on to the other pages, because one whose words haven't changed needs no Claude.
-        if (error instanceof BackgroundLimitReached) stopped = true;
-        else logError(new Error(`Discovery couldn't take in ${url}: ${error instanceof Error ? error.message : "unknown error"}`));
+        if (error instanceof BackgroundLimitReached) {
+          stopped = true;
+          // Now rather than when the read ends, which could be after midnight, when the limit has lifted.
+          stoppedOn = todayInPhiladelphia(clock.now());
+        } else {
+          logError(new Error(`Discovery couldn't take in ${url}: ${error instanceof Error ? error.message : "unknown error"}`));
+        }
       }
     }
 
     // This read isn't finished, so it isn't recorded, and a page it skipped mustn't lose anything for not being
     // read. Discovery is due again once the limit lifts, and what's already taken in won't need asking about.
-    if (stopped) {
-      stoppedOn = todayInPhiladelphia(clock.now());
-      return;
-    }
+    if (stopped) return;
     if (answered === 0) {
       // No page answered, so this laptop is off the web. That says nothing about any one page, and
       // Activity needs telling once a day rather than at every try.

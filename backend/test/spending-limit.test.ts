@@ -3,7 +3,7 @@ import { canvas } from "../src/canvas.ts";
 import { handshake } from "../src/handshake.ts";
 import { settings } from "../src/settings.ts";
 import { DAILY_BACKGROUND_LIMIT } from "../src/spending.ts";
-import { BackendHarness, TEST_CHAT_MODEL, TEST_CRISIS_MODEL, TEST_DISCOVERY_MODEL } from "./support/backend-harness.ts";
+import { BackendHarness, TEST_CHAT_MODEL, TEST_CRISIS_MODEL, TEST_DISCOVERY_MODEL, WARNED_CONNECTION } from "./support/backend-harness.ts";
 import { EVENTS_LIST, FAIR, INTERNSHIP, jobPage, JOBS_LIST, saveHandshakePages } from "./support/handshake-pages.ts";
 import {
   CALENDAR_PAGE,
@@ -114,6 +114,26 @@ describe("Discovery when the limit stops it", () => {
     backend.clock.moveForward(15 * DAY);
     backend.web.save(TUTTLEMAN_CONTACT_PAGE, `${counselingPage}<p>New hours.</p>`);
     await spendTheDayOnBackgroundWork();
+    await backend.discovery.runDue();
+
+    expect(backend.guidebook.search("counseling")).toHaveLength(1);
+  });
+
+  it("goes again straight after midnight, even if the stopped read only ended after midnight", async () => {
+    backend = await BackendHarness.start();
+    // 11:58 p.m. in Philadelphia.
+    backend.clock.moveTo("2026-11-03T04:58:00Z");
+    const realGet = backend.web.get.bind(backend.web);
+    backend.web.get = async (url) => {
+      // The read is still going when midnight comes.
+      if (url === HEADSHOTS_PAGE) backend.clock.moveTo("2026-11-03T05:01:00Z");
+      return realGet(url);
+    };
+    backend.claude.willReply(usesUpTheDay(haikuFinds(WRITING_CENTER)), haikuFinds(HEADSHOTS));
+    await backend.discovery.runDue();
+    expect(backend.guidebook.search("counseling")).toEqual([]);
+
+    backend.claude.willReply(haikuFinds(COUNSELING));
     await backend.discovery.runDue();
 
     expect(backend.guidebook.search("counseling")).toHaveLength(1);
@@ -379,6 +399,17 @@ describe("reading a Connection when the limit stops it", () => {
 });
 
 describe("what the limit leaves alone", () => {
+  it("still reads a Connection that sends nothing to Claude, and doesn't call that a problem", async () => {
+    backend = await BackendHarness.start();
+    await spendTheDayOnBackgroundWork();
+
+    expect((await backend.giveReadPermission(WARNED_CONNECTION, undefined)).status).toBe(200);
+
+    const status = (await backend.connections()).find((connection) => connection.id === WARNED_CONNECTION);
+    expect(status.lastReadAt).not.toBeNull();
+    expect(status.lastReadProblem).toBeNull();
+  });
+
   it("keeps chat going, and counts it apart from background work", async () => {
     backend = await BackendHarness.start();
     await spendTheDayOnBackgroundWork();

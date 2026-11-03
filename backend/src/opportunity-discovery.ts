@@ -86,6 +86,10 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
   const recentlyFailed = (failedAt: Date | null, now: Date) => failedAt !== null && now.getTime() - failedAt.getTime() < RETRY_AFTER_FAILURE_MS;
   /** Activity needs telling once a day rather than at every try. */
   const saidToday = (failedAt: Date | null, now: Date) => failedAt !== null && readDay(failedAt) === readDay(now);
+  /** At the moment it happens rather than when the read ends, which could be after midnight, when the limit has lifted. */
+  const noteEventsStopped = () => {
+    eventsStoppedOn = todayInPhiladelphia(clock.now());
+  };
   const logCouldNotTakeIn = (url: string, error: unknown) =>
     logError(new Error(`Discovery couldn't take in ${url}: ${error instanceof Error ? error.message : "unknown error"}`));
 
@@ -137,6 +141,7 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
       } catch (error) {
         if (error instanceof BackgroundLimitReached) {
           stopped = true;
+          noteEventsStopped();
           continue;
         }
         couldNotRead.push(event.url);
@@ -167,6 +172,7 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
       } catch (error) {
         if (error instanceof BackgroundLimitReached) {
           stopped = true;
+          noteEventsStopped();
           continue;
         }
         couldNotRead.push(url);
@@ -228,8 +234,8 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
     if (events === "failed") return;
     const pagesStopped = await readSearchedPagesAgain(now);
     // A page the limit left unread mustn't lose anything for not having been read.
-    if (events === "stopped" || pagesStopped) eventsStoppedOn = todayInPhiladelphia(clock.now());
-    else data.removeMissing(new Date(now.getTime() - MISSING_FOR_MS));
+    if (events === "stopped" || pagesStopped) return;
+    data.removeMissing(new Date(now.getTime() - MISSING_FOR_MS));
   }
 
   async function searchGoalsIfDue(): Promise<void> {
