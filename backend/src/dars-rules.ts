@@ -23,10 +23,12 @@ import type { PagePattern, Site } from "./browser-access.ts";
  * - The FAQ: an audit is only "current as of the moment an audit is processed".
  *
  * What's a guess, from memory of u.achieve, the product DARS Self-Service looks to be, and nothing of Temple's:
- * - DARS_PAGES.list and DARS_PAGES.audit. Logged out, the server sends any address to the sign-on, so that
- *   says nothing about whether they're real.
+ * - DARS_PAGES.list, DARS_PAGES.audit and AUDIT_QUERY. Logged out, the server sent the one address tried to
+ *   the sign-on, which says nothing about whether it's real.
  * - All of AUDIT_SHAPE, and that the audit is in the page rather than built by script or in a frame.
- * - The wording in AUDIT_LIST_SHAPE.saysNone, AUDIT_SHAPE.saysUnmet and AUDIT_SHAPE.saysAllMet.
+ * - The wording in AUDIT_LIST_SHAPE.saysNone, AUDIT_SHAPE.saysUnmet and AUDIT_SHAPE.saysAllMet. An audit that
+ *   says neither isn't understood, so those are the first thing to put right if a real one isn't.
+ * - That a complete requirement has no part that isn't: see AUDIT_SHAPE.completeCanHaveUnmetParts.
  * - That the Created column is on Philadelphia's clock.
  *
  * Whether a read has to run a new audit: it doesn't have to, and Buddy never does. It reads the newest one
@@ -50,6 +52,9 @@ export const DARS_PAGES = {
 };
 
 export type DarsPage = keyof typeof DARS_PAGES;
+
+/** All that may follow the ? on an audit's address, as the guard tests it: decoded and in lower case. */
+const AUDIT_QUERY = String.raw`\?id=[^&]*$`;
 
 /** Where the server sends someone to log in. Nothing is taken from it. */
 const WAY_TO_SIGN_ON = "/selfservice/general/loginroute.html";
@@ -83,6 +88,8 @@ export const AUDIT_LIST_SHAPE = {
 };
 
 export type RequirementStatus = "complete" | "missing" | "in_progress" | "planned" | "none";
+/** "None" is Temple's own word for no state at all, so it makes no fact. */
+export type StatedStatus = Exclude<RequirementStatus, "none">;
 
 /** How an audit is read. A guess, all of it, apart from the five states being Temple's. See above. */
 export const AUDIT_SHAPE = {
@@ -102,11 +109,16 @@ export const AUDIT_SHAPE = {
     Status_NONE: "none",
   } as Record<string, RequirementStatus>,
   statusPrefix: /^status/i,
+  /**
+   * A requirement can be met without all of its parts, such as any two of three, and then this should be
+   * true. Nobody knows yet whether DARS shows it that way, and until then the two disagreeing stops the read.
+   */
+  completeCanHaveUnmetParts: false,
   /** What the page puts in front of a title, which isn't part of it. In Temple's guide's picture. */
   titleLeader: /^~\s*/,
   /** Course numbers, such as ANTH 0814 or MATH L006. */
   course: /\b[A-Z]{2,5} [A-Z]?\d{3,4}\b/g,
-  /** The audit's own word on the whole of it. If what the reader found disagrees, it stops. */
+  /** The audit's own word on the whole of it. If it says neither or both, or what the reader found disagrees, it stops. */
   saysUnmet: /at least one requirement has not been satisfied/i,
   saysAllMet: /^\W*all requirements?(?: (?:are|have been))? (?:complete|completed|satisfied|met)\W*$/i,
   /** A What-If audit, from what's on the audit itself. From Temple's guide. */
@@ -142,27 +154,27 @@ export function darsReadablePages(host = DARS_HOST): PagePattern[] {
   ];
 }
 
-/** Under /selfservice/audit/ only the list and an audit are opened: making, running and deleting are all somewhere under there. */
-const OTHER_AUDIT_PAGE = /^\/selfservice\/audit\/(?!list\.html$|read\.html$)/;
-/** What else DARS can do. It keeps plans and exceptions, and a Student's course list can be changed from it. */
-const NEVER_ANYWHERE = /create|delete|remove|whatif|what-if|planner|udirect|roadmap|exception|comment|transfer|submit|logout|logoff|signout|sign-out/;
-const NEVER_WHOLE_WORD = /(?:^|[/_.;-])(?:run|new|plans?|edit|update|save|batch|request)(?:$|[/_.;-])/;
-/** An address can ask a page to act by what follows the ?, by what a value is called or what it says. Not by its id, which is opaque. */
-const ASKS_FOR_AN_ACTION = /[?&](?:action|method|cmd|op|delete|remove|run|create|submit)=/;
+/** What a page may load for its own look. Nothing else on DARS loads, because any address could be one that acts. */
+const ITS_OWN_LOOK = String.raw`[^?]*\.(?:css|js|png|gif|jpe?g|svg|ico|woff2?|ttf|eot|map)`;
 
 /**
  * Pages Buddy never opens, reads or submits, even with an Action Permission. The guard refuses these first,
- * for pages, frames, redirects and everything a page loads. Anything else that isn't a plain read is already
- * refused, as this site has no readOnlyRequests: running an audit is a change, and so is coming back from the
- * sign-on with a POST, which is why a login that's run out needs a Takeover. Letting that one request through
- * would be a decision for a person, with what `npm run check-dars` shows of it in front of them.
+ * for pages, frames, redirects and everything a page loads. It's everything on DARS but the pages above and
+ * what they load for their look, because nobody can say from outside which of its addresses run or delete an
+ * audit. The list is opened as it is, and an audit with nothing added to the one value it needs.
+ *
+ * Anything that isn't a plain read is refused as well, as this site has no readOnlyRequests: running an audit
+ * is a change, and so is coming back from the sign-on with a POST, which is why a login that's run out needs a
+ * Takeover. Letting that one request through would be a decision for a person, with what `npm run check-dars`
+ * shows of it in front of them.
  */
 export function darsBlockedPages(host = DARS_HOST): PagePattern[] {
+  const pages = [...Object.values(DARS_PAGES), WAY_TO_SIGN_ON].map((path) => path.replaceAll(".", "\\.")).join("|");
   return [
-    { host, path: OTHER_AUDIT_PAGE },
-    { host, path: NEVER_ANYWHERE },
-    { host, path: NEVER_WHOLE_WORD },
-    { host, path: /^/, query: ASKS_FOR_AN_ACTION },
+    { host, path: new RegExp(`^(?!/selfservice/?$|(?:${pages})$|${ITS_OWN_LOOK}$)`) },
+    { host: DARS_SHORT_HOST, path: /^(?!\/(?:selfservice\/?)?$)/ },
+    { host, path: exactly(DARS_PAGES.list), query: /./ },
+    { host, path: exactly(DARS_PAGES.audit), query: new RegExp(`^(?!${AUDIT_QUERY})`) },
     { host: SIGN_ON_HOST, path: /(?:^|[/_.-])(?:logout|slo)(?:$|[/_.-])/ },
   ];
 }

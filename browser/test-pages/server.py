@@ -331,6 +331,7 @@ DARS_PAGES = {
     "/selfservice/audit/read.html?id=MARKERID": """
 <title>MARKERPAGETITLE</title>
 <p>Prepared for MARKERSTUDENT</p>
+<p>AT LEAST ONE REQUIREMENT HAS NOT BEEN SATISFIED</p>
 <div class="requirement Status_OK"><div class="reqTitle">MARKERCOMPLETE</div><p>MARKERGRADE</p></div>
 <div class="requirement Status_NO"><div class="reqTitle">MARKERMISSING</div></div>
 """,

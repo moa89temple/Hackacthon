@@ -99,6 +99,33 @@ describe("logging in", () => {
 
     expect((await statusOf()).needsLogin).toBe(true);
   });
+
+  it("takes being sent somewhere off DARS that the guard won't go for a lost login", async () => {
+    backend.browser.savedPages.set(LIST_PAGE, darsPage("<h1>Made up</h1>", { finalUrl: "https://sign-on.elsewhere.example/" }));
+    await connect();
+
+    expect((await statusOf()).needsLogin).toBe(true);
+  });
+
+  it("doesn't ask for a login when DARS has moved the list to a page Buddy doesn't open, which logging in wouldn't fix", async () => {
+    backend.browser.savedPages.set(LIST_PAGE, darsPage("<h1>Made up</h1>", { finalUrl: "https://prd-dars.temple.edu/selfservice/general/somewhere-new.html" }));
+    await connect();
+
+    expect((await statusOf()).needsLogin).toBe(false);
+    expect((await statusOf()).lastReadProblem).toMatch(/couldn't make sense/);
+  });
+
+  it("says a Takeover may still be needed when Temple's sign-on doesn't ask for a password", async () => {
+    const notes = (await statusOf()).card.notes.join(" ");
+
+    expect(notes).toMatch(/may not ask for your password/);
+    expect(notes).toMatch(/tap Done/);
+    expect(notes).not.toMatch(/without asking you to log in again/);
+  });
+
+  it("says an old audit makes no card", async () => {
+    expect((await statusOf()).card.notes.join(" ")).toMatch(/older than 30 days/);
+  });
 });
 
 describe("what a read keeps", () => {

@@ -33,7 +33,7 @@ const WORDS_IT_MAY_SHOW = new Set(
     .split(/\s+/)
     .filter(Boolean),
 );
-/** Could be the name of a page, and the rules need those exactly: no digits, nothing opaque. */
+/** Could be the name of a page, and the rules need those exactly: no digits, and nothing that looks like a code. */
 const COULD_BE_A_PAGE_NAME = /^[a-z][a-z-]{0,30}(?:\.[a-z]{2,5})?$/;
 const isOrdinary = (lower: string) => WORDS_IT_MAY_SHOW.has(lower.replace(/\.[a-z]{2,5}$/, ""));
 

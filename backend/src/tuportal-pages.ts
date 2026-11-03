@@ -43,17 +43,15 @@ export function attribute(element: Html.Element, name: string): string | undefin
   return element.attrs.find((attr) => attr.name === name)?.value;
 }
 
-function* walkElements(node: Node): Generator<Html.Element> {
+export function* elementsIn(node: Node): Generator<Html.Element> {
   if (!("childNodes" in node)) return;
   for (const child of node.childNodes) {
     if ("tagName" in child) yield child;
-    yield* walkElements(child);
+    yield* elementsIn(child);
   }
 }
 
-export const elementsIn = (node: Node) => [...walkElements(node)];
-
-export const elementsNamed = (node: Node, ...tags: string[]) => elementsIn(node).filter((element) => tags.includes(element.tagName));
+export const elementsNamed = (node: Node, ...tags: string[]) => [...elementsIn(node)].filter((element) => tags.includes(element.tagName));
 
 export function wordsIn(node: Node): string {
   const words: string[] = [];

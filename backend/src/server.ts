@@ -115,7 +115,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     profile,
     contacts: () => guidebook.contacts(),
     afterFactsChanged: (connection) => {
-      if (connection === DARS_ID) darsCards.compare();
+      if (connection === DARS_ID) darsCards.compareWithRoadmap();
     },
     logError: (error) => app.log.error(error),
   });

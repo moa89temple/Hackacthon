@@ -17,7 +17,7 @@ describe("reading the list of audits", () => {
   it("finds the audits with their program, when they were made and where to view them", () => {
     const list = readAuditList(savedPage("audit-list"));
 
-    expect(list?.audits).toEqual([
+    expect(list).toEqual([
       { program: "MADE-UP-BS", created: "10/30/2026 3:52 PM", day: "2026-10-30", minute: "2026-10-30T15:52", address: "/selfservice/audit/read.html?id=made-up-newest" },
       { program: "MADE-UP-BS", created: "08/07/2026 10:45 AM", day: "2026-08-07", minute: "2026-08-07T10:45", address: "/selfservice/audit/read.html?id=made-up-older" },
     ]);
@@ -26,19 +26,17 @@ describe("reading the list of audits", () => {
   it("leaves What-If audits out, because they're about a major the Student doesn't have", () => {
     const list = readAuditList(savedPage("audit-list"));
 
-    expect(list?.audits.map(({ address }) => address).join(" ")).not.toContain("what-if");
-    expect(list?.whatIfs).toBe(1);
+    expect(list?.map(({ address }) => address).join(" ")).not.toContain("what-if");
   });
 
   it("takes an all-nines catalog year for a What-If, whatever its type says", () => {
     const list = readAuditList(changed("audit-list", '<span class="badge">WHAT-IF</span>', ""));
 
-    expect(list?.audits).toHaveLength(2);
-    expect(list?.whatIfs).toBe(1);
+    expect(list?.map(({ program }) => program)).toEqual(["MADE-UP-BS", "MADE-UP-BS"]);
   });
 
   it("says there are none only when the page says so", () => {
-    expect(readAuditList(savedPage("audit-list-empty"))).toEqual({ audits: [], whatIfs: 0 });
+    expect(readAuditList(savedPage("audit-list-empty"))).toEqual([]);
   });
 
   it("can't read a page with no list and no words saying it's empty", () => {
@@ -106,6 +104,42 @@ describe("reading an audit", () => {
 
   it("can't read a part of a requirement with a mark it doesn't know", () => {
     expect(readAuditPage(changed("audit", "subrequirement Status_NO", "subrequirement Status_MAYBE"))).toBeNull();
+  });
+
+  it.each(["Status_NO", "Status_IP", "Status_PL"])("can't read a complete requirement with a part marked %s, because the two disagree", (mark) => {
+    const page = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div><div class="subrequirement ${mark}"><div class="subreqTitle">A PART</div></div></div>`;
+
+    expect(readAuditPage(pageFrom(page))).toBeNull();
+  });
+
+  it("can't read a page with a mark on something it doesn't know, which could be a requirement drawn another way", () => {
+    const page = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div><div class="req-block Status_NO">TWO</div>`;
+
+    expect(readAuditPage(pageFrom(page))).toBeNull();
+  });
+
+  it("can't read a page with a part that's in no requirement", () => {
+    const page = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div><div class="subrequirement Status_NO"><div class="subreqTitle">A PART</div></div>`;
+
+    expect(readAuditPage(pageFrom(page))).toBeNull();
+  });
+
+  it.each(["Not all requirements are complete", "Some other words"])("can't read a page without the audit's own word on the whole of it, such as %s", (words) => {
+    const page = `<p>${words}</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div>`;
+
+    expect(readAuditPage(pageFrom(page))).toBeNull();
+  });
+
+  it("can't read a page that says both", () => {
+    const page = `<p>ALL REQUIREMENTS COMPLETE</p><p>AT LEAST ONE REQUIREMENT HAS NOT BEEN SATISFIED</p><div class="requirement Status_NO"><div class="reqTitle">ONE</div></div>`;
+
+    expect(readAuditPage(pageFrom(page))).toBeNull();
+  });
+
+  it("can read every requirement complete, when the audit says so too", () => {
+    const page = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div>`;
+
+    expect(readAuditPage(pageFrom(page))?.requirements.map(({ status }) => status)).toEqual(["complete"]);
   });
 
   it("can't read a requirement with no title", () => {

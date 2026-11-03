@@ -1,12 +1,11 @@
-import type { NewActivityEntry } from "./store.ts";
 import { todayInPhiladelphia, type Clock } from "./clock.ts";
 import { isShownToStudent } from "./conversation.ts";
-import { AUDIT_OLD_AFTER_DAYS, darsDataOf, daysOld } from "./dars.ts";
-import { DARS_ID, DARS_SOURCE } from "./dars-rules.ts";
+import { AUDIT_OLD_AFTER_DAYS, auditSeenIn, darsDataOf, daysOld } from "./dars.ts";
+import { DARS_ID, DARS_SOURCE, type StatedStatus } from "./dars-rules.ts";
 import { comparable } from "./extraction.ts";
 import { planCalendar, type TermTarget } from "./plan-calendar.ts";
 import type { FactFromConnection, Profile } from "./profile.ts";
-import type { MilestoneFields, StoredRoadmapCard, StoredRoadmapMilestone } from "./roadmap-store.ts";
+import type { AuditChange, MilestoneFields, StoredRoadmapCard, StoredRoadmapMilestone } from "./roadmap-store.ts";
 import { THE_STUDENT, type Store } from "./store.ts";
 
 /**
@@ -31,14 +30,12 @@ const MILESTONES_FOR_ONE_REQUIREMENT: StoredRoadmapMilestone["kind"][] = ["added
 interface Requirement {
   key: string;
   title: string;
-  status: string;
+  status: StatedStatus;
   courses: string[];
   detail: string | null;
 }
 
 type Change = { kind: "add"; requirement: Requirement } | { kind: "remove"; requirement: Requirement; milestone: StoredRoadmapMilestone };
-
-const changeKey = (change: Change) => `${change.kind}:${change.requirement.key}`;
 
 function requirementsIn(facts: FactFromConnection[]): Requirement[] {
   return facts.flatMap((fact) => {
@@ -79,14 +76,14 @@ function changesBetween(requirements: Requirement[], milestones: StoredRoadmapMi
   return [...removals, ...adds];
 }
 
-/** What the latest card that was really put to the Student said about each requirement. */
-function alreadyShown(cards: StoredRoadmapCard[]): Set<string> {
-  const lastAbout = new Map<string, string>();
+/** What the latest card the Student decided on said about each requirement, by its fact. */
+function lastDecidedChanges(cards: StoredRoadmapCard[]): Map<string, AuditChange["kind"]> {
+  const lastAbout = new Map<string, AuditChange["kind"]>();
   for (const card of cards) {
     if (card.status !== "accepted" && card.status !== "not_now") continue;
-    for (const change of card.content.fromAudit?.changes ?? []) lastAbout.set(change.slice(change.indexOf(":") + 1), change);
+    for (const { kind, requirement } of card.content.fromAudit?.changes ?? []) lastAbout.set(requirement, kind);
   }
-  return new Set(lastAbout.values());
+  return lastAbout;
 }
 
 /** The term after this one, because this one's classes are already chosen. Over the summer, that's the coming fall. */
@@ -97,11 +94,9 @@ function targetTerm(today: string): TermTarget {
   return (month === 6 || month === 7 ? terms[0] : terms[1])!;
 }
 
-const entry = (title: string, at: Date, detail: string): NewActivityEntry => ({ kind: "roadmap_change_proposed", title, at, detail });
-
 export interface DarsCards {
-  /** Throws only for what storage does. Whoever calls this keeps that from failing the read. */
-  compare(): void;
+  /** Shows a card for any new difference, and stops a waiting card that no longer fits. Throws only for what storage does. */
+  compareWithRoadmap(): void;
 }
 
 export function createDarsCards({ store, clock, profile }: { store: Store; clock: Clock; profile: Profile }): DarsCards {
@@ -128,10 +123,10 @@ export function createDarsCards({ store, clock, profile }: { store: Store; clock
   }
 
   return {
-    compare() {
+    compareWithRoadmap() {
       const now = clock.now();
       const facts = profile.factsFromConnection(DARS_ID);
-      const audit = facts.map(darsDataOf).find((fact) => fact?.kind === "audit_checked");
+      const audit = auditSeenIn(facts);
       const cards = data.listCards(THE_STUDENT);
       const waiting = cards.findLast((card) => card.status === "waiting");
       const waitingFromAudit = waiting?.content.fromAudit ? waiting : null;
@@ -140,7 +135,7 @@ export function createDarsCards({ store, clock, profile }: { store: Store; clock
         if (waitingFromAudit) data.retireCard(THE_STUDENT, waitingFromAudit.id, now);
       };
       // No audit to go by, because the Read Permission has gone or DARS has none, or one too old to go by.
-      if (audit?.kind !== "audit_checked" || daysOld(audit.day, now) > AUDIT_OLD_AFTER_DAYS) return stopWaitingCard();
+      if (!audit || daysOld(audit.day, now) > AUDIT_OLD_AFTER_DAYS) return stopWaitingCard();
 
       const milestones = data.listMilestones(THE_STUDENT);
       const afterMessageId = latestShownMessage();
@@ -149,18 +144,21 @@ export function createDarsCards({ store, clock, profile }: { store: Store; clock
       // The Student is deciding about something else, and a new card would take that one away. The next read tries again.
       if (waiting && !waitingFromAudit) return;
 
-      const shown = alreadyShown(cards);
-      const changes = changesBetween(requirementsIn(facts), milestones).filter((change) => !shown.has(changeKey(change)));
+      const lastDecided = lastDecidedChanges(cards);
+      const changes = changesBetween(requirementsIn(facts), milestones).filter((change) => lastDecided.get(change.requirement.key) !== change.kind);
       if (changes.length === 0) return stopWaitingCard();
 
-      const onCard = changes.slice(0, MOST_CHANGES_ON_A_CARD);
-      const keys = [...new Set(onCard.map(changeKey))];
-      if (waitingFromAudit && JSON.stringify(waitingFromAudit.content.fromAudit!.changes) === JSON.stringify(keys)) return;
+      // By requirement, because one can have more than one Milestone, and what's left out at the cut has to be able to come back.
+      const requirementsChanged = [...new Set(changes.map(({ requirement }) => requirement.key))];
+      const firstFew = new Set(requirementsChanged.slice(0, MOST_CHANGES_ON_A_CARD));
+      const onCard = changes.filter(({ requirement }) => firstFew.has(requirement.key));
+      const fromAudit = { changes: [...firstFew].map((key) => ({ kind: onCard.find(({ requirement }) => requirement.key === key)!.kind, requirement: key })) };
+      if (waitingFromAudit && JSON.stringify(waitingFromAudit.content.fromAudit) === JSON.stringify(fromAudit)) return;
 
       const target = targetTerm(todayInPhiladelphia(now));
       const adds = onCard.flatMap((change) => (change.kind === "add" ? [milestoneFor(change.requirement, target, now)] : []));
       const removes = onCard.flatMap((change) => (change.kind === "remove" ? [{ id: change.milestone.id, name: change.milestone.name }] : []));
-      const more = changes.length - onCard.length;
+      const more = requirementsChanged.length - firstFew.size;
       const summary = [...adds.map(({ name }) => `Add: ${name}`), ...removes.map(({ name }) => `Remove: ${name}`)].join("\n");
 
       data.addCard(
@@ -172,17 +170,17 @@ export function createDarsCards({ store, clock, profile }: { store: Store; clock
             "Nothing changes unless you tap Accept.",
             adds.length > 0 ? "Any date here is Buddy's target for you, not a Temple deadline." : null,
             "An audit isn't the final word on graduating, so check anything that matters with your academic advisor.",
-            more > 0 ? `There ${more === 1 ? "is 1 more" : `are ${more} more`}, which Buddy will show you after this one.` : null,
+            more > 0 ? `There ${more === 1 ? "is 1 more" : `are ${more} more`}, which Buddy will show you once you've decided on this one, the next time it reads DARS.` : null,
           ]
             .filter((line) => line !== null)
             .join(" "),
           adds,
           removes,
-          fromAudit: { changes: keys },
+          fromAudit,
         },
         afterMessageId,
         now,
-        entry("Buddy suggested a change to your Roadmap, from your DARS audit", now, summary),
+        { kind: "roadmap_change_proposed", title: "Buddy suggested a change to your Roadmap, from your DARS audit", at: now, detail: summary },
       );
     },
   };

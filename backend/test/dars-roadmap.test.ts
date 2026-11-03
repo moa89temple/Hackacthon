@@ -175,6 +175,41 @@ describe("a difference from the Roadmap", () => {
     expect(namesOn((await waiting())[0])).toEqual(["Meet this DARS requirement: REQUIREMENT 6", "Meet this DARS requirement: REQUIREMENT 7", "Meet this DARS requirement: REQUIREMENT 8", "Meet this DARS requirement: REQUIREMENT 9"]);
   });
 
+  it("keeps every Milestone for one requirement on the same card, so that none is lost at the cut", async () => {
+    await aRoadmap("Finish the science requirement");
+    await calls.addMilestone({ name: "Plan for science requirement", dueDate: "2027-03-15", goalId: null });
+    for (const number of [1, 2, 3, 4]) await calls.addMilestone({ name: `Finish other thing ${number}`, dueDate: "2027-03-15", goalId: null });
+    const others = Object.fromEntries([1, 2, 3, 4].map((number) => [`OTHER THING ${number}`, COMPLETE]));
+
+    await connectWith({ ...others, "SCIENCE REQUIREMENT": COMPLETE });
+    const [first] = await waiting();
+
+    expect(first.removes).toHaveLength(6);
+    await calls.accept(first.id);
+    expect(await onRoadmap()).toEqual([]);
+  });
+
+  it("goes on comparing after the Student deletes the audit's summary from their Profile", async () => {
+    await aRoadmap();
+    await connectWith({ "SCIENCE REQUIREMENT": MISSING });
+    await calls.notNow((await waiting())[0].id);
+    const summary = (await backend.profileFacts()).find((fact) => fact.text.startsWith("DARS audit from"));
+    await backend.deleteFact(summary.id);
+
+    await read({ "SCIENCE REQUIREMENT": MISSING, "ARTS REQUIREMENT": MISSING });
+
+    expect(namesOn((await waiting())[0])).toEqual(["Meet this DARS requirement: ARTS REQUIREMENT"]);
+  });
+
+  it("says that any more wait for a read after this card", async () => {
+    await aRoadmap();
+    const many = Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`REQUIREMENT ${index + 1}`, MISSING]));
+
+    await connectWith(many);
+
+    expect((await waiting())[0].note).toMatch(/1 more.*next time it reads DARS/);
+  });
+
   it("is in Activity", async () => {
     await aRoadmap();
     await connectWith({ "SCIENCE REQUIREMENT": MISSING });

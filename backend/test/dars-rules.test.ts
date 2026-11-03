@@ -57,9 +57,30 @@ describe("reads stay reads", () => {
     }
   });
 
-  it("doesn't let an audit's page be asked to do something by what follows the ?", () => {
-    for (const query of ["?action=delete", "?delete=1", "?id=x&run=1", "?method=create"]) {
-      expect(guards().policy.isBlockedPage(`${DARS}/selfservice/audit/read.html${query}`), query).toBe(true);
+  it("refuses anything it doesn't know, even as something a page loads, whatever it's called", () => {
+    for (const path of ["/selfservice/runAudit.html", "/selfservice/runDeclaredPrograms", "/api/audits/generate", "/selfservice/something/new-to-buddy.html", "/selfservice/audit/create.html%3F.css"]) {
+      expect(loading(`${DARS}${path}`), path).toBe(false);
+    }
+  });
+
+  it("refuses those on the address Temple gives Students too, which is on the same site", () => {
+    for (const path of ["/selfservice/audit/create.html", "/selfservice/audit/delete.html", "/selfservice/audit/list.html", "/selfservice/styles.css"]) {
+      expect(loading(`https://dars.temple.edu${path}`), path).toBe(false);
+    }
+  });
+
+  it("lets a page load its own look", () => {
+    for (const path of ["/selfservice/css/site.css", "/selfservice/js/site.js", "/selfservice/images/check.png"]) {
+      expect(loading(`${DARS}${path}`), path).toBe(true);
+    }
+  });
+
+  it("doesn't let the list or an audit be asked to do something by what follows the ?", () => {
+    for (const query of ["?action=delete", "?delete=1", "?id=x&run=1", "?id=1&runAudit=true", "?method=create", ""]) {
+      expect(guards().policy.isBlockedPage(`${DARS}/selfservice/audit/read.html${query}`), `read ${query}`).toBe(true);
+    }
+    for (const query of ["?action=delete", "?run=1", "?id=x"]) {
+      expect(guards().policy.isBlockedPage(`${LIST}${query}`), `list ${query}`).toBe(true);
     }
   });
 

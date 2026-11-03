@@ -26,12 +26,6 @@ export interface AuditOnList {
   address: string;
 }
 
-export interface AuditList {
-  audits: AuditOnList[];
-  /** How many What-If audits were left out. */
-  whatIfs: number;
-}
-
 export interface RequirementOnAudit {
   title: string;
   status: RequirementStatus;
@@ -71,25 +65,24 @@ function findList(html: string) {
   return null;
 }
 
-/** Null if any row can't be read, because the one that can't could be the newest. */
-export function readAuditList({ html, text }: PageToRead): AuditList | null {
+/** The Student's own audits, with none said only in the page's own words. Null if any row can't be read, because the one that can't could be the newest. */
+export function readAuditList({ html, text }: PageToRead): AuditOnList[] | null {
   const shown = clean(text);
+  const saysNone = linesOf(text).some((line) => AUDIT_LIST_SHAPE.saysNone.test(line));
   const list = findList(html);
-  if (!list) return linesOf(text).some((line) => AUDIT_LIST_SHAPE.saysNone.test(line)) ? { audits: [], whatIfs: 0 } : null;
+  if (!list) return saysNone ? [] : null;
 
   const audits: AuditOnList[] = [];
-  let whatIfs = 0;
+  let anyRows = false;
   for (const row of list.rows) {
     const cells = elementsNamed(row, "td", "th");
     if (cells.every((cell) => wordsIn(cell) === "" && elementsNamed(cell, "a").length === 0)) continue;
     if (cells.length !== list.width) return null;
+    anyRows = true;
 
     const type = wordsIn(cells[list.columns.type]!);
     const catalogYear = wordsIn(cells[list.columns.catalogYear]!);
-    if (AUDIT_LIST_SHAPE.whatIfType.test(type) || AUDIT_LIST_SHAPE.whatIfCatalogYear.test(catalogYear)) {
-      whatIfs += 1;
-      continue;
-    }
+    if (AUDIT_LIST_SHAPE.whatIfType.test(type) || AUDIT_LIST_SHAPE.whatIfCatalogYear.test(catalogYear)) continue;
     if (!AUDIT_LIST_SHAPE.regularType.test(type)) return null;
 
     const created = clean(wordsIn(cells[list.columns.created]!));
@@ -99,11 +92,12 @@ export function readAuditList({ html, text }: PageToRead): AuditList | null {
     if (!parts || !program || !address || !shown.includes(created)) return null;
     audits.push({ program, created, ...parts, address });
   }
-  return audits.length + whatIfs === 0 && !linesOf(text).some((line) => AUDIT_LIST_SHAPE.saysNone.test(line)) ? null : { audits, whatIfs };
+  return anyRows || saysNone ? audits : null;
 }
 
 const classesOf = (element: Html.Element) => attribute(element, "class")?.split(/\s+/).filter(Boolean) ?? [];
 const hasClass = (element: Html.Element, name: string) => classesOf(element).includes(name);
+const hasAStatusMark = (element: Html.Element) => classesOf(element).some((name) => AUDIT_SHAPE.statusPrefix.test(name));
 
 /** Null unless exactly one state is marked, and it's one the reader knows. */
 function statusOf(element: Html.Element): RequirementStatus | null {
@@ -113,7 +107,7 @@ function statusOf(element: Html.Element): RequirementStatus | null {
 }
 
 function titleIn(element: Html.Element, titleClass: string): string | null {
-  const title = elementsIn(element).find((inside) => hasClass(inside, titleClass));
+  const title = [...elementsIn(element)].find((inside) => hasClass(inside, titleClass));
   return title ? clean(wordsIn(title)).replace(AUDIT_SHAPE.titleLeader, "") || null : null;
 }
 
@@ -123,9 +117,10 @@ function readRequirement(block: Html.Element, shown: string): RequirementOnAudit
   if (!status || !title || !shown.includes(title)) return null;
 
   const missingParts: string[] = [];
-  for (const part of elementsIn(block).filter((inside) => hasClass(inside, AUDIT_SHAPE.partClass))) {
+  for (const part of [...elementsIn(block)].filter((inside) => hasClass(inside, AUDIT_SHAPE.partClass))) {
     const partStatus = statusOf(part);
     if (!partStatus) return null;
+    if (status === "complete" && !AUDIT_SHAPE.completeCanHaveUnmetParts && partStatus !== "complete" && partStatus !== "none") return null;
     // A part can have no title of its own. Its state is what matters, and the requirement's says that.
     const partTitle = titleIn(part, AUDIT_SHAPE.partTitleClass);
     if (partStatus === "missing" && partTitle) missingParts.push(partTitle);
@@ -138,8 +133,15 @@ export function readAuditPage({ html, text }: PageToRead): Audit | null {
   const shown = clean(text);
   if (AUDIT_SHAPE.whatIfCatalog.test(shown)) return null;
 
+  const everything = [...elementsIn(parse(html))];
+  const blocks = everything.filter((element) => hasClass(element, AUDIT_SHAPE.requirementClass));
+  const insideABlock = new Set(blocks.flatMap((block) => [...elementsIn(block)]));
+  const isKnownPlace = (element: Html.Element) => hasClass(element, AUDIT_SHAPE.requirementClass) || (hasClass(element, AUDIT_SHAPE.partClass) && insideABlock.has(element));
+  // A state marked anywhere else could be a requirement drawn some way the reader doesn't know, and leaving it out could leave out what's missing.
+  if (everything.some((element) => (hasAStatusMark(element) || hasClass(element, AUDIT_SHAPE.partClass)) && !isKnownPlace(element))) return null;
+
   const requirements: RequirementOnAudit[] = [];
-  for (const block of elementsIn(parse(html)).filter((element) => hasClass(element, AUDIT_SHAPE.requirementClass))) {
+  for (const block of blocks) {
     const requirement = readRequirement(block, shown);
     if (!requirement) return null;
     requirements.push(requirement);
@@ -147,9 +149,9 @@ export function readAuditPage({ html, text }: PageToRead): Audit | null {
   if (requirements.length === 0) return null;
 
   const lines = linesOf(text);
-  const anyMissing = requirements.some(({ status }) => status === "missing");
-  const anyNotComplete = requirements.some(({ status }) => status === "missing" || status === "in_progress" || status === "planned");
-  if (!anyNotComplete && lines.some((line) => AUDIT_SHAPE.saysUnmet.test(line))) return null;
-  if (anyMissing && lines.some((line) => AUDIT_SHAPE.saysAllMet.test(line))) return null;
-  return { requirements };
+  const saysUnmet = lines.some((line) => AUDIT_SHAPE.saysUnmet.test(line));
+  const saysAllMet = lines.some((line) => AUDIT_SHAPE.saysAllMet.test(line));
+  const allComplete = requirements.every(({ status }) => status === "complete" || status === "none");
+  // Only the audit's own word can show that none is left out, such as on a page that's only partly drawn.
+  return saysUnmet !== saysAllMet && allComplete === saysAllMet ? { requirements } : null;
 }

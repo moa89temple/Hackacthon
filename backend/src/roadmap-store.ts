@@ -94,7 +94,13 @@ export interface RoadmapCardContent {
   adds: MilestoneFields[];
   removes: { id: number; name: string }[];
   /** On a card from comparing the audit with the Roadmap: what it shows, so that nothing's shown twice. See dars-roadmap.ts. */
-  fromAudit?: { changes: string[] };
+  fromAudit?: { changes: AuditChange[] };
+}
+
+/** One difference a card from an audit shows, for the requirement with this fact. */
+export interface AuditChange {
+  kind: "add" | "remove";
+  requirement: string;
 }
 
 export interface StoredRoadmapCard {

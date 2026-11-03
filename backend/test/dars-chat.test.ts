@@ -149,6 +149,49 @@ describe("what Claude is shown", () => {
     expect(lastToolAnswer().content).toMatch(/1 more that the Student took out of their Profile/);
   });
 
+  it("goes by what DARS last said, with the Student's own words only as theirs", async () => {
+    saveDarsPages(backend.browser, { audit: auditWith({ "SCIENCE REQUIREMENT": "Status_OK" }) });
+    await connect();
+    const fact = (await backend.profileFacts()).find((candidate) => candidate.text.startsWith("Requirement complete"));
+    await backend.editFact(fact.id, "Requirement complete: all done, says me");
+    saveDarsPages(backend.browser, { audit: auditWith({ "SCIENCE REQUIREMENT": "Status_NO" }) });
+
+    await ask({ read_again: true });
+
+    const words = lastToolAnswer().content;
+    expect(words).toMatch(/Missing:\n- "Requirement missing: SCIENCE REQUIREMENT"/);
+    expect(words).toMatch(/The Student's own words for it: "Requirement complete: all done, says me"/);
+    expect(words).not.toMatch(/Complete:\n/);
+  });
+
+  it("still shows the audit after the Student deletes its summary from their Profile, and it comes back with a new audit", async () => {
+    await connect();
+    const summary = (await backend.profileFacts()).find((fact) => fact.text.startsWith("DARS audit from"));
+    await backend.deleteFact(summary.id);
+
+    await ask({ read_again: true });
+
+    expect(lastToolAnswer().content).toContain("10/30/2026 3:52 PM");
+    expect(lastToolAnswer().content).toMatch(/Missing:\n.*GENED-GS2/);
+    expect((await backend.profileFacts()).filter((fact) => fact.text.startsWith("DARS audit from"))).toEqual([]);
+
+    saveDarsPages(backend.browser, { list: savedDarsHtml("audit-list").replace("10/30/2026 3:52 PM", "11/01/2026 3:52 PM") });
+    await backend.readNow(DARS_ID);
+
+    expect((await backend.profileFacts()).filter((fact) => fact.text.startsWith("DARS audit from 11/01/2026"))).toHaveLength(1);
+  });
+
+  it("says plainly when the Student has taken out everything from the audit", async () => {
+    saveDarsPages(backend.browser, { audit: auditWith({ ONE: "Status_OK" }) });
+    await connect();
+    for (const fact of await backend.profileFacts()) await backend.deleteFact(fact.id);
+
+    await ask();
+
+    expect(lastToolAnswer().content).toMatch(/took it out of their Profile/);
+    expect(lastToolAnswer().content).toMatch(/Don't say a requirement is met or missing/);
+  });
+
   it("records what was given in Activity, each from DARS", async () => {
     await connect();
 
