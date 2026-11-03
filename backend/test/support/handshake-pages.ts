@@ -9,6 +9,8 @@ import type { RecordingBrowser, SavedPage } from "./recording-browser.ts";
 
 export const ORIGIN = "https://app.joinhandshake.com";
 export const SCHOOL_ORIGIN = "https://temple.joinhandshake.com";
+/** What a Takeover opens and a login check reads. */
+export const HOME = `${SCHOOL_ORIGIN}/stu`;
 /** What the reader asks for. */
 export const JOBS_LIST = `${SCHOOL_ORIGIN}/stu/postings`;
 export const EVENTS_LIST = `${SCHOOL_ORIGIN}/stu/events`;
@@ -61,6 +63,7 @@ const page = (more: Partial<SavedPage>): SavedPage => ({ title: "Handshake", tex
 
 /** Handshake for a Student with a working login. Everything in it is made up. */
 export function saveHandshakePages(browser: RecordingBrowser, { jobs = [INTERNSHIP], events = [FAIR] }: { jobs?: MadeUpListing[]; events?: MadeUpListing[] } = {}): void {
+  browser.savedPages.set(HOME, page({ finalUrl: `${ORIGIN}/stu`, html: "<main>Home</main>" }));
   browser.savedPages.set(JOBS_LIST, page({ finalUrl: JOBS_LANDED, html: listHtml("jobs", ...jobs) }));
   browser.savedPages.set(EVENTS_LIST, page({ finalUrl: EVENTS_LANDED, html: listHtml("events", ...events) }));
   for (const listing of jobs) browser.savedPages.set(jobPage(listing.id), page({ title: `${listing.title} | Handshake`, html: listingHtml(listing) }));
@@ -69,5 +72,5 @@ export function saveHandshakePages(browser: RecordingBrowser, { jobs = [INTERNSH
 
 /** Handshake for a browser with no login: everything ends up at its login page. */
 export function expireHandshakeLogin(browser: RecordingBrowser): void {
-  for (const url of [JOBS_LIST, EVENTS_LIST]) browser.savedPages.set(url, page({ finalUrl: LOGGED_OUT, html: "<main>Log in</main>" }));
+  for (const url of [HOME, JOBS_LIST, EVENTS_LIST]) browser.savedPages.set(url, page({ finalUrl: LOGGED_OUT, html: "<main>Log in</main>" }));
 }

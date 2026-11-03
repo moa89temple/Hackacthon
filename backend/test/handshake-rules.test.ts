@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Site } from "../src/browser-access.ts";
-import { HANDSHAKE_HOME, HANDSHAKE_ID, isHandshakeListing, isHandshakeLoginPage } from "../src/handshake-rules.ts";
+import { HANDSHAKE_HOME, HANDSHAKE_ID, isFromHandshake, isHandshakeLoginPage } from "../src/handshake-rules.ts";
 import { createGuardPolicy } from "../src/network-guard.ts";
 import { keepToReadablePages } from "../src/readable-pages.ts";
 import { settings } from "../src/settings.ts";
@@ -18,6 +18,7 @@ const loaded = (url: string, method = "GET", body?: string) =>
 describe("the pages Buddy opens on Handshake", () => {
   it.each([
     ["the page a Takeover opens", HANDSHAKE_HOME],
+    ["where a login's home page may end up", `${APP}/explore`],
     ["the jobs list", `${SCHOOL}/stu/postings`],
     ["the events list", `${SCHOOL}/stu/events`],
     ["the jobs list on the app's host", `${APP}/stu/postings`],
@@ -82,6 +83,7 @@ describe("what a Handshake page may load", () => {
     ["an RSVP", `${APP}/stu/events/123/rsvp`],
     ["saving a job", `${APP}/saved_jobs`],
     ["a message", `${APP}/stu/messages/5`],
+    ["a message on any other host of theirs", "https://api.joinhandshake.com/stu/messages"],
   ])("refuses %s, even by GET", (_, url) => {
     expect(loaded(url!).allowed).toBe(false);
   });
@@ -119,10 +121,10 @@ describe("telling Handshake's addresses apart", () => {
     expect(isHandshakeLoginPage(url)).toBe(false);
   });
 
-  it("knows a listing's address by its host, however it's spelled", () => {
-    expect(isHandshakeListing(`${APP}/stu/jobs/1`)).toBe(true);
-    expect(isHandshakeListing(`${SCHOOL}/stu/events/1`)).toBe(true);
-    expect(isHandshakeListing("https://joinhandshake.com.evil.example/stu/jobs/1")).toBe(false);
-    expect(isHandshakeListing("https://www.nursing-foundation.example/scholarship")).toBe(false);
+  it("knows what came from Handshake by its host, however it's spelled", () => {
+    expect(isFromHandshake(`${APP}/stu/jobs/1`)).toBe(true);
+    expect(isFromHandshake(`${SCHOOL}/stu/events/1`)).toBe(true);
+    expect(isFromHandshake("https://joinhandshake.com.evil.example/stu/jobs/1")).toBe(false);
+    expect(isFromHandshake("https://www.nursing-foundation.example/scholarship")).toBe(false);
   });
 });

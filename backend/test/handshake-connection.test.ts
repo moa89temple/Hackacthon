@@ -91,6 +91,26 @@ const connectFindingInternship = async (more: Record<string, unknown> = {}) => {
   await connect();
 };
 
+/**
+ * Holds reads from the moment the first listing's page is asked for. The first read after this goes on
+ * through the lists, because those have already been waited for. Gives back what stops holding.
+ */
+function saveAndHoldListing(givesRelease: (release: () => void) => void): () => void {
+  const realRead = backend.browser.read.bind(backend.browser);
+  let hold: Promise<void> | undefined;
+  backend.browser.read = async (url, guard, options) => {
+    if (url === jobPage(INTERNSHIP.id)) {
+      hold = new Promise<void>((resolve) => givesRelease(resolve));
+      backend.browser.holdReads = hold;
+    }
+    return realRead(url, guard, options);
+  };
+  return () => {
+    backend.browser.read = realRead;
+    backend.browser.holdReads = undefined;
+  };
+}
+
 describe("the Read Permission card", () => {
   it("says what will be read, and that it's read through a Takeover login", async () => {
     const { card, logsIn, on } = await statusOf();
@@ -113,6 +133,10 @@ describe("the Read Permission card", () => {
     expect(notes).toMatch(/message/);
     expect(notes).toMatch(/Claude/);
     expect(notes).toMatch(/Goals/);
+  });
+
+  it("doesn't promise what a page's layout could break, since no real page has been seen", async () => {
+    expect((await statusOf()).card.notes.join(" ")).not.toMatch(/doesn't send/);
   });
 
   it("says what revoking deletes", async () => {
@@ -316,6 +340,24 @@ describe("the Guidebook's rules on fees", () => {
     await connect();
 
     expect((await calls.list()).map(({ name }) => name)).toEqual([FAIR.title, INTERNSHIP.title]);
+  });
+
+  it("hides an event whose page gives a price Claude missed, because the page is about that one event", async () => {
+    const paidFair = { ...FAIR, words: "Meet employers on December 3, 2026. The registration fee is $25." };
+    saveHandshakePages(backend.browser, { jobs: [INTERNSHIP], events: [paidFair] });
+    await goals.addGoal(GOAL);
+    backend.claude.willReply(NOTHING_FITS, haikuFindsOpportunities(fairFound({ cost: "not_stated", cost_quote: null })));
+
+    await connect();
+
+    expect(await calls.list()).toEqual([]);
+  });
+
+  it("doesn't take what a job pays for a price", async () => {
+    saveHandshakePages(backend.browser, { jobs: [{ ...INTERNSHIP, words: "Apply by December 1, 2026. There's no fee to apply, and it pays $25 an hour." }] });
+    await connectFindingInternship();
+
+    expect((await calls.list()).map(({ name }) => name)).toEqual([INTERNSHIP.title]);
   });
 
   it("says nothing is free unless its page does", async () => {
@@ -538,19 +580,61 @@ describe("keeping Opportunities current, the way the Guidebook does", () => {
     return backend.opportunityDiscovery.runDue();
   };
 
-  it("leaves after two weeks gone from Handshake's lists", async () => {
-    await connectFindingInternship();
-
+  /** Off the first of the list, and its own page may or may not still be there. */
+  const fallsOffTheList = () => {
+    const stillThere = backend.browser.savedPages.get(jobPage(INTERNSHIP.id))!;
     saveHandshakePages(backend.browser, { jobs: [{ ...INTERNSHIP, id: 999 }] });
+    backend.browser.savedPages.set(jobPage(INTERNSHIP.id), stillThere);
+    backend.claude.whenScriptRunsOut = NOTHING_FITS;
+  };
+
+  it("leaves after two weeks gone from Handshake altogether, without calling that a problem", async () => {
+    await connectFindingInternship();
+    fallsOffTheList();
+    backend.browser.savedPages.delete(jobPage(INTERNSHIP.id));
+
     backend.clock.moveForward(8 * DAY);
-    backend.claude.willReply(NOTHING_FITS);
     await backend.readNow(HANDSHAKE);
     expect((await calls.list()).map(({ name }) => name)).toEqual([INTERNSHIP.title]);
+    expect((await statusOf()).lastReadProblem).toBeNull();
 
     backend.clock.moveForward(7 * DAY);
     await discoveryRuns();
 
     expect((await calls.list()).map(({ name }) => name)).not.toContain(INTERNSHIP.title);
+  });
+
+  it("stays when it's only fallen down the list and its own page is still there, because that page is its Source", async () => {
+    await connectFindingInternship();
+    fallsOffTheList();
+
+    backend.clock.moveForward(8 * DAY);
+    await backend.readNow(HANDSHAKE);
+    backend.claude.requests.length = 0;
+    backend.clock.moveForward(7 * DAY);
+    await backend.readNow(HANDSHAKE);
+    await discoveryRuns();
+
+    expect(pagesOpened()).toContain(jobPage(INTERNSHIP.id));
+    expect((await calls.list()).map(({ name }) => name)).toEqual([INTERNSHIP.title]);
+  });
+
+  it("keeps a saved one that's still on the list after the Student's last Goal goes", async () => {
+    await connectFindingInternship();
+    const [opportunity] = await calls.list();
+    await calls.save(opportunity.id);
+    const [goal] = await goals.goals();
+    await goals.removeGoal(goal.id);
+    backend.browser.actions.length = 0;
+
+    for (let week = 0; week < 3; week++) {
+      backend.clock.moveForward(6 * DAY);
+      await backend.readNow(HANDSHAKE);
+      await discoveryRuns();
+    }
+
+    expect((await calls.list()).map(({ name }) => name)).toEqual([INTERNSHIP.title]);
+    expect(pagesOpened()).not.toContain(jobPage(INTERNSHIP.id));
   });
 
   it("stays while it's on the list, however long since its page was opened", async () => {
@@ -672,6 +756,45 @@ describe("revoking the Read Permission", () => {
 
     const [left] = await calls.list();
     expect(left.sources.map(({ url }: any) => url)).toEqual([page]);
+  });
+
+  it("takes away the Goal only Handshake matched it to, from what also came from somewhere else", async () => {
+    const page = "https://www.nursing-foundation.example/internship";
+    await goals.addGoal(GOAL);
+    backend.claude.willReply(claudeSearches([page]));
+    backend.web.save(page, outsidePageHtml("The internship", "A paid internship on a hospital ward. Apply by December 1, 2026."));
+    backend.claude.willReply(haikuFindsOpportunities(internshipFound()));
+    backend.web.save(EVENTS_LIST_PAGE, eventsListHtml());
+    await backend.opportunityDiscovery.runDue();
+
+    await goals.addGoal(OTHER_GOAL);
+    backend.claude.willReply(haikuFindsOpportunities(internshipFound({ for_goals: [2] })), NOTHING_FITS);
+    await connect();
+    expect((await calls.list())[0].forGoals).toEqual([GOAL, OTHER_GOAL]);
+
+    await backend.revokeReadPermission(HANDSHAKE);
+
+    expect((await calls.list())[0].forGoals).toEqual([GOAL]);
+  });
+
+  it("sends Claude nothing from a page it was still opening when the Student revoked", async () => {
+    await goals.addGoal(GOAL);
+    await connect();
+    backend.claude.requests.length = 0;
+    backend.browser.actions.length = 0;
+    let letReadFinish = () => {};
+    const allowPages = saveAndHoldListing((resolve) => (letReadFinish = resolve));
+    const reading = backend.readNow(HANDSHAKE);
+    await vi.waitFor(() => expect(pagesOpened()).toContain(jobPage(INTERNSHIP.id)));
+
+    const revoking = backend.revokeReadPermission(HANDSHAKE);
+    await vi.waitFor(async () => expect((await statusOf()).on).toBe(false));
+    letReadFinish();
+    await Promise.all([reading, revoking]);
+    allowPages();
+
+    expect(askedHaiku()).toEqual([]);
+    expect(await calls.list()).toEqual([]);
   });
 
   it("leaves everything else in the Guidebook where it is", async () => {

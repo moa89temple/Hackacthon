@@ -165,6 +165,16 @@ export function createOpportunityStore(
   const notOnAnyPage = `opportunity_id NOT IN (SELECT opportunity_id FROM opportunity_mentions)`;
   const deleteOrphanSaves = db.prepare(`DELETE FROM saved_opportunities WHERE ${notOnAnyPage}`);
   const deleteOrphanGoals = db.prepare(`DELETE FROM opportunity_goals WHERE ${notOnAnyPage}`);
+  // What's left on another page keeps only the Goals one of those pages was read for.
+  const deleteGoalsNoPageExplains = db.prepare(
+    `DELETE FROM opportunity_goals WHERE NOT EXISTS (
+       SELECT 1 FROM opportunity_mentions mention
+       JOIN opportunity_page_goals page_goal ON page_goal.url = mention.url
+       WHERE mention.opportunity_id = opportunity_goals.opportunity_id
+         AND page_goal.student_id = opportunity_goals.student_id
+         AND page_goal.goal_key = opportunity_goals.goal_key
+     )`,
+  );
   const deleteOrphans = db.prepare(
     `DELETE FROM opportunities WHERE reported_at IS NULL AND id NOT IN (SELECT opportunity_id FROM opportunity_mentions)`,
   );
@@ -192,6 +202,12 @@ export function createOpportunityStore(
   const upsertRunFailed = db.prepare(
     `INSERT INTO opportunity_runs (what, failed_at) VALUES (?1, ?2) ON CONFLICT (what) DO UPDATE SET failed_at = ?2`,
   );
+
+  function deleteOnePage(url: string): void {
+    deletePageMentions.run(url);
+    deletePageGoals.run(url);
+    deletePage.run(url);
+  }
 
   function clearOrphans(): void {
     deleteOrphanSaves.run();
@@ -233,9 +249,7 @@ export function createOpportunityStore(
 
     removePage(url) {
       inTransaction(() => {
-        deletePageMentions.run(url);
-        deletePageGoals.run(url);
-        deletePage.run(url);
+        deleteOnePage(url);
         clearOrphans();
       });
     },
@@ -244,11 +258,9 @@ export function createOpportunityStore(
 
     removePagesWithoutTransaction(isGone) {
       for (const { url } of selectAllPages.all() as any[]) {
-        if (!isGone(url)) continue;
-        deletePageMentions.run(url);
-        deletePageGoals.run(url);
-        deletePage.run(url);
+        if (isGone(url)) deleteOnePage(url);
       }
+      deleteGoalsNoPageExplains.run();
       clearOrphans();
     },
 

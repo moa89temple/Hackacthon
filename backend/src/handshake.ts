@@ -2,7 +2,7 @@ import { TakeoverInProgress } from "./browser-access.ts";
 import { PageBlocked, type PageReading } from "./buddys-browser.ts";
 import { LoginNeeded, ReadProblem, type ConnectionType, type ReadContext } from "./connections.ts";
 import { LIST_READY, LISTING_READY, readListingPage, readListPage } from "./handshake-pages.ts";
-import { HANDSHAKE_ID, HANDSHAKE_LISTS, HANDSHAKE_NAME, isHandshakeListing, isHandshakeLoginPage, LISTING_PAGE, type ListingKind } from "./handshake-rules.ts";
+import { HANDSHAKE_ID, HANDSHAKE_LISTS, HANDSHAKE_NAME, isFromHandshake, isHandshakeLoginPage, kindOfListingAt, type ListingKind } from "./handshake-rules.ts";
 
 const LOG_IN = "Buddy needs you to log in to Handshake before it can read it. Tap Log in to Handshake on the You tab.";
 const COULD_NOT_OPEN = "Buddy's Browser couldn't open Handshake. Check that it's running. Buddy will try again at its next read, or you can tap Read now.";
@@ -30,19 +30,14 @@ async function openList({ browser }: ReadContext, kind: ListingKind): Promise<Li
   return listings ? { listings } : { failed: "not_understood" };
 }
 
-/** Whether what's at this address is one listing of this kind, wherever Handshake sent the browser. */
-function isListingOf(address: string, kind: ListingKind): boolean {
-  return LISTING_PAGE[kind].test(URL.parse(address)?.pathname ?? "");
-}
-
 /** Whether Buddy got what it came for. A failure is counted and doesn't stop the read, unless the login has gone. */
 async function takeInListing({ browser, opportunityPages, now }: ReadContext, url: string, kind: ListingKind): Promise<boolean> {
   try {
     const page = await browser.read(url, { until: LISTING_READY });
     failIfLoggedOut(page);
-    const listing = isListingOf(page.url, kind) ? readListingPage(page.html) : null;
+    const listing = kindOfListingAt(page.url) === kind ? readListingPage(page.html) : null;
     if (!listing) return false;
-    await opportunityPages.takeIn(url, listing, now);
+    await opportunityPages.takeIn({ url, page: listing, oneEvent: kind === "event" }, now);
     return true;
   } catch (error) {
     if (error instanceof ReadProblem) throw error;
@@ -64,17 +59,23 @@ async function readHandshake(context: ReadContext): Promise<[]> {
   }
 
   let missed = "failed" in jobs || "failed" in events;
-  // With no Goal, nothing could fit, so there's no reason to open each one or ask the model. The next read looks again.
-  if (opportunityPages.wanted()) {
-    const listed = [
-      ...("failed" in jobs ? [] : jobs.listings.map((url) => ({ url, kind: "job" as const }))),
-      ...("failed" in events ? [] : events.listings.map((url) => ({ url, kind: "event" as const }))),
-    ];
-    for (const { url, kind } of listed) {
-      if (opportunityPages.confirmIfRecent(url, now)) continue;
-      if (!(await takeInListing(context, url, kind))) missed = true;
-    }
+  const listed = [
+    ...("failed" in jobs ? [] : jobs.listings.map((url) => ({ url, kind: "job" as const }))),
+    ...("failed" in events ? [] : events.listings.map((url) => ({ url, kind: "event" as const }))),
+  ];
+  for (const { url, kind } of listed) {
+    if (opportunityPages.confirmIfNothingToAsk(url, now)) continue;
+    if (!(await takeInListing(context, url, kind))) missed = true;
   }
+
+  // Only the first of each list gets read, so something can drop off the list while its own page, its Source, is still
+  // there. So that gets looked at directly. If it's gone, that's no problem to report: it leaves after two weeks.
+  const onLists = new Set(listed.map(({ url }) => url));
+  for (const url of opportunityPages.pagesNotSeenLately(now)) {
+    const kind = kindOfListingAt(url);
+    if (kind && isFromHandshake(url) && !onLists.has(url)) await takeInListing(context, url, kind);
+  }
+
   if (missed) reportMissed(MISSED_PART);
   // What it finds goes to the Opportunities. A job isn't something about the Student, so none of it is a Profile fact.
   return [];
@@ -98,7 +99,7 @@ export const handshake: ConnectionType = {
     notes: [
       "Buddy opens only Handshake's job list, its events list and each listing's own page. It doesn't open your applications, your messages, your documents or other students' profiles.",
       "Buddy never applies to a job, never RSVPs or registers for an event, and never sends a message on Handshake, and it doesn't save or follow anything there. Buddy's code stops all of this, so nothing the AI reads can change it.",
-      "To see whether a listing fits your Goals, Buddy sends the words of its page and your Goals to Claude, the AI behind Buddy. It doesn't send what's around the listing on the page.",
+      "To see whether a listing fits your Goals, Buddy sends the main part of its page and your Goals to Claude, the AI behind Buddy.",
       "You log in yourself through a Takeover, so Buddy never learns your password. After you give this Read Permission, Buddy asks you to log in if it needs you to, and asks again whenever the login expires.",
       "Buddy reads it at 7 a.m., 1 p.m. and 7 p.m., and when you ask. If your laptop was asleep at one of those times, it reads when the laptop wakes.",
       "They show as Outside Temple, because Handshake isn't Temple's own site, even when it's a Temple event.",
@@ -111,7 +112,7 @@ export const handshake: ConnectionType = {
 
   whileOnTellClaude: "What Buddy finds on it that fits their Goals is among the Opportunities, so find_opportunities gives it, each with its Source.",
 
-  isItsOpportunityPage: isHandshakeListing,
+  isItsOpportunityPage: isFromHandshake,
   read: readHandshake,
   // No tool asks for this. What's read from Handshake reaches Claude only as Opportunities.
   describeForClaude: () => "What Buddy finds on Handshake is among the Opportunities. Use find_opportunities.",

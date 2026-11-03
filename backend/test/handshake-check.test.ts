@@ -162,6 +162,33 @@ describe("against a working login", () => {
     expectNoLeak();
   });
 
+  it("doesn't print who a profile link is for, even if the page doesn't show their name", async () => {
+    browser.savedPages.set(JOBS_LIST, { ...browser.savedPages.get(JOBS_LIST)!, html: `<main><a href="/stu/jobs/1">Job</a><a href="/profiles/markerperson-madeup">Them</a></main>` });
+
+    await check();
+
+    expect(output()).not.toContain("markerperson");
+    expect(output()).toMatch(/\/profiles\/:id/);
+  });
+
+  it("shows where the page a login check reads ends up, which decides whether a login counts", async () => {
+    browser.savedPages.set(settings.sites.handshake.homeUrl, { title: "Handshake", text: "", accessibilitySnapshot: "", finalUrl: "https://app.joinhandshake.com/explore", html: "<main></main>" });
+
+    await check();
+
+    expect(output()).toMatch(/\/stu {2}\(ended up at app\.joinhandshake\.com \/explore\)/);
+    expect(output()).toMatch(/A login check here: would count as logged in/);
+    expect(output()).not.toMatch(/Shape of a listing: \/explore/);
+  });
+
+  it("says when the guard would stop a login check, because then no login would ever count", async () => {
+    browser.savedPages.set(settings.sites.handshake.homeUrl, { title: "Handshake", text: "", accessibilitySnapshot: "", finalUrl: "https://app.joinhandshake.com/somewhere-new" });
+
+    await check();
+
+    expect(output()).toMatch(/A login check here: wouldn't count as logged in/);
+  });
+
   it("says it sends nothing to Claude and saves nothing", async () => {
     await check();
 

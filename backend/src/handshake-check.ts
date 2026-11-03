@@ -1,4 +1,4 @@
-import { createBrowserAccess, type Site } from "./browser-access.ts";
+import { createBrowserAccess, isOnSiteAndPastLogin, type Site } from "./browser-access.ts";
 import type { BuddysBrowser } from "./buddys-browser.ts";
 import {
   EXIT_FAILED,
@@ -15,7 +15,7 @@ import {
 import { systemClock } from "./clock.ts";
 import { createConnections, type ConnectionType } from "./connections.ts";
 import { linksOn, readListPage } from "./handshake-pages.ts";
-import { HANDSHAKE_LISTS, LISTING_PAGE, type ListingKind } from "./handshake-rules.ts";
+import { HANDSHAKE_LISTS, kindOfListingAt, type ListingKind } from "./handshake-rules.ts";
 import { cleanAddress, cleanHost, countedLines, EXIT_READ_PROBLEM, shapeOfAccessibility, watchingBrowser, type RequestSeen, type Visit } from "./navigate360-check.ts";
 import { createGuardPolicy } from "./network-guard.ts";
 import { readOfficePage } from "./office-page.ts";
@@ -46,7 +46,6 @@ const ADDRESS_WORDS = new Set(
     .filter(Boolean),
 );
 
-const kindOfListing = (url: string): ListingKind => (LISTING_PAGE.event.test(URL.parse(url)?.pathname ?? "") ? "event" : "job");
 const isAList = (visit: Visit) => (Object.values(HANDSHAKE_LISTS) as string[]).includes(visit.asked);
 
 export interface HandshakeCheckDeps {
@@ -97,13 +96,13 @@ async function runChecked({ browser, connection, sites, student, print }: Handsh
   let readAsListing = 0;
   /** Stands in for the Opportunities: it has every reason to open a page, keeps none, and asks no model. */
   const onlyCounting: OpportunityPagesFromConnection = {
-    wanted: () => true,
-    confirmIfRecent(url) {
-      const kind = kindOfListing(url);
-      if (opened[kind] >= SAMPLE_OF_EACH) return true;
+    confirmIfNothingToAsk(url) {
+      const kind = kindOfListingAt(url);
+      if (!kind || opened[kind] >= SAMPLE_OF_EACH) return true;
       opened[kind]++;
       return false;
     },
+    pagesNotSeenLately: () => [],
     takeIn: async () => {
       readAsListing++;
     },
@@ -113,6 +112,7 @@ async function runChecked({ browser, connection, sites, student, print }: Handsh
   const store = openStore(":memory:");
   const clock = systemClock;
   let status: { needsLogin: boolean; lastReadProblem: string | null };
+  let loginWouldCount = false;
   try {
     const profile = createProfile({ store, clock, connectionName: () => connection.name });
     const guards = createGuardPolicy({
@@ -132,6 +132,13 @@ async function runChecked({ browser, connection, sites, student, print }: Handsh
       logError: () => {},
     });
     status = await connections.give(connection.id, undefined);
+    // What decides whether a Takeover's login counts, and so whether a read follows it. The lists don't show this.
+    try {
+      const home = await browserAccess.readToCheckLogin(connection.id);
+      loginWouldCount = isOnSiteAndPastLogin(home.url, sites[connection.id]!);
+    } catch {
+      // It was refused, or couldn't be opened. Either way, what's opened shows which.
+    }
   } finally {
     store.close();
   }
@@ -155,6 +162,7 @@ async function runChecked({ browser, connection, sites, student, print }: Handsh
   print(`Login: ${status.needsLogin ? `not logged in. The Student needs to log in through a Takeover: You tab, Log in to ${connection.name}.` : "works"}`);
   // Words from Buddy's own code, never from a page. See handshake.ts.
   if (status.lastReadProblem) print(`Problem: ${status.lastReadProblem}`);
+  print(`A login check here: ${loginWouldCount ? "would count as logged in" : "wouldn't count as logged in, so a read wouldn't follow the Student's Takeover"}`);
   print("");
   print("Found:");
   print(`  jobs listed: ${listedBy("job")}`);
@@ -206,9 +214,9 @@ async function runChecked({ browser, connection, sites, student, print }: Handsh
   };
   for (const visit of visits.filter(isAList)) printShape("list", visit);
   for (const kind of ["job", "event"] as const) {
-    const first = visits.find((visit) => !isAList(visit) && kindOfListing(visit.asked) === kind);
+    const first = visits.find((visit) => !isAList(visit) && kindOfListingAt(visit.asked) === kind);
     if (first) printShape("listing", first);
   }
 
-  return status.lastReadProblem ? EXIT_READ_PROBLEM : EXIT_OK;
+  return status.lastReadProblem || !loginWouldCount ? EXIT_READ_PROBLEM : EXIT_OK;
 }

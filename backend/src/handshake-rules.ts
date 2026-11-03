@@ -45,7 +45,8 @@ export const LISTING_PAGE: Record<ListingKind, RegExp> = {
   event: /^\/(?:stu\/events|events)\/(\d+)\/?$/,
 };
 const LIST_PAGE = /^\/(?:stu\/postings|job-search|stu\/events|events)\/?$/;
-const HOME_PAGE = /^\/(?:stu\/?)?$/;
+/** ASSUMED: where a login lands. If it lands anywhere else, the guard stops the login check and the login won't count. */
+const HOME_PAGE = /^\/(?:stu\/?|explore\/?)?$/;
 /** ASSUMED: where a browser with no login gets sent, on Handshake's own hosts. */
 const LOGIN_PAGE = /^\/(?:login|sessions\/new)\/?$/;
 
@@ -80,10 +81,10 @@ const NEVER = [
  * Pages Buddy never opens, reads or submits, even with an approved card, and what pages may not load
  * either. They're off the list above too. These are here so that nothing can ever add one by mistake.
  *
- * Each names its host, because a pattern with none would also apply to the sign-on the site shares with
- * every other Connection, where /idp/profile/ is the way to log in to all of them.
+ * Each names Handshake's domain, because a pattern with none would also apply to the sign-on the site shares
+ * with every other Connection, where /idp/profile/ is the way to log in to all of them.
  */
-export const HANDSHAKE_BLOCKED_PAGES: PagePattern[] = [SCHOOL_HOST, APP_HOST, OWN_DOMAIN, `www.${OWN_DOMAIN}`].flatMap((host) => NEVER.map((path) => ({ host, path })));
+export const HANDSHAKE_BLOCKED_PAGES: PagePattern[] = NEVER.map((path) => ({ domain: OWN_DOMAIN, path }));
 
 function hostOf(address: string): string | null {
   return URL.parse(address)?.hostname ?? null;
@@ -96,9 +97,16 @@ export function isHandshakeLoginPage(address: string): boolean {
 }
 
 /** Whether this page came from Handshake, by its host alone, so that nothing a page says can change it. */
-export function isHandshakeListing(address: string): boolean {
+export function isFromHandshake(address: string): boolean {
   const host = hostOf(address);
   return host === OWN_DOMAIN || (host?.endsWith(`.${OWN_DOMAIN}`) ?? false);
+}
+
+/** Which kind of listing's own page this address is, or null if it isn't one. */
+export function kindOfListingAt(address: string): ListingKind | null {
+  const path = URL.parse(address)?.pathname ?? "";
+  if (LISTING_PAGE.job.test(path)) return "job";
+  return LISTING_PAGE.event.test(path) ? "event" : null;
 }
 
 /** One of Handshake's hosts. A link to anywhere else on a page is someone else's. */

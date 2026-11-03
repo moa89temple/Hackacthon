@@ -1,6 +1,6 @@
 import { parse, serializeOuter } from "parse5";
 import type { DefaultTreeAdapterTypes as Html } from "parse5";
-import { isHandshakeHost, LISTING_PAGE, type ListingKind } from "./handshake-rules.ts";
+import { HANDSHAKE_NAME, isHandshakeHost, LISTING_PAGE, type ListingKind } from "./handshake-rules.ts";
 import { readOfficePage, type OfficePage } from "./office-page.ts";
 
 /**
@@ -29,7 +29,6 @@ const MOST_FROM_A_LIST = 15;
 const SHORTEST_LISTING_CHARACTERS = 40;
 /** Far longer than any listing. It's sent to the model whole or not at all, like any other page. */
 const LONGEST_LISTING_CHARACTERS = 200_000;
-const NO_TITLE = "Handshake";
 
 function allElements(node: Html.ChildNode | Html.Document, tagName: string): Html.Element[] {
   if (!("childNodes" in node)) return [];
@@ -49,17 +48,17 @@ export function readListPage(html: string, pageAddress: string, kind: ListingKin
   return found.size > 0 ? [...found].slice(0, MOST_FROM_A_LIST) : null;
 }
 
-/** A listing's title and the words of its main part, which is what keeps out the Student's name and the menus around it. */
+/** A listing's title and the words of its main part, which is meant to keep out the menus around it and the Student's name in them. */
 export function readListingPage(html: string): OfficePage | null {
   const document = parse(html);
   const main = allElements(document, "main")[0];
   if (!main) return null;
   const { text } = readOfficePage(serializeOuter(main));
   if (text.length < SHORTEST_LISTING_CHARACTERS || text.length > LONGEST_LISTING_CHARACTERS) return null;
-  return { title: readOfficePage(html).title || NO_TITLE, text };
+  return { title: readOfficePage(html).title || HANDSHAKE_NAME, text };
 }
 
-/** How many links on a page look like each kind of thing, for the check. Never a link's words. */
+/** Where every link on a page goes, for the check to clean and count. Never a link's words. */
 export function linksOn(html: string): string[] {
   return allElements(parse(html), "a").flatMap((link) => link.attrs.find((attr) => attr.name === "href")?.value ?? []);
 }

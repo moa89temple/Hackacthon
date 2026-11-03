@@ -43,7 +43,7 @@ const SHORTEST_WORD_TO_COMPARE = 4;
 const SHORTEST_HOST_PART_TO_COMPARE = 8;
 
 /** The next part of an address after one of these names someone or something of theirs, whatever it looks like. */
-const NAMES_SOMEONE_NEXT = new Set(["students", "users", "people", "person", "members", "staff"]);
+const NAMES_SOMEONE_NEXT = new Set(["students", "users", "people", "person", "members", "staff", "profiles", "profile"]);
 /** The app's own pages under those, from its public scripts, which name no one. */
 const PAGES_UNDER_PEOPLE = new Set(["categories", "person"]);
 /** Words in this app's addresses that are fine to compare with nothing. "people" is a page, not a person. */

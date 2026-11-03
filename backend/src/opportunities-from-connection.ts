@@ -7,27 +7,35 @@ import { THE_STUDENT, type Store } from "./store.ts";
 
 const WEEK_MS = 7 * 24 * 3_600_000;
 
+/** One page a Connection has opened, for what it may hold. */
+export interface PageFromConnection {
+  url: string;
+  page: OfficePage;
+  /** The page is about one event, so a price on it can only be that event's. */
+  oneEvent: boolean;
+}
+
 /**
  * Where a Connection puts pages that may hold Opportunities, so that they go through the same checks as
  * every other page: a date has to be in the page's words, a fee needs its amount and its reason, and it
  * has to fit one of the Student's Goals. A Connection only ever finds the pages.
  */
 export interface OpportunityPagesFromConnection {
-  /** Whether there's anything to match a page against. With no Goal, there's no reason to open one. */
-  wanted(): boolean;
   /**
-   * True if this page was read lately and for all the Student's Goals, so it needn't be opened again. It's
-   * still on its list, so that counts as seeing it there.
+   * Call it for each page a list still shows. It's still there, so this counts as seeing it. True means it
+   * needn't be opened: it was read lately for all the Student's Goals, or there's no Goal to read it for.
    */
-  confirmIfRecent(url: string, now: Date): boolean;
+  confirmIfNothingToAsk(url: string, now: Date): boolean;
+  /** What hasn't been seen on its page for a week, wherever it came from, to look at again if a list no longer shows it. */
+  pagesNotSeenLately(now: Date): string[];
   /** Brings what's kept of this page into line with it. A failure changes nothing, and is thrown. */
-  takeIn(url: string, page: OfficePage, now: Date): Promise<void>;
+  takeIn(found: PageFromConnection, now: Date): Promise<void>;
 }
 
 /** For a Connection that has none. */
 export const NO_OPPORTUNITY_PAGES: OpportunityPagesFromConnection = {
-  wanted: () => false,
-  confirmIfRecent: () => true,
+  confirmIfNothingToAsk: () => true,
+  pagesNotSeenLately: () => [],
   takeIn: async () => {},
 };
 
@@ -47,22 +55,28 @@ export function createOpportunityPagesFromConnection(deps: {
     return [...goals].map(([key, text]) => ({ studentId: THE_STUDENT, key, text }));
   }
 
-  return {
-    wanted: () => currentGoals().length > 0,
+  function wasReadLatelyForAll(goals: GoalMatch[], url: string, now: Date): boolean {
+    const lastRead = data.pageLastReadAt(url);
+    if (!lastRead || now.getTime() - lastRead.getTime() >= WEEK_MS) return false;
+    const readFor = new Set(data.goalsOfPage(THE_STUDENT, url).map(({ key }) => key));
+    return goals.every(({ key }) => readFor.has(key));
+  }
 
-    confirmIfRecent(url, now) {
-      const lastRead = data.pageLastReadAt(url);
-      if (!lastRead || now.getTime() - lastRead.getTime() >= WEEK_MS) return false;
-      const readFor = new Set(data.goalsOfPage(THE_STUDENT, url).map(({ key }) => key));
-      if (!currentGoals().every(({ key }) => readFor.has(key))) return false;
+  return {
+    confirmIfNothingToAsk(url, now) {
+      const goals = currentGoals();
       data.confirmSeen(url, now);
-      return true;
+      return goals.length === 0 || wasReadLatelyForAll(goals, url, now);
     },
 
-    async takeIn(url, page, now) {
+    pagesNotSeenLately: (now) => data.pagesLastSeenBefore(new Date(now.getTime() - WEEK_MS)),
+
+    async takeIn({ url, page, oneEvent }, now) {
       const permission = store.readPermission(THE_STUDENT, connection)?.id;
-      /** The model takes a while, and the Student may revoke meanwhile. What's asked after that mustn't be kept. */
-      const stillStands = () => permission !== undefined && store.readPermission(THE_STUDENT, connection)?.id === permission;
+      // The Student may have revoked while the page was opening, and then none of it goes to the model.
+      if (permission === undefined) return;
+      /** The model takes a while, and the Student may revoke meanwhile. What it says after that mustn't be kept. */
+      const stillStands = () => store.readPermission(THE_STUDENT, connection)?.id === permission;
       const whileItStands = {
         ...data,
         savePage: (...args: Parameters<typeof data.savePage>) => {
@@ -72,7 +86,7 @@ export function createOpportunityPagesFromConnection(deps: {
           if (stillStands()) data.confirmPage(...args);
         },
       };
-      await takeInOpportunityPage({ claude, store: whileItStands, model, logError }, { url, page, event: null, goal: null, goals: currentGoals() }, now);
+      await takeInOpportunityPage({ claude, store: whileItStands, model, logError }, { url, page, event: null, goal: null, goals: currentGoals(), oneEvent }, now);
     },
   };
 }

@@ -144,6 +144,7 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
         (site.blockedPages ?? []).some(
           (page) =>
             (page.host === undefined || page.host === withoutFinalDot(parsed.hostname)) &&
+            (page.domain === undefined || withoutFinalDot(parsed.hostname) === page.domain || withoutFinalDot(parsed.hostname).endsWith(`.${page.domain}`)) &&
             page.path.test(decodedAndLower(parsed.pathname)) &&
             (page.query === undefined || page.query.test(decodedAndLower(parsed.search))) &&
             (page.fragment === undefined || page.fragment.test(decodedAndLower(parsed.hash))),

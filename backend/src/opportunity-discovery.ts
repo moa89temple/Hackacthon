@@ -3,7 +3,7 @@ import type { BrowserAccess } from "./browser-access.ts";
 import type { Claude } from "./claude.ts";
 import { todayInPhiladelphia, type Clock } from "./clock.ts";
 import { readDay } from "./discovery.ts";
-import { isHandshakeListing } from "./handshake-rules.ts";
+import { isFromHandshake } from "./handshake-rules.ts";
 import { readEventPage, readEventsPage, type ListedEvent } from "./now-temple-pages.ts";
 import { eventListPage, isNowTempleEvent, MOST_EVENT_LIST_PAGES } from "./now-temple-rules.ts";
 import { goalKey } from "./opportunities.ts";
@@ -146,7 +146,7 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
    */
   async function readSearchedPagesAgain(now: Date): Promise<void> {
     // Handshake's come from its Connection's own reads. Read from here, with no login, each would be a login page.
-    const urls = data.pagesLastSeenBefore(new Date(now.getTime() - SEARCH_EVERY_MS)).filter((url) => !isNowTempleEvent(url) && !isHandshakeListing(url));
+    const urls = data.pagesLastSeenBefore(new Date(now.getTime() - SEARCH_EVERY_MS)).filter((url) => !isNowTempleEvent(url) && !isFromHandshake(url));
     if (urls.length === 0) return;
     const couldNotRead: string[] = [];
     for (const url of urls) {

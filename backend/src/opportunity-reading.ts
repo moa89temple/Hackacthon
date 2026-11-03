@@ -89,6 +89,8 @@ export interface PageToTakeIn {
   goal: GoalMatch | null;
   /** All the Goals to check it against, for a page that wasn't found by searching for any one of them. */
   goals?: GoalMatch[];
+  /** The page is about one event, though no list has given it, so a price on it can only be that event's. */
+  oneEvent?: boolean;
 }
 
 function extractionRequest(model: string, { url, page, event }: PageToTakeIn, goals: GoalMatch[], today: string): ClaudeRequest {
@@ -113,10 +115,10 @@ type CostFields = Pick<OpportunityFields, "cost" | "costAmount" | "worthItBecaus
  * A paid item with no amount or no reason is kept as just that, and opportunities.ts hides it. Dropping it
  * here would let an older reading, or another page that doesn't mention the fee, go on showing it.
  */
-function costAgainstPage(raw: Record<string, unknown>, { page, event }: PageToTakeIn): CostFields {
+function costAgainstPage(raw: Record<string, unknown>, { page, event, oneEvent }: PageToTakeIn): CostFields {
   const unstatedFee: CostFields = { cost: "paid", costAmount: null, worthItBecause: null };
   // An event's page is about that one event, so a price for it there can't be someone else's.
-  if (raw.cost !== "paid" && event && PRICE_OF_ADMISSION.test(page.text)) return unstatedFee;
+  if (raw.cost !== "paid" && (event || oneEvent) && PRICE_OF_ADMISSION.test(page.text)) return unstatedFee;
 
   const quote = filled(raw.cost_quote);
   const quoted = quote !== null && comparable(page.text).includes(comparable(quote));
