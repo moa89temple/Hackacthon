@@ -34,7 +34,8 @@ It never acts without the Student's tap, and it doesn't replace advisors.
 - **App:** Flutter, for Android and iPhone. Android is built and tested on this laptop first. The iPhone build comes later, on your Mac with your Apple Developer membership.
 - **Backend:** TypeScript on Fastify. It runs on your laptop for now and moves to the cloud later. It talks to the app over HTTPS and streams Buddy's replies as they're written.
 - **AI:** Claude through the Anthropic TypeScript SDK.
-  - Sonnet 5.5 handles conversations, Tasks and Briefings.
+  - Sonnet 5.5 handles conversations and Tasks.
+  - Briefings use no model. Buddy's own code picks from its own records, so nothing is invented and they cost nothing.
   - Haiku 5.5 handles cheap jobs, such as the Crisis check, Discovery extraction and ranking what's relevant.
   - Each model is one setting, so it's easy to swap.
 - **Storage:** SQLite, behind one storage module, so a hosted database can replace it later.
