@@ -135,6 +135,8 @@ export type EmailSending =
   | { outcome: "compose_differs"; problems: string[] }
   /** Send wasn't pressed, or the guard stopped everything it led to. */
   | { outcome: "not_sent"; why: string }
+  /** Send was pressed and nothing was seen to go, but Outlook could be holding it. It must never be tried again. */
+  | { outcome: "pressed_nothing_seen"; why: string }
   /** The request may have left, and there's no knowing whether it worked. It must never be tried again. */
   | { outcome: "no_clear_answer" };
 

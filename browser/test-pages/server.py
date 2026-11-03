@@ -270,8 +270,6 @@ LONG_LIST = """
 </script>
 """
 
-# A made-up Outlook on the web. The server sends an empty page, and its script asks for the mail by POST
-# and builds what the reader wants late, as the real app does. Nothing here came from a real account.
 # A made-up new email, in the shape Buddy assumes Outlook's has. Nothing sends anywhere but this server.
 # Each ?variant= does one thing a real page might: see the send routine's checks.
 OUTLOOK_COMPOSE = """
@@ -318,6 +316,8 @@ OUTLOOK_COMPOSE = """
 </script>
 """
 
+# A made-up Outlook on the web. The server sends an empty page, and its script asks for the mail by POST
+# and builds what the reader wants late, as the real app does. Nothing here came from a real account.
 OUTLOOK_MESSAGES = [
     {"id": "AAQkMadeUpOne=", "address": "made.up.markerperson@temple.edu", "name": "MARKERNAME", "subject": "MARKERSUBJECT", "body": "MARKERWORDS"},
     {"id": "AAQkMadeUpTwo=", "address": "markerstranger@elsewhere.test", "name": "MARKERNAME", "subject": "MARKERSUBJECT", "body": "MARKERNEVEROPENED"},

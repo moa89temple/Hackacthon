@@ -266,13 +266,14 @@ Buddy starts in **Practice mode**, where everything goes to your own TUmail addr
 
 What happens after Approve is a fixed routine. It opens a new email in Buddy's Browser, fills it in from the card, and reads it back. If that's exactly the card, it records that the send has started, opens the guard for one request, and presses Send once. The guard looks at what that request really carries, and refuses it unless it's to exactly that recipient with exactly those words. It shuts as soon as that one has gone, and on any failure too. Reading never gets any of this: its guard has no way to open.
 
-A card stops working if you edit the Draft, change your address, or switch between Practice and Live, even there and back. Tap **Buddy sends it** again for a new one. Tapping Approve twice, or a retry, or a restart can't send it twice. If Send was pressed and there's no clear answer, the card says Buddy can't tell, and it doesn't try again. Check your Sent folder.
+A card stops working if you edit the Draft, change your address, or switch between Practice and Live, even there and back. Tap **Buddy sends it** again for a new one. Tapping Approve twice, or a retry, or a restart can't send it twice. If Send was pressed and there's no clear answer, or nothing was seen to go, the card says Buddy can't tell, and it doesn't try again. Check your Sent folder.
 
 ### Known limits
 
 - **None of this has seen a real compose window or a real send.** Everything about Outlook's side is marked UNVERIFIED in `tumail-rules.ts`, and it all fails closed: if Outlook differs, nothing is sent and the card says what didn't match. The first real Practice send is what proves it.
-- Buddy can't check the address you type against the account that's logged in. It has to be a temple.edu address, and the card shows it before you approve, but a typing mistake would send your Practice email to whoever has that address.
-- A message goes as plain words. Line breaks can differ from the Draft's, because Outlook's editor keeps them its own way, but the words and their order can't. Any signature Outlook puts in the new email is replaced.
+- Buddy can't check the address you type against the account that's logged in. It has to be a temple.edu address that no Contact has, and the card shows it before you approve, but a typing mistake would send your Practice email to whoever has that address.
+- A message goes as plain words. The number of blank lines can differ from the Draft's, because Outlook's editor keeps them its own way, but the lines themselves can't. Any signature Outlook puts in the new email is replaced.
+- The guard checks the recipient, copies, attachments, subject and words. It doesn't look at anything else a request could say, such as its From, because only Outlook's own page could put something there.
 - The guard stops Outlook saving anything as a Draft, so a send that doesn't happen leaves nothing behind in Drafts.
 - Buddy won't send a Draft it hid something in, such as a password, because the mark it left would go too. Change that part with Edit first.
 - If a Contact's address changes while a card is waiting, the card stops working. Buddy won't send to a Contact it has more than one address for.

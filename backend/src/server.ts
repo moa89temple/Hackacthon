@@ -127,6 +127,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
         sites: options.sites,
         drafts,
         sending,
+        contacts: () => guidebook.contacts(),
         browserAccess,
         hasReadPermission: (site) => store.readPermission(THE_STUDENT, site) !== null,
         store,
@@ -236,7 +237,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
 
   addGuidebookRoutes(app, guidebook);
   addActionCardRoutes(app, actionCards, isStoredId);
-  addDraftRoutes(app, drafts);
+  addDraftRoutes(app, drafts, () => actionCards.expireDue());
   addSendingRoutes(app, { sending, actionCards, drafts, lastMessageShown: conversation.lastMessageShown, isStoredId });
   addRoadmapRoutes(app, roadmap, isStoredId);
   app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
@@ -279,7 +280,7 @@ function addGuidebookRoutes(app: FastifyInstance, guidebook: Guidebook): void {
 }
 
 /** Only the Student's changes come here. Opening a Draft in Outlook or copying it happens on the phone, and Buddy never hears of it. */
-function addDraftRoutes(app: FastifyInstance, drafts: Drafts): void {
+function addDraftRoutes(app: FastifyInstance, drafts: Drafts, afterEdit: () => void): void {
   app.patch<{ Params: { id: string }; Body: { subject?: unknown; body?: unknown } }>("/drafts/:id", async (request, reply) => {
     const { subject, body } = request.body ?? {};
     if (typeof subject !== "string" || typeof body !== "string" || body.trim() === "") {
@@ -287,6 +288,7 @@ function addDraftRoutes(app: FastifyInstance, drafts: Drafts): void {
     }
     const draft = isStoredId(request.params.id) ? drafts.edit(Number(request.params.id), { subject, body }) : null;
     if (!draft) return reply.code(404).send({ error: "There's no such Draft" });
+    afterEdit();
     const note = hiddenNote(`${draft.subject}\n${draft.body}`);
     return { draft, ...(note ? { hiddenNote: note } : {}) };
   });

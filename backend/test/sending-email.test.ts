@@ -233,6 +233,18 @@ describe("exactly what was approved", () => {
     expect(lineOn(fresh, "Message")).toBe("Other words.");
   });
 
+  it("stops the card for good when the Draft is edited and changed back", async () => {
+    const draft = await makeDraft();
+    const { card } = (await (await tapBuddySendsIt(draft.id)).json()) as { card: any };
+
+    await backend.editDraft(draft.id, { subject: SUBJECT, body: "Other words." });
+    await backend.editDraft(draft.id, { subject: SUBJECT, body: FULL_BODY });
+
+    expect((await approve(card)).status).toBe(409);
+    expect(sends()).toEqual([]);
+    expect((await backend.card(card.id)).status).toBe("invalid");
+  });
+
   it("leaves the card alone when an edit changes nothing", async () => {
     const draft = await makeDraft();
     const { card } = (await (await tapBuddySendsIt(draft.id)).json()) as { card: any };
@@ -398,16 +410,24 @@ describe("exactly once", () => {
     expect(after.outcome).toMatch(/Nothing was sent/);
   });
 
-  it("says nothing was sent when pressing Send let nothing through", async () => {
+  it("can't be sure, and won't try again, once Send was pressed and nothing was seen to go, because Outlook could be holding it", async () => {
     backend.browser.nextSend = async (email, guard, beforePressing) => {
       beforePressing();
       guard.open(email);
       guard.close();
       return { outcome: "not_sent", why: "Nothing went out when Buddy pressed Send." };
     };
-    const after = ((await (await approve(await makeCard())).json()) as { card: any }).card;
-    expect(after.status).toBe("not_run");
+    const draft = await makeDraft();
+    const { card } = (await (await tapBuddySendsIt(draft.id)).json()) as { card: any };
+
+    const after = ((await (await approve(card)).json()) as { card: any }).card;
+
+    expect(after.status).toBe("unknown");
+    expect(after.outcome).toMatch(/won't try again/);
+    expect(await activityKinds()).toContain("email_maybe_sent");
     expect(await activityKinds()).not.toContain("email_sent");
+    expect((await backend.activity()).find((entry) => entry.kind === "action_unknown").detail).toContain("Nothing went out when Buddy pressed Send.");
+    expect((await tapBuddySendsIt(draft.id)).status).toBe(409);
   });
 
   it("asks the Student to log in when the login has gone, and sends nothing", async () => {
@@ -575,6 +595,26 @@ describe("Practice mode", () => {
     await approve(await makeCard());
 
     expect(allowed).toBe(false);
+  });
+
+  it("won't call it practice when the Student's address is the Contact's, because that would really reach them", async () => {
+    await saveOwnAddress(CONTACT_EMAIL.toUpperCase());
+    const draft = await makeDraft();
+
+    const response = await tapBuddySendsIt(draft.id);
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { error: string }).error).toMatch(/belongs to a Contact/);
+    expect(await backend.history().then((items) => items.filter((item) => item.type === "action_card"))).toEqual([]);
+  });
+
+  it("stops a waiting card if the Student's address turns out to be a Contact's", async () => {
+    await saveOwnAddress(OWN_ADDRESS);
+    const card = await makeCard();
+    await saveOwnAddress(CONTACT_EMAIL);
+
+    expect((await approve(card)).status).toBe(409);
+    expect(sends()).toEqual([]);
   });
 
   it.each([["someone@gmail.com"], ["not an address"], ["a@temple.edu.evil.test"], [""], [42]])("won't take %j as the Student's TUmail address", async (address) => {
@@ -779,6 +819,12 @@ describe("the record in Activity", () => {
 });
 
 describe("the Handoff", () => {
+  it("tells Claude the card has this route only when Buddy has an address for them", async () => {
+    await makeDraft();
+    const answer = JSON.stringify(backend.claude.requests.filter((request) => request.model === TEST_CHAT_MODEL).at(-1)!.messages);
+    expect(answer).toMatch(/if Buddy has their address/);
+  });
+
   it("tells Claude this route is the Student's tap, and doesn't let it say a Draft went", async () => {
     await makeDraft();
     const system = JSON.stringify(backend.claude.requests.find((request) => request.model === TEST_CHAT_MODEL)!.system);

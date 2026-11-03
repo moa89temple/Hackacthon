@@ -24,6 +24,7 @@ describe("reading back the compose window", () => {
     ["another subject", { subject: "Something else" }, "The subject"],
     ["other words", { body: "Hello, Can you help? Thanks, and more" }, "The message"],
     ["the same words in another order", { body: "Can you help? Hello, Thanks" }, "The message"],
+    ["the paragraphs run together", { body: "Hello, Can you help? Thanks" }, "The message"],
     ["a signature left in", { body: "Hello, Can you help? Thanks Sent from Outlook" }, "The message"],
   ])("won't go on with %s", (_, changes, problem) => {
     const problems = differencesFromApproved({ ...JUST_RIGHT, ...changes }, EMAIL);
@@ -58,8 +59,16 @@ describe("what a request to send carries", () => {
     expect(whyNotThisEmail(madeUpSendRequest(EMAIL, { body }), EMAIL)).toBeNull();
   });
 
+  it("is refused when the paragraphs have been run together", () => {
+    expect(whyNotThisEmail(madeUpSendRequest(EMAIL, { body: "<div>Hello, Can you help? Thanks</div>" }), EMAIL)).not.toBeNull();
+  });
+
+  it("doesn't take the markup's own line breaks for the message's", () => {
+    expect(whyNotThisEmail(madeUpSendRequest(EMAIL, { body: "<div>Hello,</div>\n  <div><br></div>\n<div>Can you\n  help?</div><div>Thanks</div>" }), EMAIL)).toBeNull();
+  });
+
   it("doesn't let hidden words in the markup through, because they'd be in the message", () => {
-    expect(whyNotThisEmail(madeUpSendRequest(EMAIL, { body: '<div>Hello, Can you help? Thanks</div><div style="display:none">more</div>' }), EMAIL)).not.toBeNull();
+    expect(whyNotThisEmail(madeUpSendRequest(EMAIL, { body: '<div>Hello,</div><div>Can you help?</div><div>Thanks</div><div style="display:none">more</div>' }), EMAIL)).not.toBeNull();
   });
 
   it("says why not without any of the email's words", () => {

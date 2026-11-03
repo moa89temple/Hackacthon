@@ -157,7 +157,7 @@ export interface ActionCards {
   approve(id: number, seenFingerprint: string): Promise<ActionCard | null>;
   /** The Student's Decline tap. Tapping again changes nothing. Throws CardRefused when it's too late. */
   decline(id: number): ActionCard | null;
-  /** Ends any card whose time is up. Cards are only ever looked at through things that call this. */
+  /** Ends any card whose time is up, or that can no longer count. Cards are only ever looked at through things that call this. */
   expireDue(): void;
   /**
    * For when the backend starts. A step left running was cut off, and nobody can say how far it got,

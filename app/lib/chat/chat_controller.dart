@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../backend/buddy_backend.dart';
-import '../sending/sending_backend.dart';
 import '../roadmap/roadmap_backend.dart';
+import '../sending/sending_backend.dart';
 
 /// Lives as long as the app, so that a reply keeps streaming while the Student
 /// looks at another tab.

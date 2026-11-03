@@ -138,6 +138,7 @@ export const COMPOSE_SELECTORS = {
  * with the guard refusing everything before it, including the saves Outlook would otherwise make as a
  * Draft. If it's really a save and then a send, or anything else, the guard refuses it and nothing goes.
  */
+const SERVICE_PATH = /^\/owa(?:\/\d+)?\/service\.svc$/;
 const SEND_ACTION_QUERY = /^\?action=CreateItem(?:&(?!action=)[a-z0-9_]+=[^&;]*)*$/i;
 const SEND_ACTION_HEADER = /^CreateItem$/i;
 /** UNVERIFIED: the value that means send it, and not just save it. */
@@ -151,7 +152,7 @@ export function tumailSending(appHosts: string[], home: string = TUMAIL_HOME): S
     sendRequests: appHosts.map((host) => ({
       method: "POST",
       host,
-      path: /^\/owa(?:\/\d+)?\/service\.svc$/,
+      path: SERVICE_PATH,
       query: SEND_ACTION_QUERY,
       headers: { action: SEND_ACTION_HEADER },
     })),
@@ -163,18 +164,21 @@ export const TUMAIL_SENDING = tumailSending(TUMAIL_APP_HOSTS);
 
 const sameEmailAddress = (left: unknown, right: string) => typeof left === "string" && left.trim().toLowerCase() === right.trim().toLowerCase();
 const inOneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+/** The message's lines, each with its spaces evened out. How many blank lines lie between them is the editor's to decide. */
+const linesOf = (text: string) => text.split("\n").map(inOneLine).filter((line) => line !== "").join("\n");
 const isNothing = (value: unknown) => value === undefined || value === null || (Array.isArray(value) && value.length === 0);
 
 function wordsInHtml(html: string): string {
   const words: string[] = [];
   const walk = (node: Html.ChildNode | Html.Document) => {
-    if (node.nodeName === "#text") words.push((node as Html.TextNode).value);
+    // A line break in the markup itself is only a space.
+    if (node.nodeName === "#text") words.push((node as Html.TextNode).value.replace(/\s+/g, " "));
     if (node.nodeName === "style" || node.nodeName === "script" || node.nodeName === "head") return;
-    // A block and a line break both keep the words on either side from running together.
-    const breaksWords = node.nodeName === "br" || node.nodeName === "div" || node.nodeName === "p";
-    if (breaksWords) words.push(" ");
+    // A block and a line break each put what follows on a new line.
+    const breaksLine = node.nodeName === "br" || node.nodeName === "div" || node.nodeName === "p";
+    if (breaksLine) words.push("\n");
     if ("childNodes" in node) node.childNodes.forEach(walk);
-    if (breaksWords) words.push(" ");
+    if (breaksLine) words.push("\n");
   };
   walk(parse(html));
   return words.join("");
@@ -208,10 +212,15 @@ function whyNotInData(data: any, email: ApprovedEmail): string | null {
   const body = message.Body;
   if (typeof body?.Value !== "string") return "Outlook's request didn't show the message's words.";
   const words = String(body.BodyType).toLowerCase() === "html" ? wordsInHtml(body.Value) : body.Value;
-  return inOneLine(words) === inOneLine(email.body) ? null : "Outlook's request had different words.";
+  return linesOf(words) === linesOf(email.body) ? null : "Outlook's request had different words.";
 }
 
-/** Whether a request carries exactly the approved email, and nothing more. Null means it does. */
+/**
+ * Null only if the request is a send of one message, to exactly the approved recipient with no copies or
+ * attachments, with the approved subject and the approved words line by line. It doesn't look at anything
+ * else a request could say, such as its From or the addresses in a link, because only Outlook's own page
+ * could put something there, and nothing Buddy gives that page does.
+ */
 export function whyNotThisEmail(request: RequestToCheck, email: ApprovedEmail): string | null {
   const held = dataInRequest(request);
   if (!held) return "Buddy couldn't read what Outlook's request carries.";
@@ -225,7 +234,7 @@ export function whyNotThisEmail(request: RequestToCheck, email: ApprovedEmail): 
 /** The answer to the send request, which has to be told from Outlook's other answers. */
 export function isSendAnswer(address: string): boolean {
   const url = URL.parse(address);
-  return url !== null && /^\/owa(?:\/\d+)?\/service\.svc$/.test(url.pathname) && SEND_ACTION_QUERY.test(url.search);
+  return url !== null && SERVICE_PATH.test(url.pathname) && SEND_ACTION_QUERY.test(url.search);
 }
 
 /** UNVERIFIED: the shape of Outlook's answer. Anything else means there's no telling, and never that it didn't go. */
@@ -249,8 +258,8 @@ export interface ComposeContents {
 }
 
 /**
- * How the compose window differs from the card, in Buddy's words, with none of the email's. Line breaks
- * can differ, because the editor keeps them its own way, but the words and their order can't.
+ * How the compose window differs from the card, in Buddy's words, with none of the email's. The number
+ * of blank lines can differ, because the editor keeps them its own way, but the lines themselves can't.
  */
 export function differencesFromApproved(found: ComposeContents, email: ApprovedEmail): string[] {
   const problems: string[] = [];
@@ -259,6 +268,6 @@ export function differencesFromApproved(found: ComposeContents, email: ApprovedE
   if (inOneLine(found.cc ?? "") !== "") problems.push("The Cc line wasn't empty.");
   if (inOneLine(found.bcc ?? "") !== "") problems.push("The Bcc line wasn't empty.");
   if (inOneLine(found.subject) !== inOneLine(email.subject)) problems.push("The subject wasn't what the card says.");
-  if (inOneLine(found.body) !== inOneLine(email.body)) problems.push("The message wasn't what the card says.");
+  if (linesOf(found.body) !== linesOf(email.body)) problems.push("The message wasn't what the card says.");
   return problems;
 }

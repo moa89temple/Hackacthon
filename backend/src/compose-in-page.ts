@@ -6,7 +6,11 @@ import { answerSaysSent, COMPOSE_SELECTORS, differencesFromApproved, isSendAnswe
 /** Outlook is a large app, and everything it shows is built by script after it has loaded. */
 const COMPOSE_TIMEOUT_MS = 30_000;
 const PRESS_TIMEOUT_MS = 10_000;
-/** How long after the press the one request has to leave. If it hasn't by then, it never will: the guard is shut. */
+/**
+ * How long after the press the one request has to leave. After this the guard is shut, so nothing more
+ * can get out while Buddy is here. UNVERIFIED: that this is long enough, if Outlook holds a message back
+ * for an Undo. A press with nothing seen is reported as uncertain, for that reason.
+ */
 const SEND_TIMEOUT_MS = 10_000;
 const ANSWER_TIMEOUT_MS = 30_000;
 /** How long the To line gets to turn what was typed into a recipient. */
@@ -22,6 +26,10 @@ const NEEDED = { to: "To line", subject: "subject line", body: "place for the me
  *
  * What makes this the approved email isn't this code but the guard, which looks at what the request
  * really carries. Reading back is what stops Buddy pressing Send on something that doesn't match.
+ *
+ * UNVERIFIED, all of it against real Outlook: the selectors in tumail-rules.ts, that clicking and typing
+ * work on each line this way, and what a recipient looks like once it's on the To line. Any of them being
+ * wrong stops here, with nothing sent. See tumail-rules.ts.
  */
 export async function sendEmailOnPage(page: Page, email: EmailToSend, guard: SendGuard, beforePressing: () => string | null): Promise<EmailSending> {
   await page.goto(email.composeUrl, { waitUntil: "domcontentloaded" });
@@ -42,6 +50,7 @@ export async function sendEmailOnPage(page: Page, email: EmailToSend, guard: Sen
   // UNVERIFIED: that this turns what's typed into a recipient, with the guard refusing Outlook's lookups.
   await page.keyboard.press(";");
   await page.waitForTimeout(RECIPIENT_SETTLE_MS);
+  // UNVERIFIED: that filling replaces any signature, and that Outlook's editor keeps the lines. Reading back checks both.
   await subject.fill(email.subject);
   await body.fill(email.body);
 
@@ -89,7 +98,7 @@ async function readCompose(page: Page): Promise<ComposeContents> {
   };
 }
 
-/** What the line shows, and every label and title inside it, because a recipient's chip may keep its address there. */
+/** What the line shows, and every label and title inside it. UNVERIFIED: that a recipient's chip keeps its address in one of those. */
 function readLine(line: Locator): Promise<string> {
   return line.evaluate((element: any) =>
     [

@@ -362,7 +362,9 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
       failIfGuardRefuses(guard, rules.composeUrl);
       try {
         const email = { composeUrl: rules.composeUrl, to: step.to, subject: step.subject, body: step.body };
-        return await browser.sendEmail(email, guard, () => beforePressing(step));
+        const sent = await browser.sendEmail(email, guard, () => beforePressing(step));
+        // Once the guard has opened, Send has been pressed, whatever the browser makes of what followed.
+        return sent.outcome === "not_sent" && guard.progress() !== "shut" ? { outcome: "pressed_nothing_seen" as const, why: sent.why } : sent;
       } catch (error) {
         if (guard.progress() === "shut") throw error;
         // It may have left the browser, so nobody may ever think it's safe to try again.
