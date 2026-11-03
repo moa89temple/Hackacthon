@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readAuditList, readAuditPage } from "../src/dars-pages.ts";
 import { pageFrom } from "./support/tuportal-pages.ts";
 
-/** Every page here is made up. Nobody has seen the real DARS: see dars-rules.ts. */
+/** Every page here is made up, in the layout of a real audit seen on 2026-11-03: see dars-rules.ts. */
 const saved = (name: string) => readFileSync(new URL(`./fixtures/dars-pages/${name}.html`, import.meta.url), "utf8");
 const savedPage = (name: string) => pageFrom(saved(name));
 const changed = (name: string, from: string | RegExp, to: string) => {
@@ -12,6 +12,9 @@ const changed = (name: string, from: string | RegExp, to: string) => {
   expect(after).not.toBe(before);
   return pageFrom(after);
 };
+
+/** Around a requirement or two, what a whole audit has. */
+const wholeAudit = (blocks: string) => `<h2>Audit Result Details</h2>${blocks}<div class="requirement Status_NONE category_ACADEMIC_HISTOR"><div class="reqTitle">ACADEMIC HISTORY</div></div>`;
 
 describe("reading the list of audits", () => {
   it("finds the audits with their program, when they were made and where to view them", () => {
@@ -74,7 +77,24 @@ describe("reading an audit", () => {
       ["MAJOR CORE COURSES", "in_progress"],
       ["MAJOR ELECTIVES", "planned"],
       ["NOTES ON THIS PROGRAM", "none"],
+      ["ACADEMIC HISTORY", "none"],
     ]);
+  });
+
+  it("takes a title's first line as its title, and not the words about it", () => {
+    expect(readAuditPage(savedPage("audit"))?.requirements[0]?.title).toBe("GENED-GU --- GENED REQUIREMENT FOR U.S. SOCIETY");
+  });
+
+  it("reads the real audit's layout, with the words replaced and the requirements shuffled", () => {
+    const audit = readAuditPage(savedPage("audit-real-layout"));
+    const counted = (state: string) => audit?.requirements.filter(({ status }) => status === state).length;
+
+    // Eight of the 29 are notes with no title.
+    expect(audit?.requirements).toHaveLength(21);
+    expect([counted("complete"), counted("missing"), counted("in_progress"), counted("planned"), counted("none")]).toEqual([9, 3, 6, 0, 3]);
+    const courses = audit?.requirements.flatMap(({ courses }) => courses) ?? [];
+    expect(courses.length).toBeGreaterThan(0);
+    expect(courses.every((course) => /^MADE \d{4}$/.test(course))).toBe(true);
   });
 
   it("says which parts of a missing requirement are still missing, and the courses named in it", () => {
@@ -82,6 +102,30 @@ describe("reading an audit", () => {
 
     expect(missing?.missingParts).toEqual(["1) HUMAN BEHAVIOR COURSE"]);
     expect(missing?.courses).toEqual(["MADE 0814", "ALSO 0815"]);
+  });
+
+  it("doesn't count a course already taken as one that's needed", () => {
+    expect(readAuditPage(savedPage("audit"))?.requirements[1]?.courses).not.toContain("TAKE 0900");
+  });
+
+  it("isn't stopped by the page's key to its marks, which is outside every requirement", () => {
+    expect(readAuditPage(savedPage("audit"))).not.toBeNull();
+    expect(saved("audit")).toContain('<span class="statusOK">Complete</span>');
+  });
+
+  it("can't read a requirement whose two marks disagree, one drawn and one not", () => {
+    expect(readAuditPage(changed("audit", "status statusOK", "status statusNO"))).toBeNull();
+  });
+
+  it("can't read a requirement with a drawn mark it doesn't know", () => {
+    expect(readAuditPage(changed("audit", "status statusOK", "status statusMAYBE"))).toBeNull();
+  });
+
+  it("leaves out a note with no title, which has no state", () => {
+    const titles = readAuditPage(savedPage("audit"))?.requirements.map(({ title }) => title);
+
+    expect(titles).not.toContain("");
+    expect(titles).toHaveLength(6);
   });
 
   it("takes nothing of the Student's name, ID, GPA or grades", () => {
@@ -103,47 +147,46 @@ describe("reading an audit", () => {
   });
 
   it("can't read a part of a requirement with a mark it doesn't know", () => {
-    expect(readAuditPage(changed("audit", "subrequirement Status_NO", "subrequirement Status_MAYBE"))).toBeNull();
+    expect(readAuditPage(changed("audit", "status Status_NO", "status Status_MAYBE"))).toBeNull();
   });
 
   it.each(["Status_NO", "Status_IP", "Status_PL"])("can't read a complete requirement with a part marked %s, because the two disagree", (mark) => {
-    const page = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div><div class="subrequirement ${mark}"><div class="subreqTitle">A PART</div></div></div>`;
+    const page = wholeAudit(`<div class="requirement Status_OK"><div class="reqTitle">ONE</div><div class="subrequirement"><span class="status ${mark}"></span><div class="subreqTitle">A PART</div></div></div>`);
 
     expect(readAuditPage(pageFrom(page))).toBeNull();
   });
 
   it("can't read a page with a mark on something it doesn't know, which could be a requirement drawn another way", () => {
-    const page = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div><div class="req-block Status_NO">TWO</div>`;
+    const page = wholeAudit(`<div class="requirement Status_OK"><div class="reqTitle">ONE</div></div><div class="req-block Status_NO">TWO</div>`);
 
     expect(readAuditPage(pageFrom(page))).toBeNull();
   });
 
   it("can't read a page with a part that's in no requirement", () => {
-    const page = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div><div class="subrequirement Status_NO"><div class="subreqTitle">A PART</div></div>`;
+    const page = wholeAudit(`<div class="requirement Status_OK"><div class="reqTitle">ONE</div></div><div class="subrequirement Status_NO"><div class="subreqTitle">A PART</div></div>`);
 
     expect(readAuditPage(pageFrom(page))).toBeNull();
   });
 
-  it.each(["Not all requirements are complete", "Some other words"])("can't read a page without the audit's own word on the whole of it, such as %s", (words) => {
-    const page = `<p>${words}</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div>`;
-
-    expect(readAuditPage(pageFrom(page))).toBeNull();
+  it("can't read a page without the heading over the requirements", () => {
+    expect(readAuditPage(changed("audit", "Audit Result Details", "Something else"))).toBeNull();
   });
 
-  it("can't read a page that says both", () => {
-    const page = `<p>ALL REQUIREMENTS COMPLETE</p><p>AT LEAST ONE REQUIREMENT HAS NOT BEEN SATISFIED</p><div class="requirement Status_NO"><div class="reqTitle">ONE</div></div>`;
-
-    expect(readAuditPage(pageFrom(page))).toBeNull();
+  it("can't read a page that stops before its last block, because what's left out could be what's missing", () => {
+    expect(readAuditPage(changed("audit", "category_ACADEMIC_HISTOR", "category_BLANK"))).toBeNull();
   });
 
-  it("can read every requirement complete, when the audit says so too", () => {
-    const page = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div>`;
+  it("can read every requirement complete", () => {
+    const page = wholeAudit(`<div class="requirement Status_OK"><div class="reqTitle">ONE</div></div>`);
 
-    expect(readAuditPage(pageFrom(page))?.requirements.map(({ status }) => status)).toEqual(["complete"]);
+    expect(readAuditPage(pageFrom(page))?.requirements.map(({ status }) => status)).toEqual(["complete", "none"]);
   });
 
-  it("can't read a requirement with no title", () => {
-    expect(readAuditPage(changed("audit", '<div class="reqTitle">MAJOR ELECTIVES</div>', ""))).toBeNull();
+  it.each([
+    ["no title at all", ""],
+    ["an empty title", '<div class="reqTitle"></div>'],
+  ])("can't read a requirement that has a state and %s", (_, title) => {
+    expect(readAuditPage(changed("audit", '<div class="reqTitle">MAJOR ELECTIVES</div>', title))).toBeNull();
   });
 
   it("can't read a page that has no requirements on it", () => {
@@ -152,18 +195,6 @@ describe("reading an audit", () => {
 
   it("doesn't count a requirement that isn't shown", () => {
     expect(readAuditPage(changed("audit", '<div class="reqTitle">MAJOR ELECTIVES</div>', '<div class="reqTitle" style="display:none">MAJOR ELECTIVES</div>'))).toBeNull();
-  });
-
-  it("can't read a page that says something's unmet when every requirement looks complete", () => {
-    const allComplete = `<p>AT LEAST ONE REQUIREMENT HAS NOT BEEN SATISFIED</p><div class="requirement Status_OK"><div class="reqTitle">ONE</div></div>`;
-
-    expect(readAuditPage(pageFrom(allComplete))).toBeNull();
-  });
-
-  it("can't read a page that says all's complete when a requirement looks missing", () => {
-    const oneMissing = `<p>ALL REQUIREMENTS COMPLETE</p><div class="requirement Status_NO"><div class="reqTitle">ONE</div></div>`;
-
-    expect(readAuditPage(pageFrom(oneMissing))).toBeNull();
   });
 
   it("can't read a What-If audit, which is about a major the Student doesn't have", () => {

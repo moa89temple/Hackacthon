@@ -97,36 +97,73 @@ export function readAuditList({ html, text }: PageToRead): AuditOnList[] | null 
 
 const classesOf = (element: Html.Element) => attribute(element, "class")?.split(/\s+/).filter(Boolean) ?? [];
 const hasClass = (element: Html.Element, name: string) => classesOf(element).includes(name);
-const hasAStatusMark = (element: Html.Element) => classesOf(element).some((name) => AUDIT_SHAPE.statusPrefix.test(name));
+const marksOn = (element: Html.Element) => classesOf(element).filter((name) => AUDIT_SHAPE.statusPrefix.test(name));
+const hasAStatusMark = (element: Html.Element) => marksOn(element).length > 0;
 
 /** Null unless exactly one state is marked, and it's one the reader knows. */
 function statusOf(element: Html.Element): RequirementStatus | null {
-  const marks = classesOf(element).filter((name) => AUDIT_SHAPE.statusPrefix.test(name));
+  const marks = marksOn(element);
   if (marks.length !== 1) return null;
   return Object.hasOwn(AUDIT_SHAPE.statusClasses, marks[0]!) ? AUDIT_SHAPE.statusClasses[marks[0]!]! : null;
 }
 
-function titleIn(element: Html.Element, titleClass: string): string | null {
-  const title = [...elementsIn(element)].find((inside) => hasClass(inside, titleClass));
-  return title ? clean(wordsIn(title)).replace(AUDIT_SHAPE.titleLeader, "") || null : null;
+/** A part's state, from the one element in it that holds a mark. With no mark it has none of its own. Null if it can't be told. */
+function statusOfPart(part: Html.Element): RequirementStatus | null {
+  const holders = [...elementsIn(part)].filter((inside) => hasClass(inside, AUDIT_SHAPE.partMarkClass));
+  if (holders.length > 1) return null;
+  return holders[0] && hasAStatusMark(holders[0]) ? statusOf(holders[0]) : "none";
 }
 
-function readRequirement(block: Html.Element, shown: string): RequirementOnAudit | null {
+/** Whether every mark drawn in this requirement is its own, which is the page saying the same thing twice. */
+function drawnMarksAgree(block: Html.Element): boolean {
+  const own = marksOn(block)[0]!.replace(AUDIT_SHAPE.statusPrefix, "");
+  const drawn = [...elementsIn(block)].flatMap(classesOf).filter((name) => AUDIT_SHAPE.drawnStatusPrefix.test(name));
+  return drawn.every((name) => name === `status${own}`);
+}
+
+/** Up to its first line break, because what follows is words about it. */
+function firstLineOf(element: Html.Element): string {
+  const line: string[] = [];
+  for (const child of element.childNodes) {
+    if (child.nodeName === "br" && clean(line.join(" "))) break;
+    line.push(wordsIn(child));
+  }
+  return clean(line.join(" "));
+}
+
+function titleIn(element: Html.Element, titleClass: string): string | null {
+  const title = [...elementsIn(element)].find((inside) => hasClass(inside, titleClass));
+  return title ? firstLineOf(title).replace(AUDIT_SHAPE.titleLeader, "") || null : null;
+}
+
+/** The courses it says are needed, from what the page holds about each: what it shows can leave the department out. */
+function neededCoursesIn(block: Html.Element): string[] {
+  const inside = [...elementsIn(block)];
+  const taken = new Set(inside.filter((element) => hasClass(element, AUDIT_SHAPE.takenCoursesClass)).flatMap((table) => [...elementsIn(table)]));
+  const courses = inside
+    .filter((element) => hasClass(element, AUDIT_SHAPE.courseClass) && !taken.has(element))
+    .map((element) => clean(`${attribute(element, "department") ?? ""} ${attribute(element, "number") ?? ""}`))
+    .filter((course) => AUDIT_SHAPE.course.test(course));
+  return [...new Set(courses)];
+}
+
+/** Null if it can't be understood. A note with no title and no state isn't a requirement, so it's skipped. */
+function readRequirement(block: Html.Element, shown: string): RequirementOnAudit | "note" | null {
   const status = statusOf(block);
   const title = titleIn(block, AUDIT_SHAPE.requirementTitleClass);
-  if (!status || !title || !shown.includes(title)) return null;
+  if (status === "none" && !title) return "note";
+  if (!status || !title || !shown.includes(title) || !drawnMarksAgree(block)) return null;
 
   const missingParts: string[] = [];
   for (const part of [...elementsIn(block)].filter((inside) => hasClass(inside, AUDIT_SHAPE.partClass))) {
-    const partStatus = statusOf(part);
+    const partStatus = statusOfPart(part);
     if (!partStatus) return null;
     if (status === "complete" && !AUDIT_SHAPE.completeCanHaveUnmetParts && partStatus !== "complete" && partStatus !== "none") return null;
     // A part can have no title of its own. Its state is what matters, and the requirement's says that.
     const partTitle = titleIn(part, AUDIT_SHAPE.partTitleClass);
     if (partStatus === "missing" && partTitle) missingParts.push(partTitle);
   }
-  const courses = status === "missing" ? [...new Set(wordsIn(block).match(AUDIT_SHAPE.course) ?? [])] : [];
-  return { title, status, missingParts, courses };
+  return { title, status, missingParts, courses: status === "missing" ? neededCoursesIn(block) : [] };
 }
 
 export function readAuditPage({ html, text }: PageToRead): Audit | null {
@@ -136,22 +173,22 @@ export function readAuditPage({ html, text }: PageToRead): Audit | null {
   const everything = [...elementsIn(parse(html))];
   const blocks = everything.filter((element) => hasClass(element, AUDIT_SHAPE.requirementClass));
   const insideABlock = new Set(blocks.flatMap((block) => [...elementsIn(block)]));
-  const isKnownPlace = (element: Html.Element) => hasClass(element, AUDIT_SHAPE.requirementClass) || (hasClass(element, AUDIT_SHAPE.partClass) && insideABlock.has(element));
+  const insideAPart = new Set(everything.filter((element) => hasClass(element, AUDIT_SHAPE.partClass)).flatMap((part) => [...elementsIn(part)]));
+  const isKnownPlaceForAMark = (element: Html.Element) =>
+    hasClass(element, AUDIT_SHAPE.requirementClass) || (hasClass(element, AUDIT_SHAPE.partMarkClass) && insideAPart.has(element) && insideABlock.has(element));
   // A state marked anywhere else could be a requirement drawn some way the reader doesn't know, and leaving it out could leave out what's missing.
-  if (everything.some((element) => (hasAStatusMark(element) || hasClass(element, AUDIT_SHAPE.partClass)) && !isKnownPlace(element))) return null;
+  if (everything.some((element) => hasAStatusMark(element) && !isKnownPlaceForAMark(element))) return null;
+  if (everything.some((element) => hasClass(element, AUDIT_SHAPE.partClass) && !insideABlock.has(element))) return null;
 
   const requirements: RequirementOnAudit[] = [];
   for (const block of blocks) {
     const requirement = readRequirement(block, shown);
     if (!requirement) return null;
-    requirements.push(requirement);
+    if (requirement !== "note") requirements.push(requirement);
   }
   if (requirements.length === 0) return null;
 
-  const lines = linesOf(text);
-  const saysUnmet = lines.some((line) => AUDIT_SHAPE.saysUnmet.test(line));
-  const saysAllMet = lines.some((line) => AUDIT_SHAPE.saysAllMet.test(line));
-  const allComplete = requirements.every(({ status }) => status === "complete" || status === "none");
-  // Only the audit's own word can show that none is left out, such as on a page that's only partly drawn.
-  return saysUnmet !== saysAllMet && allComplete === saysAllMet ? { requirements } : null;
+  // Nothing on the page says how many there should be, so this is what shows none is left out, such as on a page only partly drawn.
+  const isWhole = linesOf(text).some((line) => AUDIT_SHAPE.saysDetailsFollow.test(line)) && hasClass(blocks.at(-1)!, AUDIT_SHAPE.lastBlockClass);
+  return isWhole ? { requirements } : null;
 }

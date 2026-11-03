@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Made up, in the shape remembered of u.achieve's audit with the words in Temple's guides. Nobody has seen the real page, and nothing here came from a real account. -->
+<!-- Made up, in the layout of a real audit seen on 2026-11-03. Nothing here came from a real account. -->
 <html><head><title>Audit Results</title></head><body>
 <div class="auditHeader">
   <p>Prepared for: MARKERSTUDENTNAME</p>
@@ -7,31 +7,52 @@
   <p>Catalog Year 202636</p>
   <p>GPA: MARKERGPA</p>
 </div>
-<p>AT LEAST ONE REQUIREMENT HAS NOT BEEN SATISFIED</p>
+<span class="statusOK">Complete</span><span class="statusIP">In-Progress</span><span class="statusNO">Unfulfilled</span><span class="statusPL">Planned</span>
 <a href="/selfservice/audit/create.html">New Audit</a>
-<div class="requirement Status_OK">
-  <div class="reqTitle">~ GENED-GU --- GENED REQUIREMENT FOR U.S. SOCIETY</div>
-  <table class="completedCourses"><tr><td>MADE 0851</td><td>MARKERGRADE</td></tr></table>
+<h2>Audit Result Details</h2>
+<div class="requirement Status_OK category_GENED">
+  <div class="status statusOK"><span>Requirement Complete</span></div>
+  <div class="reqTitle">~ GENED-GU --- GENED REQUIREMENT FOR U.S. SOCIETY<br><br>Words about what this requirement is for.<br>And some more.</div>
+  <div class="subrequirement"><div class="subreqPretext"><span class="status"></span></div>
+    <table class="completedCourses"><tr><td class="course">MADE 0851</td><td class="grade">MARKERGRADE</td></tr></table>
+  </div>
 </div>
-<div class="requirement Status_NO">
+<div class="requirement Status_NO category_GENED">
+  <div class="status statusNO"><span>Requirement Unfulfilled</span></div>
   <div class="reqTitle">~ GENED-GS2 --- GENED REQUIREMENT FOR SCIENCE &amp; TECHNOLOGY</div>
-  <div class="subrequirement Status_NO">
-    <div class="subreqTitle">1) HUMAN BEHAVIOR COURSE</div>
+  <div class="subrequirement"><div class="subreqPretext"><span class="status Status_NO"><span>Sub-Requirement Unfulfilled</span></span></div>
+    <div class="subreqTitle">1) HUMAN BEHAVIOR COURSE<br>More words about this part.</div>
     <p>NEEDS: 1 COURSE</p>
-    <p>SELECT FROM: MADE 0814 OR ALSO 0815</p>
+    <p>SELECT FROM:
+      <span class="course draggable" department="MADE " number="0814"><span class="number">MADE 0814</span></span>
+      <span class="course draggable" department="ALSO " number="0815"><span class="number">0815(GB12 OR HIGHER)</span></span>
+    </p>
   </div>
-  <div class="subrequirement Status_OK">
+  <div class="subrequirement"><div class="subreqPretext"><span class="status"></span></div>
     <div class="subreqTitle">2) MADE-UP PART ALREADY DONE</div>
+    <table class="completedCourses"><tr><td class="course">TAKE 0900</td><td class="grade">MARKERGRADE</td></tr></table>
   </div>
 </div>
-<div class="requirement Status_IP">
+<div class="requirement Status_IP category_MAJOR">
+  <div class="status statusIP"><span>Requirement In Progress</span></div>
   <div class="reqTitle">MAJOR CORE COURSES</div>
-  <table class="completedCourses"><tr><td>MADE 1001</td><td>RG</td></tr></table>
+  <table class="completedCourses"><tr><td class="course">MADE 1001</td><td class="grade">RG</td></tr></table>
 </div>
-<div class="requirement Status_PL">
+<div class="requirement Status_PL category_MAJOR">
+  <div class="status statusPL"><span>Requirement Planned</span></div>
   <div class="reqTitle">MAJOR ELECTIVES</div>
 </div>
-<div class="requirement Status_NONE">
+<div class="requirement Status_NONE category_BLANK">
+  <div class="status statusNONE"><span>Requirement</span></div>
   <div class="reqTitle">NOTES ON THIS PROGRAM</div>
+</div>
+<div class="requirement Status_NONE category_BLANK">
+  <div class="status statusNONE"><span>Requirement</span></div>
+  <div class="reqTitle"></div>
+  <p>A block with words and no title, which is only a note.</p>
+</div>
+<div class="requirement Status_NONE category_ACADEMIC_HISTOR">
+  <div class="status statusNONE"><span>Requirement</span></div>
+  <div class="reqTitle">ACADEMIC HISTORY</div>
 </div>
 </body></html>

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { RecordingBrowser, SavedPage } from "./recording-browser.ts";
 import { pageFrom, SIGN_ON_PAGE } from "./tuportal-pages.ts";
 
-/** Everything here is made up. Nobody has seen the real DARS: see dars-rules.ts. */
+/** Everything here is made up, in the layout of a real audit: see dars-rules.ts. */
 
 export const DARS = "https://prd-dars.temple.edu";
 export const LIST_PAGE = `${DARS}/selfservice/audit/list.html`;
@@ -18,12 +18,10 @@ export function darsPage(html: string, more: Partial<SavedPage> = {}): SavedPage
   return { title: "DARS", accessibilitySnapshot: "", ...pageFrom(html), ...more };
 }
 
-/** An audit with these requirements, by title and state, and its own word on the whole of it. */
+/** An audit with these requirements, by title and state, and what a whole audit has around them. */
 export function auditWith(requirements: Record<string, string>, more = ""): string {
   const blocks = Object.entries(requirements).map(([title, status]) => `<div class="requirement ${status}"><div class="reqTitle">${title}</div>${more}</div>`);
-  const allMet = Object.values(requirements).every((status) => status === "Status_OK" || status === "Status_NONE");
-  const overall = allMet ? "ALL REQUIREMENTS COMPLETE" : "AT LEAST ONE REQUIREMENT HAS NOT BEEN SATISFIED";
-  return `<!doctype html><html><head><title>Audit Results</title></head><body><p>${overall}</p>${blocks.join("")}</body></html>`;
+  return `<!doctype html><html><head><title>Audit Results</title></head><body><h2>Audit Result Details</h2>${blocks.join("")}<div class="requirement Status_NONE category_ACADEMIC_HISTOR"><div class="reqTitle"></div></div></body></html>`;
 }
 
 /** The made-up pages, as DARS would serve them to a Student with a working login. */

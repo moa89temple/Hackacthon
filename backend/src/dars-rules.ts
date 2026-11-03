@@ -1,9 +1,20 @@
 import type { PagePattern, Site } from "./browser-access.ts";
 
 /**
- * Everything Buddy assumes about DARS, in one place, so that it can be put right once in one file. Nobody
- * working on Buddy has seen a logged-in DARS. `npm run check-dars` shows where each of these lands against a
- * real login, without showing the Student's records.
+ * Everything Buddy assumes about DARS, in one place, so that it can be put right once in one file.
+ * `npm run check-dars` shows where each of these lands against a real login, without showing the Student's records.
+ *
+ * What was seen with a real login, on one Student's one audit, on 2026-11-03:
+ * - DARS_PAGES.list, DARS_PAGES.audit and AUDIT_QUERY are right, the list is read as AUDIT_LIST_SHAPE says, and
+ *   the guard refuses nothing a read needs.
+ * - The audit is in the page's HTML. AUDIT_SHAPE's classes are all real. A part's mark is on a status element
+ *   inside it, not on the part, and a part with nothing to say has none. Each requirement also draws its mark,
+ *   as statusOK beside Status_OK, and the two agree. The page's key to the marks uses those too, outside them all.
+ * - A title's element goes on, past a line break, into words about the requirement. A block with no title is
+ *   only a note, with no state.
+ * - A needed course keeps its department and number in attributes, because what's shown can leave the
+ *   department out or add a condition such as a lowest grade.
+ * - The audit has no sentence about the whole of it, such as "all requirements complete".
  *
  * What was seen, logged out, on 2026-11-03:
  * - dars.temple.edu sends a browser to prd-dars.temple.edu/selfservice, and on to /selfservice/ and
@@ -22,13 +33,12 @@ import type { PagePattern, Site } from "./browser-access.ts";
  *   requirement can be, and In Progress only means satisfied if the courses under way count.
  * - The FAQ: an audit is only "current as of the moment an audit is processed".
  *
- * What's a guess, from memory of u.achieve, the product DARS Self-Service looks to be, and nothing of Temple's:
- * - DARS_PAGES.list, DARS_PAGES.audit and AUDIT_QUERY. Logged out, the server sent the one address tried to
- *   the sign-on, which says nothing about whether it's real.
- * - All of AUDIT_SHAPE, and that the audit is in the page rather than built by script or in a frame.
- * - The wording in AUDIT_LIST_SHAPE.saysNone, AUDIT_SHAPE.saysUnmet and AUDIT_SHAPE.saysAllMet. An audit that
- *   says neither isn't understood, so those are the first thing to put right if a real one isn't.
- * - That a complete requirement has no part that isn't: see AUDIT_SHAPE.completeCanHaveUnmetParts.
+ * What's still a guess:
+ * - The wording in AUDIT_LIST_SHAPE.saysNone, as this Student has an audit.
+ * - That Status_PL is what a planned requirement says. The page's key has statusPL, and this audit has none.
+ * - That another Student's audit ends with the same last block: see AUDIT_SHAPE.lastBlockClass.
+ * - That a complete requirement never has a part that isn't. It didn't on this audit: see
+ *   AUDIT_SHAPE.completeCanHaveUnmetParts.
  * - That the Created column is on Philadelphia's clock.
  *
  * Whether a read has to run a new audit: it doesn't have to, and Buddy never does. It reads the newest one
@@ -91,7 +101,7 @@ export type RequirementStatus = "complete" | "missing" | "in_progress" | "planne
 /** "None" is Temple's own word for no state at all, so it makes no fact. */
 export type StatedStatus = Exclude<RequirementStatus, "none">;
 
-/** How an audit is read. A guess, all of it, apart from the five states being Temple's. See above. */
+/** How an audit is read. See above for what's been seen and what hasn't. */
 export const AUDIT_SHAPE = {
   requirementClass: "requirement",
   requirementTitleClass: "reqTitle",
@@ -108,19 +118,29 @@ export const AUDIT_SHAPE = {
     Status_PL: "planned",
     Status_NONE: "none",
   } as Record<string, RequirementStatus>,
-  statusPrefix: /^status/i,
+  statusPrefix: /^status_/i,
+  /** The element in a part that holds its mark. A part whose element has no mark has no state of its own. */
+  partMarkClass: "status",
+  /** The same mark drawn for the eye. Inside a requirement it has to be that requirement's own. */
+  drawnStatusPrefix: /^status[A-Z]/,
   /**
    * A requirement can be met without all of its parts, such as any two of three, and then this should be
-   * true. Nobody knows yet whether DARS shows it that way, and until then the two disagreeing stops the read.
+   * true. The one audit seen so far doesn't show it that way, and until one does the two disagreeing stops the read.
    */
   completeCanHaveUnmetParts: false,
   /** What the page puts in front of a title, which isn't part of it. In Temple's guide's picture. */
   titleLeader: /^~\s*/,
-  /** Course numbers, such as ANTH 0814 or MATH L006. */
-  course: /\b[A-Z]{2,5} [A-Z]?\d{3,4}\b/g,
-  /** The audit's own word on the whole of it. If it says neither or both, or what the reader found disagrees, it stops. */
-  saysUnmet: /at least one requirement has not been satisfied/i,
-  saysAllMet: /^\W*all requirements?(?: (?:are|have been))? (?:complete|completed|satisfied|met)\W*$/i,
+  /** A needed course: its element, and where the page lists those already taken, which don't count. */
+  courseClass: "course",
+  takenCoursesClass: "completedCourses",
+  /** A whole course number, such as ANTH 0814 or MATH L006. */
+  course: /^[A-Z]{2,5} [A-Z]?\d{3,4}$/,
+  /**
+   * The audit has no word of its own on the whole of it, so these are what shows it's all there: the heading over
+   * the requirements, and the block that comes after them all. Leaving one out could leave out what's missing.
+   */
+  saysDetailsFollow: /^audit result details$/i,
+  lastBlockClass: "category_ACADEMIC_HISTOR",
   /** A What-If audit, from what's on the audit itself. From Temple's guide. */
   whatIfCatalog: /\bcatalog\s+(?:year|term)\W*9{4,}\b/i,
 };
