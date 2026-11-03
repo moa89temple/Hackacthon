@@ -404,6 +404,24 @@ The backend writes all of this itself, in words from Buddy's own code, and Claud
 - If a Read now joins a read already under way, the entry gives the first one's reason.
 - The whole list loads at once, which will get slow only after a very long time.
 
+## What Buddy spends
+
+Every Claude call is priced and recorded when it finishes. The You tab shows what Buddy has spent today and this month, for chat and background work together. A day and a month go by Philadelphia's clock.
+
+Background work stops for the day once it has used $2. That means the Claude calls made by Discovery of the Guidebook, Standard Milestones and Opportunities, and by reading a Connection (today, only Handshake's pages go to Claude). The You tab says so when it happens. Chat and the Crisis check are never stopped, and what they use doesn't count towards the $2.
+
+Being stopped isn't a failure. What Buddy already knows stays as it was, nothing leaves the Guidebook, and the run isn't counted as done, so it runs again after midnight rather than waiting for its next turn. Whatever needs no Claude carries on: Briefings, the other Connections, and pages whose words haven't changed.
+
+As a backstop, set a $50 monthly spend limit in the [Anthropic Console](https://console.anthropic.com).
+
+### Known limits
+
+- The prices are written into `backend/src/spending.ts`, from Anthropic's pricing page as of 2026-11-03, and won't follow a later change there. A model that isn't on the list counts at the highest prices on it, and the backend logs that once.
+- The limit is checked before each call, so calls already under way can take a day's total a little past $2.
+- A call that dies before its final message has no usage to record, so it counts as nothing, though Anthropic may charge for it. The same goes for a Crisis check that runs out of time, and for any retry the Anthropic SDK makes by itself.
+- The prices assume the standard API. Buddy doesn't use fast mode or US-only inference, which cost more.
+- A web search turn on Haiku adds up all of its rounds, and it's priced as one prompt. Anthropic's page doesn't say how its 100,000-token line applies to those, so this can overstate such a turn, but it can't understate it.
+
 ## Log in to a site
 
 On the You tab, tap **Log in** under the Connection, such as **Log in to Canvas**, once you've given its Read Permission. The live view opens on the site's sign-in page. Tap the field you want, tap **Keyboard** to type, approve Duo on your phone, then tap **Done**. The app then tells you whether Buddy could open the site.

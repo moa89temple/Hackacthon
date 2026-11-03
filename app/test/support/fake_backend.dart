@@ -5,10 +5,11 @@ import 'package:buddy/backend/buddy_backend.dart';
 import 'fake_briefings.dart';
 import 'fake_roadmap.dart';
 import 'fake_sending.dart';
+import 'fake_spending.dart';
 
 /// Stands in for the backend. A test decides what the history holds and pushes
 /// reply events whenever it wants, so it can look at a reply mid-stream.
-class FakeBackend with FakeRoadmapCalls, FakeSendingCalls, FakeBriefingCalls implements BuddyBackend {
+class FakeBackend with FakeRoadmapCalls, FakeSendingCalls, FakeBriefingCalls, FakeSpendingCalls implements BuddyBackend {
   FakeBackend({List<ConversationItem>? history}) : history = history ?? [];
 
   List<ConversationItem> history;

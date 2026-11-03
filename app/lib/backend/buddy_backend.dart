@@ -8,6 +8,7 @@ import '../device/device_store.dart';
 import '../device/pairing_details.dart';
 import '../roadmap/roadmap_backend.dart';
 import '../sending/sending_backend.dart';
+import '../spending/spending_backend.dart';
 
 /// A pairing request gets this long. Without Tailscale on, the phone would otherwise wait minutes.
 const _pairingTimeout = Duration(seconds: 20);
@@ -713,7 +714,7 @@ class FinishedTakeover {
 }
 
 /// What the app needs from the backend.
-abstract interface class BuddyBackend implements RoadmapBackend, SendingBackend, BriefingBackend {
+abstract interface class BuddyBackend implements RoadmapBackend, SendingBackend, BriefingBackend, SpendingBackend {
   Future<List<ConversationItem>> loadHistory();
 
   /// Sends the Student's message. The stream carries Buddy's turn.
@@ -1099,6 +1100,13 @@ class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls, HttpBriefingCall
     final response = await http.Response.fromStream(await _client.send(request));
     _check(response.statusCode, 'A Roadmap request');
     return _decode(response);
+  }
+
+  @override
+  Future<SpendingSummary> loadSpending() async {
+    final response = await _client.get(_baseUrl.resolve('/spending'), headers: _keyHeader);
+    _check(response.statusCode, 'Loading what Buddy spent');
+    return SpendingSummary.fromJson(_decode(response));
   }
 
   @override

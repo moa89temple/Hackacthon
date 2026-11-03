@@ -13,6 +13,8 @@ import '../roadmap/goals_section.dart';
 import '../roadmap/roadmap_controller.dart';
 import '../sending/sending_controller.dart';
 import '../sending/sending_section.dart';
+import '../spending/spending_controller.dart';
+import '../spending/spending_section.dart';
 
 class YouTab extends StatelessWidget {
   const YouTab({
@@ -22,6 +24,7 @@ class YouTab extends StatelessWidget {
     required this.connections,
     required this.roadmap,
     required this.sending,
+    required this.spending,
     required this.briefings,
     required this.phoneNotifications,
   });
@@ -33,6 +36,7 @@ class YouTab extends StatelessWidget {
   final ConnectionsController connections;
   final RoadmapController roadmap;
   final SendingController sending;
+  final SpendingController spending;
 
   void _openActivity(BuildContext context) {
     Navigator.of(context).push(
@@ -55,6 +59,8 @@ class YouTab extends StatelessWidget {
         BriefingsSection(briefings: briefings, phone: phoneNotifications),
         const SizedBox(height: 32),
         SendingSection(sending: sending),
+        const SizedBox(height: 32),
+        SpendingSection(spending: spending),
         const SizedBox(height: 32),
         Semantics(
           header: true,

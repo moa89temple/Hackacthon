@@ -21,6 +21,7 @@ import 'profile/profile_controller.dart';
 import 'roadmap/roadmap_controller.dart';
 import 'roadmap/roadmap_tab.dart';
 import 'sending/sending_controller.dart';
+import 'spending/spending_controller.dart';
 import 'tabs/today_tab.dart';
 import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
@@ -258,6 +259,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _chat.checkWaitingCards();
     _chat.checkCrisisOffers();
   })..load();
+  late final SpendingController _spending = SpendingController(widget.backend)..load();
   late final BriefingsController _briefings = BriefingsController(widget.backend)..load();
   late final PhoneNotificationsController _phoneNotifications = PhoneNotificationsController(
     widget.backend,
@@ -348,6 +350,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _connections.load();
     _roadmap.load();
     _sending.load();
+    _spending.load();
     _briefings.load();
     _phoneNotifications.check();
   }
@@ -376,6 +379,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _roadmap.dispose();
     _opportunities.dispose();
     _sending.dispose();
+    _spending.dispose();
     _briefings.dispose();
     _phoneNotifications.dispose();
     super.dispose();
@@ -401,6 +405,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
             connections: _connections,
             roadmap: _roadmap,
             sending: _sending,
+            spending: _spending,
             briefings: _briefings,
             phoneNotifications: _phoneNotifications,
           ),
