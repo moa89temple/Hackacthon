@@ -3,7 +3,7 @@ import type { Site } from "../src/browser-access.ts";
 import { EXIT_FAILED, EXIT_LOGIN_NEEDED, EXIT_NO_READ_PERMISSION, EXIT_OLD_LOGIN_REMAINS, EXIT_OK, EXIT_TAKEOVER_UNDER_WAY } from "../src/canvas-check.ts";
 import { settings } from "../src/settings.ts";
 import { tumail } from "../src/tumail.ts";
-import { cleanTumailRequest, EXIT_MARKED_READ, runTumailCheck, tumailStructureOf } from "../src/tumail-check.ts";
+import { cleanTumailRequest, EXIT_MARKED_READ, EXIT_READ_PROBLEM, runTumailCheck, tumailStructureOf } from "../src/tumail-check.ts";
 import { RecordingBrowser } from "./support/recording-browser.ts";
 import {
   ADVISOR,
@@ -166,7 +166,7 @@ describe("when the reader doesn't recognize a page", () => {
 
     const { output, exitCode } = await check(browser);
 
-    expect(exitCode).toBe(EXIT_OK);
+    expect(exitCode).toBe(EXIT_READ_PROBLEM);
     expect(output).toContain("Problem: Buddy opened TUmail but couldn't make sense of the page");
     expect(output).toContain("Structure of /mail/inbox");
     expect(output).toMatch(/not recognized/);
@@ -340,7 +340,7 @@ describe("what the check won't do", () => {
 
     const { output, exitCode } = await check(browser);
 
-    expect([EXIT_OK, EXIT_FAILED, EXIT_LOGIN_NEEDED]).toContain(exitCode);
+    expect([EXIT_OK, EXIT_FAILED, EXIT_LOGIN_NEEDED, EXIT_READ_PROBLEM]).toContain(exitCode);
     expect(browser.actions.every((action) => action.type === "read")).toBe(true);
     expectNoLeaks(output);
   });

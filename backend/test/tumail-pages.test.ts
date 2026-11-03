@@ -15,6 +15,18 @@ describe("reading the inbox's list", () => {
     ]);
   });
 
+  it("finds the sender past the row's own controls and an empty title, as in a real inbox", () => {
+    const row = `<div role="option" data-convid="a" aria-label="Unread Made-up">
+      <button title="dean@temple.edu"></button>
+      <div role="checkbox" title="dean@temple.edu"><span title="dean@temple.edu" role="img"></span></div>
+      <div title=""></div>
+      <span title="someone@evil.test">Made-Up Sender</span>
+      <span title="dean@temple.edu">A subject with an address in it</span>
+    </div>`;
+
+    expect(readInboxPage(inboxHtml(row))![0]).toMatchObject({ address: "someone@evil.test", name: "Made-Up Sender" });
+  });
+
   it("says which are unread, and when the page can't say", () => {
     const rows = readInboxPage(savedTumailHtml("inbox"))!;
     expect(rows[0]!.unread).toBe(true);
@@ -143,6 +155,77 @@ describe("reading one message", () => {
     const html = `<div aria-label="Reading Pane"><div aria-label="From: Jane" title="jane@temple.edu">Jane</div><div aria-label="Message body"><p>Words.</p></div></div>`;
 
     expect(readMessagePage(html)).toMatchObject({ outcome: "read", address: "jane@temple.edu", name: "jane@temple.edu" });
+  });
+
+  describe("a conversation with several messages open, each with its own header", () => {
+    const fromRow = { address: "jane.advisor@temple.edu", name: "Jane Advisor" };
+    const open = (from: string, time: string, words: string) =>
+      `<div aria-label="From: ${from}">${from}</div><div data-testid="SentReceivedSavedTime">${time}</div><div aria-label="Message body"><p>${words}</p></div>`;
+    const pane = (...messages: string[]) => `<div aria-label="Reading Pane"><span role="heading">Made-up subject</span>${messages.join("")}</div>`;
+
+    it("reads only the row's sender's, with its own time, and nobody else's words", () => {
+      const message = readMessagePage(pane(open("Someone Else", "Mon 11/2/2026 1:00 PM", "MARKEROUTSIDER"), open("Jane Advisor", "Sun 11/1/2026 9:00 AM", "Her words.")), fromRow);
+
+      expect(message).toMatchObject({ outcome: "read", address: "jane.advisor@temple.edu", subject: "Made-up subject", shownAt: "Sun 11/1/2026 9:00 AM", words: "Her words." });
+      expect(JSON.stringify(message)).not.toContain("MARKEROUTSIDER");
+    });
+
+    it("goes by the address when that's what a header shows", () => {
+      const message = readMessagePage(pane(open("Someone Else", "x", "MARKEROUTSIDER"), open("Jane &lt;jane.advisor@temple.edu&gt;", "y", "Her words.")), fromRow);
+
+      expect(message).toMatchObject({ outcome: "read", words: "Her words." });
+    });
+
+    it("reads none if the row's sender wrote more than one, because it can't tell which is newest", () => {
+      expect(readMessagePage(pane(open("Jane Advisor", "x", "One."), open("Jane Advisor", "y", "Two.")), fromRow)).toEqual({ outcome: "several_open" });
+    });
+
+    it("reads none if the row's sender wrote none of them", () => {
+      expect(readMessagePage(pane(open("Someone Else", "x", "One."), open("Another Person", "y", "Two.")), fromRow)).toEqual({ outcome: "several_open" });
+    });
+
+    it("isn't fooled by an email that draws its own header and message inside itself", () => {
+      const madeUp = `<div aria-label="From: Jane Advisor">Jane Advisor</div><div aria-label="Message body">MARKERFORGED</div>`;
+
+      expect(readMessagePage(pane(open("Someone Else", "x", madeUp)), fromRow)).toEqual({ outcome: "several_open" });
+    });
+
+    it("isn't fooled by a header an email draws in itself, ahead of the next real message", () => {
+      const forgedInFirst = `<div aria-label="From: Jane Advisor">Jane Advisor</div>`;
+      const message = readMessagePage(pane(open("Someone Else", "x", forgedInFirst), open("Another Person", "y", "MARKERFORGED")), fromRow);
+
+      expect(message).toEqual({ outcome: "several_open" });
+    });
+  });
+
+  describe("a message that shows only a name, as Outlook does for someone in Temple's own directory", () => {
+    const fromRow = { address: "jane.advisor@temple.edu", name: "Jane Advisor" };
+
+    it("is the row's sender's if it shows exactly the name the row does", () => {
+      const message = readMessagePage(messageHtml({ from: "jane  ADVISOR", body: "<p>Words.</p>" }), fromRow);
+
+      expect(message).toMatchObject({ outcome: "read", address: "jane.advisor@temple.edu", name: "jane ADVISOR", words: "Words." });
+    });
+
+    it("isn't if it shows another name, as when a conversation's open message is someone else's", () => {
+      expect(readMessagePage(messageHtml({ from: "Someone Else", body: "<p>Words.</p>" }), fromRow)).toEqual({ outcome: "no_sender" });
+    });
+
+    it("isn't if the name looks like an address, which anyone can set a display name to", () => {
+      const row = { address: "dean@temple.edu", name: "dean@temple.edu" };
+
+      expect(readMessagePage(messageHtml({ from: "dean@temple.edu", body: "<p>Words.</p>" }), row)).toEqual({ outcome: "no_sender" });
+    });
+
+    it("isn't if the row has no address to go by", () => {
+      expect(readMessagePage(messageHtml({ from: "Jane Advisor", body: "<p>Words.</p>" }), { address: null, name: null })).toEqual({ outcome: "no_sender" });
+    });
+
+    it("goes by the address when a message shows one, even with the row's name on it", () => {
+      const message = readMessagePage(messageHtml({ from: "Jane Advisor &lt;someone@evil.test&gt;", body: "<p>Words.</p>" }), fromRow);
+
+      expect(message).toMatchObject({ outcome: "read", address: "someone@evil.test" });
+    });
   });
 
   it("says so when it can't see who it's from, so that the words aren't kept", () => {

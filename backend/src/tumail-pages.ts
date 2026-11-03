@@ -8,8 +8,9 @@ import { bracketedAddressIn, senderAddressIn } from "./tumail-rules.ts";
  * HTML, as the app built it, and gives back what's on it. Outlook's class names are made by its build
  * and change, so this goes by its roles, labels and data attributes.
  *
- * All of this is modelled on what's generally known of the app and hasn't been compared with a real
- * inbox, so anything it doesn't recognize is a failure it says out loud, and never an empty inbox.
+ * A real inbox was compared with this on 2026-11-02. A row has controls with titles ahead of the sender,
+ * and a message from someone in Temple's own directory shows only their name. Anything it doesn't
+ * recognize is a failure it says out loud, and never an empty inbox.
  * The list is on the page beside an open message and the words of a message can hold anything, so
  * nothing is ever searched for across a whole page.
  */
@@ -20,6 +21,8 @@ export interface RowOnPage {
   id: string;
   /** Null when the row doesn't show one. */
   address: string | null;
+  /** The sender's name as the row shows it, to tell whether a message that shows only a name is theirs. */
+  name: string | null;
   /** Null when the page can't say. */
   unread: boolean | null;
   /** When it came, as the page writes it. */
@@ -32,7 +35,7 @@ export type MessageOnPage =
   | { outcome: "read"; address: string; name: string; subject: string; shownAt: string | null; words: string }
   /** It's open, but nothing says who wrote it, so its words can't be kept. */
   | { outcome: "no_sender" }
-  /** Several messages of a conversation are open, so there's no telling whose words are whose. */
+  /** Several messages of a conversation are open, and there's no telling which one is the row's sender's. */
   | { outcome: "several_open" }
   | { outcome: "not_recognized" };
 
@@ -91,19 +94,28 @@ function withLabel(element: Html.Element, label: RegExp): boolean {
   return label.test(attribute(element, "aria-label") ?? "");
 }
 
+/** A row's own buttons and tick box. A real inbox gives them titles too, ahead of the sender's, and they say nothing about the mail. */
+function isControl(element: Html.Element): boolean {
+  return element.tagName === "button" || ["button", "checkbox"].includes(attribute(element, "role") ?? "");
+}
+
 function readRow(row: Html.Element): RowOnPage | null {
   const id = attribute(row, "data-convid")!;
   if (!FITS_IN_AN_ADDRESS.test(id) || id.includes("..")) return null;
-  const withTitles = [...elementsIn(row)].filter((element) => attribute(element, "title") !== undefined);
+  const inControls = new Set([...elementsIn(row)].filter(isControl).flatMap((control) => [control, ...elementsIn(control)]));
+  // A real row can have an empty title ahead of the sender's too, which says nothing at all.
+  const withTitles = [...elementsIn(row)].filter((element) => Boolean(attribute(element, "title")?.trim()) && !inControls.has(element));
   // The sender comes first in a row. Only there: anyone can put an address in a subject.
   const firstTitle = withTitles[0] && attribute(withTitles[0], "title");
   const dated = withTitles.findLast((element) => DATE_WITH_A_YEAR.test(attribute(element, "title")!));
   const label = attribute(row, "aria-label");
   const address = firstTitle ? senderAddressIn(firstTitle) : null;
+  const name = address && withTitles[0] ? wordsIn(withTitles[0]) || null : null;
   const shownAt = dated ? attribute(dated, "title")! : null;
   return {
     id,
     address,
+    name,
     unread: label === undefined ? null : /^unread\b/i.test(label.trim()),
     shownAt,
     fingerprint: shortHash(JSON.stringify([address, shownAt, wordsIn(row).replace(dated ? wordsIn(dated) : "", "")])),
@@ -126,34 +138,55 @@ export function readInboxPage(html: string): RowOnPage[] | null {
   return read.every((row) => row !== null) ? read : null;
 }
 
-/** The message open in the reading pane, and only it. */
-export function readMessagePage(html: string): MessageOnPage {
+const sameName = (one: string, other: string) => one.toLowerCase().replace(/\s+/g, " ").trim() === other.toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * The message open in the reading pane, and only it, given the row it was opened from. Outlook shows someone
+ * in Temple's own directory by name alone, where anyone from outside comes with their address. So a message
+ * with no address is taken to be the row's sender's only if it shows exactly the name the row does, and that
+ * name doesn't look like an address, which anyone could set their display name to.
+ *
+ * Each open message in a conversation has its own header. Only the row's sender's is read, so that anyone
+ * else in the conversation, who may not be someone Buddy reads, stays out. If that isn't exactly one, nothing is.
+ */
+export function readMessagePage(html: string, row?: Pick<RowOnPage, "address" | "name">): MessageOnPage {
   const pane = [...elementsIn(parse(html))].find((element) => attribute(element, "id") === "ReadingPaneContainerId" || withLabel(element, /^reading pane$/i));
   if (!pane) return { outcome: "not_recognized" };
 
   const elements = [...elementsIn(pane)];
   const bodies = elements.filter((element) => withLabel(element, /^message body$/i));
   if (bodies.length === 0) return { outcome: "not_recognized" };
-  if (bodies.length > 1) return { outcome: "several_open" };
-  const body = bodies[0]!;
+  // Words in an email can be labelled anything, so one "message" inside another could be anyone's made-up header and words.
+  if (bodies.some((body) => bodies.some((other) => other !== body && [...elementsIn(other)].includes(body)))) return { outcome: "several_open" };
 
-  // In document order. Only what comes before the body and outside it can be the header of what's shown.
-  const beforeBody = elements.slice(0, elements.indexOf(body));
-  const inBody = new Set(elementsIn(body));
-  const fromHeader = beforeBody.findLast((element) => withLabel(element, /^from\b/i) && !inBody.has(element));
-  const shownFrom = fromHeader ? wordsIn(fromHeader) : "";
-  // In the words it must be in brackets: an address on its own there could be a display name that looks like one.
-  const address = fromHeader ? (senderAddressIn(attribute(fromHeader, "title") ?? "") ?? bracketedAddressIn(shownFrom)) : null;
+  const messages = bodies.map((body, index) => {
+    // In document order. Only what comes between the last message and this one can be this one's header.
+    const last = bodies[index - 1];
+    const start = last ? elements.indexOf(last) + [...elementsIn(last)].length + 1 : 0;
+    const before = elements.slice(start, elements.indexOf(body));
+    const fromHeader = before.findLast((element) => withLabel(element, /^from\b/i));
+    const shownFrom = fromHeader ? wordsIn(fromHeader) : "";
+    // In the words it must be in brackets: an address on its own there could be a display name that looks like one.
+    const addressShown = fromHeader ? (senderAddressIn(attribute(fromHeader, "title") ?? "") ?? bracketedAddressIn(shownFrom)) : null;
+    const nameMatchesRow = addressShown === null && shownFrom !== "" && !shownFrom.includes("@") && row?.name != null && sameName(shownFrom, row.name);
+    const when = before.findLast((element) => attribute(element, "data-testid") === "SentReceivedSavedTime");
+    return { body, shownFrom, addressShown, nameMatchesRow, when };
+  });
+
+  const theRowSenders = messages.filter(({ addressShown, nameMatchesRow }) => nameMatchesRow || (addressShown !== null && addressShown === row?.address));
+  if (messages.length > 1 && theRowSenders.length !== 1) return { outcome: "several_open" };
+  const message = messages.length > 1 ? theRowSenders[0]! : messages[0]!;
+  const address = message.addressShown ?? (message.nameMatchesRow ? row!.address : null);
   if (!address) return { outcome: "no_sender" };
 
-  const when = beforeBody.find((element) => attribute(element, "data-testid") === "SentReceivedSavedTime");
-  const heading = beforeBody.find((element) => attribute(element, "role") === "heading");
+  // The conversation's subject, at the top of the pane, for whichever message this is.
+  const heading = elements.slice(0, elements.indexOf(bodies[0]!)).find((element) => attribute(element, "role") === "heading");
   return {
     outcome: "read",
     address,
-    name: NAME_AND_ADDRESS.exec(shownFrom)?.[1]?.trim() || address,
+    name: message.nameMatchesRow ? message.shownFrom : NAME_AND_ADDRESS.exec(message.shownFrom)?.[1]?.trim() || address,
     subject: wordsIn(heading),
-    shownAt: wordsIn(when) || null,
-    words: wordsIn(body),
+    shownAt: wordsIn(message.when) || null,
+    words: wordsIn(message.body),
   };
 }

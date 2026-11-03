@@ -35,6 +35,7 @@ export function messageHtml(message: { from: string; subject?: string; when?: st
 export function rowHtml(row: { id: string; address: string; words: string; unread?: boolean; when?: string }): string {
   const when = row.when ?? "Sun 11/1/2026 2:15 PM";
   return `<div role="option" data-convid="${row.id}" aria-label="${row.unread ? "Unread " : ""}Someone ${row.words}">
+    <button title="Made-up expand"></button><div role="checkbox" title="Made-up select"><span role="img"></span></div><div title=""></div>
     <span title="${row.address}">Someone</span><span title="A subject">A subject</span><span title="${when}">soon</span><span>${row.words}</span>
   </div>`;
 }

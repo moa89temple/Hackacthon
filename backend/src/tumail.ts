@@ -127,7 +127,7 @@ async function openMessage(browser: ReadContext["browser"], origin: string, appH
   try {
     const page = await browser.read(new URL(messagePath(row.id), origin).href, { until: MESSAGE_IS_READY });
     if (isTumailLoginPage(page.url, appHosts)) throw new LoginNeeded(LOG_IN);
-    return readMessagePage(page.html);
+    return readMessagePage(page.html, row);
   } catch (error) {
     if (error instanceof ReadProblem) throw error;
     if (error instanceof TakeoverInProgress) throw new ReadProblem(STUDENT_IN_CONTROL);

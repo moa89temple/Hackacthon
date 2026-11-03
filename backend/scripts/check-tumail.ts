@@ -5,7 +5,7 @@
 //
 // npm run check-tumail
 //
-// Exits 0 if it read TUmail, 2 with no Read Permission, 3 during a Takeover, 4 if the login has expired,
+// Exits 7 if the login works and the reader missed something. Otherwise it exits 0 if it read TUmail, 2 with no Read Permission, 3 during a Takeover, 4 if the login has expired,
 // 5 if an old login is waiting to be deleted, and 6 if opening a message marked it read.
 import { EXIT_FAILED, readStudentState } from "../src/canvas-check.ts";
 import { containerBrowser } from "../src/container-browser.ts";

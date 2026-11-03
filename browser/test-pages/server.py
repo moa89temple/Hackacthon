@@ -268,6 +268,7 @@ OUTLOOK_INBOX = """
     const {messages, unread} = await answer.json();
     document.getElementById('appRoot').innerHTML = '<div role="listbox" aria-label="Message list">' + messages.map((one) =>
       '<div role="option" data-convid="' + one.id + '" aria-label="' + (unread ? 'Unread ' : '') + one.name + '">' +
+      '<button title="MARKERCONTROL"></button><div role="checkbox" title="MARKERCONTROL"></div><div title=""></div>' +
       '<span title="' + one.address + '">' + one.name + '</span><span title="' + one.subject + '">' + one.subject + '</span>' +
       '<span title="Mon 11/2/2026 10:32 AM">10:32 AM</span></div>').join('') + '</div>';
   }, 1500);

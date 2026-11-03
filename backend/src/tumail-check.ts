@@ -22,6 +22,8 @@ import { INBOX_IS_READY, INBOX_PATH, isTempleAddress, senderAddressIn, TUMAIL_AP
  */
 
 export const EXIT_MARKED_READ = 6;
+/** The login works and the reader says it missed something, which is what this check is for finding. */
+export const EXIT_READ_PROBLEM = 7;
 
 const MOST_SHAPE_LINES = 400;
 const SHORTEST_NAME_TO_COMPARE = 5;
@@ -392,7 +394,8 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
   const firstInboxHtml = inboxVisits[0]?.html ?? null;
   const rows = firstInboxHtml === null ? null : readInboxPage(firstInboxHtml);
   const messageVisits = visits.filter((visit) => isMessagePage(visit.rawAsked));
-  const outcomes = messageVisits.map((visit): MessageOnPage["outcome"] | "failed" => (visit.html === null ? "failed" : readMessagePage(visit.html).outcome));
+  const rowOf = (visit: PageVisit) => rows?.find((row) => row.id === idInAddress(visit.rawAsked));
+  const outcomes = messageVisits.map((visit): MessageOnPage["outcome"] | "failed" => (visit.html === null ? "failed" : readMessagePage(visit.html, rowOf(visit)).outcome));
   const countOutcome = (outcome: string) => outcomes.filter((candidate) => candidate === outcome).length;
 
   print(`${connection.name} check. This shows counts and page shapes only, and nothing was saved.`);
@@ -458,7 +461,7 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
     if (rows === null) shapes.push({ path: INBOX_PATH, why: WHY_NOT_RECOGNIZED, html: firstInboxHtml });
     else if (rows.length > 0 && rows.every((row) => row.address === null)) shapes.push({ path: INBOX_PATH, why: WHY_NO_SENDERS, html: firstInboxHtml });
   }
-  const firstUnclear = messageVisits.find((visit) => visit.html !== null && readMessagePage(visit.html).outcome !== "read");
+  const firstUnclear = messageVisits.find((visit) => visit.html !== null && readMessagePage(visit.html, rowOf(visit)).outcome !== "read");
   if (firstUnclear && !status.needsLogin) shapes.push({ path: `${INBOX_PATH}/id/:id`, why: WHY_NOT_RECOGNIZED, html: firstUnclear.html! });
   if (shapes.length > 0) {
     print("");
@@ -471,7 +474,8 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
   }
 
   if (status.needsLogin) return EXIT_LOGIN_NEEDED;
-  return markedRead ? EXIT_MARKED_READ : EXIT_OK;
+  if (markedRead) return EXIT_MARKED_READ;
+  return status.lastReadProblem ? EXIT_READ_PROBLEM : EXIT_OK;
 }
 
 function describeVisit(visit: PageVisit, appHosts: string[]): string {
