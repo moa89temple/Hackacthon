@@ -68,10 +68,10 @@ const ROLES = new Set(
     .filter(Boolean),
 );
 
-function cleanSegment(segment: string, wordsSeen: string, afterName: boolean): string {
+function cleanSegment(segment: string, wordsSeen: string, afterName: boolean, known: Set<string>): string {
   const lower = segment.toLowerCase();
   if (afterName) return ":id";
-  if (ADDRESS_WORDS.has(lower)) return lower;
+  if (known.has(lower)) return lower;
   if (/\d/.test(segment)) return ":id";
   // A lower-case word the page doesn't show is an address's own, which is how a real address gets found.
   if (!/^[a-z][a-z_-]*$/.test(segment) || segment.length > LONGEST_NAME) return ":text";
@@ -79,23 +79,23 @@ function cleanSegment(segment: string, wordsSeen: string, afterName: boolean): s
   return word.length >= SHORTEST_WORD_TO_COMPARE && wordsSeen.includes(word) ? ":text" : segment;
 }
 
-function cleanSegments(raw: string, wordsSeen: string): string {
+function cleanSegments(raw: string, wordsSeen: string, known: Set<string>): string {
   const parts = raw.split("/");
   return parts
     .map((segment, index) => {
       if (segment === "") return "";
       const afterName = NAMES_SOMEONE_NEXT.has(parts[index - 1]?.toLowerCase() ?? "") && !PAGES_UNDER_PEOPLE.has(segment);
-      return cleanSegment(segment, wordsSeen, afterName);
+      return cleanSegment(segment, wordsSeen, afterName, known);
     })
     .join("/");
 }
 
 /** Takes a raw address to its path and route, with no query and nothing that could be someone's words or an id. */
-export function cleanAddress(address: string, wordsSeen: string): string {
+export function cleanAddress(address: string, wordsSeen: string, known: Set<string> = ADDRESS_WORDS): string {
   const url = URL.parse(address);
   if (!url) return ":text";
-  const route = url.hash.startsWith("#/") ? `#${cleanSegments(url.hash.slice(1).split("?")[0]!, wordsSeen)}` : "";
-  return `${cleanSegments(url.pathname, wordsSeen)}${route}`;
+  const route = url.hash.startsWith("#/") ? `#${cleanSegments(url.hash.slice(1).split("?")[0]!, wordsSeen, known)}` : "";
+  return `${cleanSegments(url.pathname, wordsSeen, known)}${route}`;
 }
 
 function collectValues(value: unknown, into: string[]): void {
@@ -169,7 +169,7 @@ export function shapeOfAccessibility(snapshot: string): string[] {
   return shape;
 }
 
-interface Visit {
+export interface Visit {
   asked: string;
   /** Null if it didn't get there. */
   page: PageReading | null;
@@ -179,7 +179,7 @@ interface Visit {
   failed: string | null;
 }
 
-interface RequestSeen {
+export interface RequestSeen {
   method: string;
   url: string;
   refused: boolean;
@@ -189,7 +189,7 @@ interface RequestSeen {
  * What the check sees of the browser. It lets through reading and nothing else: the login in a real
  * container must survive this. Copied from canvas-check.ts and extended with what the page asks for.
  */
-function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: Visit[], requests: RequestSeen[]): BuddysBrowser {
+export function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: Visit[], requests: RequestSeen[]): BuddysBrowser {
   const notInACheck = (): never => {
     throw new Error("The check only ever reads");
   };
@@ -225,14 +225,14 @@ function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: V
   };
 }
 
-function countedLines(lines: string[]): string[] {
+export function countedLines(lines: string[]): string[] {
   const counts = new Map<string, number>();
   for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
   return [...counts].map(([line, count]) => (count > 1 ? `  ${line}  ×${count}` : `  ${line}`));
 }
 
 /** A host a page chose to load from could be named after something on the page. The site's own never is. */
-function cleanHost(address: string, sites: Record<string, Site>, wordsSeen: string): string {
+export function cleanHost(address: string, sites: Record<string, Site>, wordsSeen: string): string {
   const host = URL.parse(address)?.hostname ?? ":text";
   if (Object.values(sites).some((site) => isOnSite(host, site))) return host;
   const parts = host.toLowerCase().split(".").map(normalized);
