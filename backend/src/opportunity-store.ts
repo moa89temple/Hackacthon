@@ -101,6 +101,10 @@ export interface OpportunityStore {
   confirmSeen(url: string, at: Date): void;
   /** Its Source says it's off, so it leaves now, saved or not. */
   removePage(url: string): void;
+  /** When this page was last read, whether or not anything was found on it. */
+  pageLastReadAt(url: string): Date | null;
+  /** Every page these say to, as removePage does. Only for inside a transaction that's already open. */
+  removePagesWithoutTransaction(isGone: (url: string) => boolean): void;
   /** Pages with something on them, still listed by their last reading, that hasn't been seen there since then. */
   pagesLastSeenBefore(before: Date): string[];
   /** Takes out what hasn't been seen on its page since then. What's left with no page leaves, unless it was reported. */
@@ -128,7 +132,8 @@ export function createOpportunityStore(
   inTransaction: <T>(work: () => T) => T,
   addActivity: (studentId: string, entry: NewActivityEntry) => void,
 ): OpportunityStore {
-  const selectPage = db.prepare(`SELECT text_hash FROM opportunity_pages WHERE url = ?`);
+  const selectPage = db.prepare(`SELECT text_hash, last_read_at FROM opportunity_pages WHERE url = ?`);
+  const selectAllPages = db.prepare(`SELECT url FROM opportunity_pages`);
   const upsertPage = db.prepare(
     `INSERT INTO opportunity_pages (url, title, text_hash, last_read_at) VALUES (?, ?, ?, ?)
      ON CONFLICT (url) DO UPDATE SET title = excluded.title, text_hash = excluded.text_hash, last_read_at = excluded.last_read_at`,
@@ -160,6 +165,16 @@ export function createOpportunityStore(
   const notOnAnyPage = `opportunity_id NOT IN (SELECT opportunity_id FROM opportunity_mentions)`;
   const deleteOrphanSaves = db.prepare(`DELETE FROM saved_opportunities WHERE ${notOnAnyPage}`);
   const deleteOrphanGoals = db.prepare(`DELETE FROM opportunity_goals WHERE ${notOnAnyPage}`);
+  // What's left on another page keeps only the Goals one of those pages was read for.
+  const deleteGoalsNoPageExplains = db.prepare(
+    `DELETE FROM opportunity_goals WHERE NOT EXISTS (
+       SELECT 1 FROM opportunity_mentions mention
+       JOIN opportunity_page_goals page_goal ON page_goal.url = mention.url
+       WHERE mention.opportunity_id = opportunity_goals.opportunity_id
+         AND page_goal.student_id = opportunity_goals.student_id
+         AND page_goal.goal_key = opportunity_goals.goal_key
+     )`,
+  );
   const deleteOrphans = db.prepare(
     `DELETE FROM opportunities WHERE reported_at IS NULL AND id NOT IN (SELECT opportunity_id FROM opportunity_mentions)`,
   );
@@ -187,6 +202,12 @@ export function createOpportunityStore(
   const upsertRunFailed = db.prepare(
     `INSERT INTO opportunity_runs (what, failed_at) VALUES (?1, ?2) ON CONFLICT (what) DO UPDATE SET failed_at = ?2`,
   );
+
+  function deleteOnePage(url: string): void {
+    deletePageMentions.run(url);
+    deletePageGoals.run(url);
+    deletePage.run(url);
+  }
 
   function clearOrphans(): void {
     deleteOrphanSaves.run();
@@ -228,11 +249,19 @@ export function createOpportunityStore(
 
     removePage(url) {
       inTransaction(() => {
-        deletePageMentions.run(url);
-        deletePageGoals.run(url);
-        deletePage.run(url);
+        deleteOnePage(url);
         clearOrphans();
       });
+    },
+
+    pageLastReadAt: (url) => dateOrNull((selectPage.get(url) as any)?.last_read_at),
+
+    removePagesWithoutTransaction(isGone) {
+      for (const { url } of selectAllPages.all() as any[]) {
+        if (isGone(url)) deleteOnePage(url);
+      }
+      deleteGoalsNoPageExplains.run();
+      clearOrphans();
     },
 
     pagesLastSeenBefore: (before) => (selectPagesLastSeenBefore.all(before.toISOString()) as any[]).map((row) => row.url),

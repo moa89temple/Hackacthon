@@ -39,6 +39,7 @@ import { createLiveViewProxy } from "./live-view-proxy.ts";
 import { hiddenNote } from "./masking.ts";
 import { createGuardPolicy } from "./network-guard.ts";
 import { createOpportunities, type Opportunities } from "./opportunities.ts";
+import { createOpportunityPagesFromConnection } from "./opportunities-from-connection.ts";
 import { createOpportunityDiscovery, type OpportunityDiscovery } from "./opportunity-discovery.ts";
 import { addOpportunityRoutes } from "./opportunity-routes.ts";
 import { createProfile, type Profile } from "./profile.ts";
@@ -133,6 +134,14 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     store,
     profile,
     contacts: () => guidebook.contacts(),
+    opportunityPagesFor: (connection) =>
+      createOpportunityPagesFromConnection({
+        connection,
+        claude: options.adapters.claude,
+        store,
+        model: options.discovery.model,
+        logError: (error) => app.log.error(error),
+      }),
     afterFactsChanged: (connection) => {
       if (connection === DARS_ID) darsCards.compareWithRoadmap();
     },

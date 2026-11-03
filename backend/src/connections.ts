@@ -10,6 +10,7 @@ import {
 import { BrowserUnreachable, TakeoverInProgress, type BrowserAccess } from "./browser-access.ts";
 import { describeInPhiladelphia, philadelphiaClock, type Clock } from "./clock.ts";
 import type { ContactAddress } from "./guidebook.ts";
+import { NO_OPPORTUNITY_PAGES, type OpportunityPagesFromConnection } from "./opportunities-from-connection.ts";
 import type { FactFromConnection, Profile } from "./profile.ts";
 import {
   THE_STUDENT,
@@ -48,6 +49,8 @@ export interface ReadContext {
   reportMissed(problem: string): void;
   /** The Student's asking about something older, so look further back than a usual read does. */
   lookFurther: boolean;
+  /** Where a Connection puts a page that may hold Opportunities, to be checked as any other page is. */
+  opportunityPages: OpportunityPagesFromConnection;
 }
 
 export interface ReadingForClaude {
@@ -73,6 +76,8 @@ export interface ConnectionType {
    * site with this same id. The guard goes by that id, so they have to match.
    */
   logsIn?: boolean;
+  /** Which Opportunities' pages came from this Connection, for one that finds any. They go with the Read Permission. */
+  isItsOpportunityPage?(url: string): boolean;
   /** Throws ReadProblem to tell the Student what went wrong. */
   read(context: ReadContext): Promise<ConnectionFactToStore[]>;
   /**
@@ -180,13 +185,15 @@ export interface ConnectionsDeps {
   profile: Profile;
   /** Where a Connection gets the Contacts. Left out, there are none. */
   contacts?: () => ContactAddress[];
+  /** Where a Connection's pages that may hold Opportunities go. Left out, they go nowhere. */
+  opportunityPagesFor?: (connection: string) => OpportunityPagesFromConnection;
   /** After a read that worked has saved its facts, and after a revoke has deleted them. If this throws, it's logged and nothing else happens. */
   afterFactsChanged?: (connection: string) => void;
   logError: (error: unknown) => void;
 }
 
 export function createConnections(deps: ConnectionsDeps): Connections {
-  const { types, web, browserAccess, clock, store, profile, contacts = () => [], afterFactsChanged, logError } = deps;
+  const { types, web, browserAccess, clock, store, profile, contacts = () => [], opportunityPagesFor = () => NO_OPPORTUNITY_PAGES, afterFactsChanged, logError } = deps;
   const readsUnderWay = new Map<number, Promise<void>>();
   /** One at a time, so that nothing is deleted twice or said twice in Activity. */
   let loginDeletions: Promise<void> = Promise.resolve();
@@ -269,6 +276,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
           missed = problem;
         },
         lookFurther,
+        opportunityPages: opportunityPagesFor(type.id),
       });
       // On the first read everything looks new, and none of it is news.
       const deleted = new Set(store.deletedFactKeys(THE_STUDENT, type.id));
@@ -349,8 +357,8 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     async revoke(id) {
       const type = typeWithId(id);
       if (store.readPermission(THE_STUDENT, id)) {
-        const entry = readPermissionRevoked(type.name, type.card.address !== null, clock.now());
-        store.revokeReadPermission(THE_STUDENT, id, entry, type.logsIn ? id : undefined);
+        const entry = readPermissionRevoked(type.name, type.card.address !== null, clock.now(), type.isItsOpportunityPage !== undefined);
+        store.revokeReadPermission(THE_STUDENT, id, entry, type.logsIn ? id : undefined, type.isItsOpportunityPage);
         tellFactsChanged(id);
       }
       await deleteWaitingLogins();

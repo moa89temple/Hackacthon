@@ -26,6 +26,7 @@
     "check-dars": "node --disable-warning=ExperimentalWarning scripts/check-dars.ts",
     "check-tumail": "node --disable-warning=ExperimentalWarning scripts/check-tumail.ts",
     "check-navigate360": "node --disable-warning=ExperimentalWarning scripts/check-navigate360.ts",
+    "check-handshake": "node --disable-warning=ExperimentalWarning scripts/check-handshake.ts",
     "pair": "node --disable-warning=ExperimentalWarning scripts/pair.ts"
   },
   "dependencies": {

@@ -331,8 +331,9 @@ export interface Store {
    * Deletes the Read Permission, its address, its events, every fact and Contact from this Connection, on
    * disk too. Activity's records of replies that had those facts keep their own copies. A login held in
    * Buddy's Browser can't go in the same step, so its site is noted here until it has: see loginsToDelete.
+   * Any Opportunity's page this says came from the Connection goes in the same step, with what's only on it.
    */
-  revokeReadPermission(studentId: string, connection: string, entry: NewActivityEntry, loginSite?: string): void;
+  revokeReadPermission(studentId: string, connection: string, entry: NewActivityEntry, loginSite?: string, isItsOpportunityPage?: (url: string) => boolean): void;
   /** The sites whose login must go from Buddy's Browser, because their Read Permission was revoked. */
   loginsToDelete(studentId: string): string[];
   /** Whether the Student has already been told this one couldn't be deleted yet. */
@@ -960,6 +961,7 @@ export function openStore(databasePath: string): Store {
       savedAt: new Date(row.saved_at),
       editedAt: row.edited_at ? new Date(row.edited_at) : null,
     }));
+  const opportunities = createOpportunityStore(db, (work) => inTransaction(db, work), addActivity);
 
   return {
     appendMessages(studentId, messages, entry) {
@@ -1100,13 +1102,14 @@ export function openStore(databasePath: string): Store {
       });
     },
 
-    revokeReadPermission(studentId, connection, entry, loginSite) {
+    revokeReadPermission(studentId, connection, entry, loginSite, isItsOpportunityPage) {
       inTransaction(db, () => {
         addActivity(studentId, entry);
         deleteConnectionFacts.run(studentId, connection);
         deleteDeletedFacts.run(studentId, connection);
         deleteConnectionEvents.run(studentId, connection);
         deleteContactsFrom(studentId, connection);
+        if (isItsOpportunityPage) opportunities.removePagesWithoutTransaction(isItsOpportunityPage);
         deletePermission.run(studentId, connection);
         if (loginSite) insertLoginToDelete.run(studentId, loginSite);
       });
@@ -1457,7 +1460,7 @@ export function openStore(databasePath: string): Store {
     },
 
     roadmap: createRoadmapStore(db, (work) => inTransaction(db, work), addActivity),
-    opportunities: createOpportunityStore(db, (work) => inTransaction(db, work), addActivity),
+    opportunities,
     sending: createSendingStore(db, (work) => inTransaction(db, work), addActivity),
 
     close() {

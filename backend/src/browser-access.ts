@@ -24,6 +24,8 @@ import { THE_STUDENT, type Store, type StoredTakeover } from "./store.ts";
 export interface PagePattern {
   /** One exact host. Left out, it means any of the site's hosts. */
   host?: string;
+  /** This host and its subdomains, for a site that shares a sign-on no pattern should reach. Only blockedPages looks at this. */
+  domain?: string;
   path: RegExp;
   /**
    * Only with this in the part of the address after the ?, for a site whose actions are ordinary links.
@@ -481,7 +483,7 @@ function failIfGuardRefuses(guard: RequestGuard, url: string): void {
   if (!decision.allowed) throw new PageBlocked(decision.why);
 }
 
-function isOnSiteAndPastLogin(finalUrl: string, site: Site): boolean {
+export function isOnSiteAndPastLogin(finalUrl: string, site: Site): boolean {
   const final = new URL(finalUrl);
   if (site.isLoginPage?.(finalUrl)) return false;
   return [new URL(site.homeUrl).hostname, ...(site.appHosts ?? [])].includes(final.hostname) && !final.pathname.startsWith("/login");

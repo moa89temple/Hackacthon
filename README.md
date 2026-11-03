@@ -156,7 +156,7 @@ Revoking the Read Permission deletes the address and every fact from the calenda
 
 ## Connect Temple's systems
 
-Canvas, TUportal, TUmail, Navigate360 and DARS are read through Buddy's Browser, with your own login. On the You tab, tap **Connect**, read the card, tap **Give Read Permission**, then log in yourself through a Takeover, as described in [Log in to a site](#log-in-to-a-site). They share Temple's sign-on, so after the first you may not be asked to log in again.
+Canvas, TUportal, TUmail, Navigate360, DARS and Handshake are read through Buddy's Browser, with your own login. On the You tab, tap **Connect**, read the card, tap **Give Read Permission**, then log in yourself through a Takeover, as described in [Log in to a site](#log-in-to-a-site). They share Temple's sign-on, so after the first you may not be asked to log in again.
 
 Buddy reads each one at 7 a.m., 1 p.m. and 7 p.m. Philadelphia time, and when you tap **Read now** or ask in the chat. What it reads becomes Profile facts, which you can change or delete. Revoking deletes those facts and that Connection's login. Temple's sign-on stays while another Temple Connection is on, and goes with the last of them.
 
@@ -169,6 +169,7 @@ Buddy's code decides what can be opened, in each Connection's `*-rules.ts`, and 
 | TUmail | Recent email from `temple.edu` addresses and from Contacts | Your inbox in Outlook on the web |
 | Navigate360 | Your assigned advisor, who becomes a Contact, and your upcoming appointments | What the app's own scripts get from its server |
 | DARS | Which requirements are complete, missing, in progress or planned on your newest audit | Your list of audits and that audit, at `prd-dars.temple.edu`. **Nobody has checked this against a real login yet** |
+| Handshake | The first 15 on each of its job and event lists. Those that fit your Goals and have a date become Opportunities, not Profile facts | The two lists and each listing's own page. **Nobody has logged in to Handshake yet, so its addresses and layout are assumptions until `npm run check-handshake` has been run** |
 
 ### DARS
 
@@ -210,9 +211,10 @@ npm run check-dars
 npm run check-tumail
 npm run check-tumail -- --further   # what a read does when it looks further back
 npm run check-navigate360
+npm run check-handshake
 ```
 
-Read what each prints, because `check-canvas` exits 0 even if a page had a problem. `check-tuportal` and `check-dars` exit 6 if a page wasn't understood, `check-tumail` exits 6 if opening a message marked it read, and `check-tumail` and `check-navigate360` exit 7 if the reader missed something. Each script's first lines list the rest.
+Read what each prints, because `check-canvas` exits 0 even if a page had a problem. `check-tuportal` and `check-dars` exit 6 if a page wasn't understood, `check-tumail` exits 6 if opening a message marked it read, and `check-tumail`, `check-navigate360` and `check-handshake` exit 7 if the reader missed something. Each script's first lines list the rest.
 
 ### Known limits
 
@@ -224,7 +226,11 @@ Read what each prints, because `check-canvas` exits 0 even if a page had a probl
 - Revoking Navigate360 removes your advisor as a Contact, but their name stays in Drafts and Activity that already have it, as a record of what happened.
 - That Buddy only brings up another email if it's urgent is an instruction to Claude, not a guarantee.
 - Reading email can load pictures in it, as it would for you, and that can tell the sender it was opened.
-- Nobody has read Temple's, Microsoft's or EAB's terms on this. The cards say so where it matters.
+- Handshake's reader has only ever seen made-up pages. If its pages need a POST to draw, as some apps do, the guard refuses that and the reader will find nothing. `check-handshake` shows it under "Refused by the guard". A POST that does everything by a field in its body must not be allowed by its address.
+- Buddy reads only the first 15 of each Handshake list, in Handshake's order, so a listing that fits a Goal further down isn't seen. A job with no deadline on its page isn't an Opportunity, and a fee Claude doesn't notice on a job's page shows as "Its Source doesn't say".
+- Handshake's Opportunities show as Outside Temple, and Handshake is a Source that isn't a government site, a college or an established nonprofit, which goes against the glossary's rule, as searches do for now.
+- Revoking Handshake leaves the name of an Opportunity you reported, so that it stays hidden.
+- Nobody has read Temple's, Microsoft's, EAB's or Handshake's terms on this. The cards say so where it matters.
 - While a Takeover is open, Buddy can't read anything, and the guard is off for the Student. The app says which Connection's Takeover it is if you leave without tapping Done.
 
 ## Goals and your Roadmap
