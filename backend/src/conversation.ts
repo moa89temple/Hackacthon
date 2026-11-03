@@ -34,6 +34,7 @@ import {
   SUGGEST_CONNECTION_TOOL,
 } from "./system-prompt.ts";
 import { THE_STUDENT, type NewMessage, type Store, type StoredMessage } from "./store.ts";
+import { tuportalFactsGiven } from "./tuportal.ts";
 import { CHECK_TUPORTAL_TOOL } from "./tuportal-chat.ts";
 import { TUPORTAL_ID } from "./tuportal-rules.ts";
 import { newMailTurn, noteMailGiven } from "./tumail-chat.ts";
@@ -239,7 +240,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
     id: string,
     name: string,
     couldNotCheck: string,
-    noteFacts = noteFactsGiven,
+    noteFacts: (turn: TurnRecord, facts: ReturnType<typeof factsFromConnection>, asked: unknown) => void = noteFactsGiven,
   ) {
     try {
       let looked = `Looked at what Buddy has from your ${name}.`;
@@ -254,9 +255,9 @@ export function createConversation(deps: ConversationDeps): Conversation {
             ? `Read further back in your ${name} and looked at it.`
             : `Read your ${name} again and looked at it.`;
       }
-      const description = connections.describeForClaude(id);
+      const description = connections.describeForClaude(id, call.input);
       turn.tools.push(looked);
-      noteFacts(turn, factsFromConnection(profile, id));
+      noteFacts(turn, factsFromConnection(profile, id), call.input);
       return toolAnswer(call, description);
     } catch (error) {
       if (error instanceof NoReadPermission) {
@@ -440,7 +441,8 @@ export function createConversation(deps: ConversationDeps): Conversation {
         turn,
         TUPORTAL_ID,
         "TUportal",
-        "TUportal couldn't be checked. Tell the Student, and don't guess at their holds, balance or registration status. Above all, don't say they have no hold.",
+        "TUportal couldn't be checked. Tell the Student, and don't guess at their holds or balance. Above all, don't say they have no hold.",
+        (forTurn, facts, asked) => noteFactsGiven(forTurn, tuportalFactsGiven(facts, profile.factsFromConnection(TUPORTAL_ID), asked)),
       );
     }
     if (call.name === CHECK_TUMAIL_TOOL.name) {

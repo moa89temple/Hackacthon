@@ -64,7 +64,7 @@ describe('"Do I have a hold?"', () => {
       expect(content).toContain("Buddy doesn't know whether the Student has any holds");
       expect(content).toContain("Don't say they have none");
       expect(content).not.toContain("said there are no holds");
-      expect(content).toContain("$1,234.56");
+      expect(content).toContain("Balance:");
       expect(content).toContain("couldn't read your holds");
     });
 
@@ -171,6 +171,69 @@ describe("with no Read Permission", () => {
     const events = await backend.sendAndCollect("Do I have a hold?");
 
     expect(events.filter((event) => event.type === "read_permission_card").map((event) => event.connection)).toEqual([TUPORTAL_ID]);
+  });
+});
+
+describe("the balance", () => {
+  const look = (about_balance: boolean) => calls("check_tuportal", { read_again: false, about_balance });
+
+  it("isn't shown to Claude for a question about a hold, or in what's recorded as given to it", async () => {
+    await connect();
+    backend.claude.willReply(look(false), { chunks: ["You have two."] });
+
+    await backend.sendAndCollect("Do I have a hold?");
+
+    const { content } = lastToolAnswer();
+    expect(content).toContain("Hold: Made-Up Bursar Hold");
+    expect(content).not.toContain("1,234.56");
+    expect(content).toMatch(/about_balance true/);
+    expect(JSON.stringify(await backend.activity())).not.toContain("Balance on your student account");
+  });
+
+  it("isn't shown if Claude leaves the question out altogether", async () => {
+    await connect();
+    backend.claude.willReply(calls("check_tuportal", { read_again: false }), { chunks: ["You have two."] });
+
+    await backend.sendAndCollect("Do I have a hold?");
+
+    expect(lastToolAnswer().content).not.toContain("1,234.56");
+  });
+
+  it("is shown when Claude says they asked, and recorded as given", async () => {
+    await connect();
+    backend.claude.willReply(look(true), { chunks: ["You owe that."] });
+
+    await backend.sendAndCollect("What's my balance?");
+
+    expect(lastToolAnswer().content).toContain("$1,234.56");
+    expect(JSON.stringify(await backend.activity())).toContain("Balance on your student account");
+  });
+
+  it("stays out of Activity by what the fact says now, if the Student has changed its words", async () => {
+    await connect();
+    const balance = (await backend.profileFacts()).find((fact) => fact.text.includes("Balance on your student account"))!;
+    await backend.editFact(balance.id, "What I owe, changed by me");
+    backend.claude.willReply(look(false), { chunks: ["You have two."] });
+
+    await backend.sendAndCollect("Do I have a hold?");
+
+    expect(JSON.stringify(await backend.activity())).not.toContain("What I owe, changed by me");
+  });
+
+  it("doesn't get in through the list of what's changed either", async () => {
+    await connect();
+    changeTuportalPage(backend.browser, BALANCE_PAGE, "<p>Current Balance: $20.00</p>");
+    await backend.readNow(TUPORTAL_ID);
+    backend.claude.willReply(look(false), { chunks: ["You have two."] });
+
+    await backend.sendAndCollect("Do I have a hold?");
+
+    expect(lastToolAnswer().content).not.toContain("$20.00");
+  });
+
+  it("the card says when it goes to Claude, and that deciding that is up to Claude", async () => {
+    const card = (await backend.connections()).find((connection) => connection.id === TUPORTAL_ID)!.card;
+    expect(JSON.stringify(card)).toMatch(/Your balance goes only when Claude asks for it because you asked about it/);
   });
 });
 

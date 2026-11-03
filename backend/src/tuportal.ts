@@ -260,7 +260,18 @@ function countEvents(events: ConnectionEventToStore[]): string {
     .join(", ");
 }
 
-function describeTuportal({ facts, events, lastReadAt, lastReadProblem, needsLogin }: ReadingForClaude): string {
+/** The balance is private, so it goes to Claude only when Claude says the Student asked about it. */
+const asksAboutBalance = (asked: unknown) => (asked as { about_balance?: unknown } | null)?.about_balance === true;
+
+/** What goes in Activity as given to Claude, which has to be what Claude was really given. */
+export function tuportalFactsGiven<T extends { text: string }>(facts: T[], fromTuportal: FactFromConnection[], asked: unknown): T[] {
+  if (asksAboutBalance(asked)) return facts;
+  // By its words as they are now, which the Student may have changed, because only the Connection's own record says what it is.
+  const balances = new Set(fromTuportal.filter((fact) => dataOf(fact)?.kind === "balance").map((fact) => fact.text));
+  return facts.filter((fact) => !balances.has(fact.text));
+}
+
+function describeTuportal({ facts, events, lastReadAt, lastReadProblem, needsLogin }: ReadingForClaude, asked?: unknown): string {
   const login = needsLogin
     ? " Buddy's Browser isn't logged in to TUportal, so tell the Student to tap Log in to TUportal on the You tab. They log in themselves, and you never ask for a password."
     : "";
@@ -293,7 +304,11 @@ function describeTuportal({ facts, events, lastReadAt, lastReadProblem, needsLog
         ];
 
   const balance = ofKind("balance")[0];
-  const newest = events.slice(-10).map((event) => `- ${describeInPhiladelphia(event.at)}: ${JSON.stringify(event.text)}`);
+  const withBalance = asksAboutBalance(asked);
+  const newest = events
+    .filter((event) => withBalance || event.kind !== "balance_changed")
+    .slice(-10)
+    .map((event) => `- ${describeInPhiladelphia(event.at)}: ${JSON.stringify(event.text)}`);
 
   return [
     `TUportal, last read ${describeInPhiladelphia(lastReadAt)}.${lastReadProblem ? ` The latest try had a problem, so some of this may be out of date: ${lastReadProblem}` : ""}${login}`,
@@ -303,7 +318,11 @@ function describeTuportal({ facts, events, lastReadAt, lastReadProblem, needsLog
     ...holdLines,
     "",
     "Balance:",
-    balance ? `${quoted(balance.fact)}, ${asOf(balance.data.readAt)}.` : "Buddy doesn't know the Student's balance, because it hasn't been able to read it. Don't guess.",
+    !withBalance
+      ? "Not shown, because it's private and this didn't ask for it. If they ask about their balance or what they owe, call this again with about_balance true."
+      : balance
+        ? `${quoted(balance.fact)}, ${asOf(balance.data.readAt)}.`
+        : "Buddy doesn't know the Student's balance, because it hasn't been able to read it. Don't guess.",
     ...(newest.length > 0 ? ["", "What changed most recently:", ...newest] : []),
   ].join("\n");
 }
@@ -331,7 +350,7 @@ export const tuportalAt = (home: string, hosts?: string[], banner: string = BANN
       "You log in yourself through a Takeover, so Buddy never learns your password or your Duo code. After you give this Read Permission, Buddy asks you to log in if it needs you to, and asks again whenever the login expires.",
       "TUportal shares Temple's single sign-on with Canvas and other Temple systems. If you've already logged in to one of them in Buddy's Browser, Buddy may get into TUportal without asking you to log in again, and only after you give this Read Permission.",
       "Buddy reads it at 7 a.m., 1 p.m. and 7 p.m., and when you ask. If your laptop was asleep at one of those times, it reads when the laptop wakes.",
-      "What it reads is saved to your Profile, where you can change or delete it, including your balance. When you ask about your holds or balance, Buddy sends both to Claude, the AI behind Buddy.",
+      "What it reads is saved to your Profile, where you can change or delete it, including your balance. When you ask about your holds, Buddy sends those to Claude, the AI behind Buddy, including any amount on a hold. Your balance goes only when Claude asks for it because you asked about it. Buddy's code leaves it out otherwise, but deciding that you asked is up to Claude.",
       "You can revoke this at any time on the You tab. That deletes every fact from TUportal and your TUportal login in Buddy's Browser. Temple's sign-on stays for as long as another Temple Connection you've kept on needs it, and goes with the last of them. Whatever was already shown to Claude stays in your conversation's history and in Activity until those are deleted, and Buddy is told not to use it.",
     ],
     warning:
@@ -339,7 +358,7 @@ export const tuportalAt = (home: string, hosts?: string[], banner: string = BANN
     address: null,
   },
 
-  whileOnTellClaude: "Call check_tuportal before you answer anything about their holds or balance, such as whether they have a hold.",
+  whileOnTellClaude: "Call check_tuportal before you answer anything about their holds or balance, such as whether they have a hold. Ask for the balance only if they've asked about it.",
 
   read: (context) => readTuportal(home, hosts, banner, context),
   eventsBetween,

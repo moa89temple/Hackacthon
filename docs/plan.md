@@ -147,7 +147,7 @@ It never acts without the Student's tap, and it doesn't replace advisors.
 
 ## Trust and control
 
-- **Read Permissions** last until you revoke them. Revoking one deletes the Profile facts from that Connection, along with its login.
+- **Read Permissions** last until you revoke them. Revoking one deletes the Profile facts from that Connection, along with its login. A sign-on it shares with another Connection that's still on, such as Temple's, stays until the last of them is revoked, so reconnecting may not ask you to log in again.
 - **Action Permissions:** each one is a single Approve tap for one exact step. A typed "yes" never counts.
 - **Activity** shows:
   - everything Buddy read;

@@ -161,6 +161,8 @@ Buddy's code decides what can be opened, in each Connection's `*-rules.ts`, and 
 
 The portal doesn't have your holds on it. They're on one page of Self-Service Banner, `bwskoacc.P_ViewHold`, reached through Banner's own sign-on and main menu. Those three addresses are the only ones open on Banner, because its pages can act on being opened. Adding another is a decision for a person, one page at a time. Temple's records may show these visits as you opening Banner.
 
+Claude is given your balance only when it asks for it because you asked about your balance or what you owe. Buddy's code leaves it out of what Claude sees and out of Activity otherwise, though deciding that you asked is up to Claude. An amount on a hold comes with the hold.
+
 Buddy doesn't read your registration status: the Student tab doesn't show it, and where it's kept is on pages Buddy never opens. It never opens TUpay or anything for paying, registering or filling in a form.
 
 The registrar's Dashboard, `apps/our/Dashboard/ajax.jsp`, stays refused. That one address does everything the Dashboard does, including amending a record and re-enrolling, so it can't go on a read-only list by its address.
@@ -197,6 +199,8 @@ Read what each prints, because `check-canvas` exits 0 even if a page had a probl
 - A real outside sender with an address for a display name hasn't been tried. Made-up pages cover it.
 - Looking further back reaches about your newest 60 messages, so anything older still isn't seen, and Buddy is told to say so. Buddy only sees your inbox, so it can't tell you what you've sent or what's in another folder.
 - A message from a Contact counts as theirs by its address, and an advisor's address must be Temple's own.
+- Revoking Navigate360 removes your advisor as a Contact, but their name stays in Drafts and Activity that already have it, as a record of what happened.
+- That Buddy only brings up another email if it's urgent is an instruction to Claude, not a guarantee.
 - Reading email can load pictures in it, as it would for you, and that can tell the sender it was opened.
 - Nobody has read Temple's, Microsoft's or EAB's terms on this. The cards say so where it matters.
 - While a Takeover is open, Buddy can't read anything, and the guard is off for the Student. The app says which Connection's Takeover it is if you leave without tapping Done.

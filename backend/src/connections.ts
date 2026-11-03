@@ -84,7 +84,8 @@ export interface ConnectionType {
   eventsBetween?(before: FactFromConnection[], after: ConnectionFactToStore[]): ConnectionEventToStore[];
   /** How many of what, for Activity. It mustn't repeat what they are. */
   countEvents?(events: ConnectionEventToStore[]): string;
-  describeForClaude(reading: ReadingForClaude): string;
+  /** `asked` is what Claude passed to the tool, for a Connection that gives less unless Claude asks for more. */
+  describeForClaude(reading: ReadingForClaude, asked?: unknown): string;
 }
 
 export interface ConnectionStatus {
@@ -161,7 +162,7 @@ export interface Connections {
   startSchedule(everyMs?: number): void;
   stopSchedule(): void;
   /** What Claude is shown when it checks this Connection. Throws NoReadPermission without one. */
-  describeForClaude(id: string): string;
+  describeForClaude(id: string, asked?: unknown): string;
   /** Which Connections are on, for each turn's system message. */
   describeForTurn(): string;
 }
@@ -380,7 +381,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       clearInterval(timer);
     },
 
-    describeForClaude(id) {
+    describeForClaude(id, asked) {
       const type = typeWithId(id);
       const permission = store.readPermission(THE_STUDENT, id);
       if (!permission) throw new NoReadPermission(type.name);
@@ -391,7 +392,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
         lastReadAt: permission.lastReadAt,
         lastReadProblem: permission.lastReadProblem,
         needsLogin: permission.needsLogin,
-      });
+      }, asked);
     },
 
     describeForTurn() {
