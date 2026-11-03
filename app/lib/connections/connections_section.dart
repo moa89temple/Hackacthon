@@ -123,7 +123,7 @@ class _ConnectionRow extends StatelessWidget {
                   header: true,
                   child: Text(connection.name, style: theme.textTheme.titleSmall),
                 ),
-                Text(_status(context)),
+                Text(connection.notReadableYet ?? _status(context)),
                 if (connection.lastReadProblem case final problem?)
                   Text(problem, style: TextStyle(color: theme.colorScheme.error)),
                 if (connection.loginNotDeletedYet)
@@ -139,7 +139,16 @@ class _ConnectionRow extends StatelessWidget {
           Wrap(
             spacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
-            children: connection.on
+            children: connection.notReadableYet != null
+                ? [
+                    // Revoking is how the Student deletes a login they gave before Buddy stopped reading this.
+                    if (connection.on)
+                      TextButton(
+                        onPressed: () => _revoke(context),
+                        child: Text('Revoke', semanticsLabel: 'Revoke the Read Permission for ${connection.name}'),
+                      ),
+                  ]
+                : connection.on
                 ? [
                     if (connection.logsIn)
                       LogInButton(connection: connection, connections: connections, prominent: connection.needsLogin),

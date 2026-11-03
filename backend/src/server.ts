@@ -18,6 +18,7 @@ import {
 import {
   BadAddress,
   createConnections,
+  ConnectionNotReadableYet,
   NoReadPermission,
   ReadPermissionAlreadyGiven,
   UnknownConnection,
@@ -399,6 +400,7 @@ function connectionErrorStatus(error: unknown): number | undefined {
   if (error instanceof UnknownConnection) return 404;
   if (error instanceof NoReadPermission) return 403;
   if (error instanceof ReadPermissionAlreadyGiven) return 409;
+  if (error instanceof ConnectionNotReadableYet) return 409;
   if (error instanceof BadAddress) return 400;
   return undefined;
 }

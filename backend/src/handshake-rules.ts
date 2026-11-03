@@ -32,6 +32,14 @@ export const HANDSHAKE_APP_HOSTS = [APP_HOST];
 
 export const HANDSHAKE_NAME = "Handshake";
 
+/**
+ * Handshake's lists fill themselves with POSTs to a GraphQL address, which the guard refuses, and the Student chose on
+ * 2026-11-03 to leave the guard as it is. Issue #22 stays open. Taking this off the entry in settings.ts turns the
+ * reader back on, but it wouldn't find anything until that's settled.
+ */
+export const HANDSHAKE_NOT_READABLE_YET =
+  "Buddy can't read Handshake yet. Handshake loads its jobs and events in a way that Buddy's safety rules don't allow, so nothing from it reaches Buddy. Opportunities from elsewhere and the Career Center in the Guidebook are still here for you.";
+
 /** ASSUMED: one list of jobs, which has internships among them, and one of events. */
 export const HANDSHAKE_LISTS = {
   job: `https://${SCHOOL_HOST}/stu/postings`,

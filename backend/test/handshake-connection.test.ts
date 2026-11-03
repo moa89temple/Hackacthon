@@ -684,20 +684,19 @@ describe("Opportunities in a conversation", () => {
     expect(JSON.stringify(backend.claude.requests.at(-1)!.messages)).toMatch(/Handshake is connected, last read/);
   });
 
-  it("can be offered as a Connection, and adds no tool of its own", async () => {
+  it("isn't offered as a Connection for now, and adds no tool of its own", async () => {
     backend.claude.willReply({ chunks: ["Hello."] });
 
     await backend.sendAndCollect("Hello");
 
     const tools = backend.claude.requests.at(-1)!.tools as any[];
-    expect(tools.find((tool) => tool.name === "suggest_connection").input_schema.properties.connection.enum).toContain(HANDSHAKE);
+    expect(tools.find((tool) => tool.name === "suggest_connection").input_schema.properties.connection.enum).not.toContain(HANDSHAKE);
     expect(tools.map((tool) => tool.name).filter((name) => /handshake/i.test(name))).toEqual([]);
   });
 
-  it("are explained to Claude: it reads, and never applies, RSVPs or messages", () => {
-    expect(BUDDY_SYSTEM_PROMPT).toMatch(/Handshake is a Connection too/);
-    expect(BUDDY_SYSTEM_PROMPT).toMatch(/never applies to, RSVPs to or messages anything on Handshake/);
-    expect(BUDDY_SYSTEM_PROMPT).toMatch(/you never ask for a password or a Duo code/);
+  it("are explained to Claude: it can't read Handshake yet, so it never offers it or says what's on it", () => {
+    expect(BUDDY_SYSTEM_PROMPT).toMatch(/Buddy can't read Handshake yet/);
+    expect(BUDDY_SYSTEM_PROMPT).toMatch(/Never offer it, and never say what's on it/);
   });
 });
 

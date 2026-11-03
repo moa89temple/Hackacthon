@@ -469,6 +469,7 @@ class Connection {
     this.logsIn = false,
     this.needsLogin = false,
     this.loginNotDeletedYet = false,
+    this.notReadableYet,
     required this.card,
   });
 
@@ -484,6 +485,7 @@ class Connection {
         logsIn: json['logsIn'] as bool? ?? false,
         needsLogin: json['needsLogin'] as bool? ?? false,
         loginNotDeletedYet: json['loginNotDeletedYet'] as bool? ?? false,
+        notReadableYet: json['notReadableYet'] as String?,
         card: ReadPermissionCardContent.fromJson(json['card'] as Map<String, dynamic>),
       );
 
@@ -500,6 +502,9 @@ class Connection {
 
   /// Buddy's Browser isn't logged in to it, so Buddy is asking for a Takeover.
   final bool needsLogin;
+
+  /// Why Buddy can't read this for now, if it can't. Then there's nothing to connect, log in to or read.
+  final String? notReadableYet;
 
   /// Its Read Permission was revoked, but its login couldn't be deleted yet. Buddy keeps trying.
   final bool loginNotDeletedYet;

@@ -86,6 +86,37 @@ void main() {
       expect(find.text("On. Buddy hasn't read it yet."), findsOneWidget);
     });
 
+    group('that Buddy can\'t read yet', () {
+      const why = "Buddy can't read Handshake yet.";
+
+      Connection parked({required bool on}) => Connection(
+            id: 'handshake',
+            name: 'Handshake',
+            on: on,
+            logsIn: true,
+            notReadableYet: why,
+            card: ReadPermissionCardContent(reads: const ['Jobs.'], notes: const [], warning: null, address: null),
+          );
+
+      testWidgets('says so, and offers nothing to connect', (tester) async {
+        await openYouTab(tester, FakeBackend()..connections = [parked(on: false)]);
+
+        expect(find.text(why), findsOneWidget);
+        expect(find.text('Off'), findsNothing);
+        expect(find.text('Connect'), findsNothing);
+        expect(find.text('Revoke'), findsNothing);
+      });
+
+      testWidgets('offers only Revoke if it was connected, which is how the login gets deleted', (tester) async {
+        await openYouTab(tester, FakeBackend()..connections = [parked(on: true)]);
+
+        expect(find.text(why), findsOneWidget);
+        expect(find.text('Revoke'), findsOneWidget);
+        expect(find.text('Read now'), findsNothing);
+        expect(find.textContaining('Log in'), findsNothing);
+      });
+    });
+
     testWidgets('shows what went wrong with the last read', (tester) async {
       await openYouTab(
         tester,

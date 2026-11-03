@@ -365,7 +365,7 @@ describe("suggesting a Connection", () => {
 
     const tool = backend.claude.requests[0]!.tools!.find((candidate: any) => candidate.name === "suggest_connection") as any;
     expect(Object.keys(tool.input_schema.properties)).toEqual(["connection"]);
-    expect(tool.input_schema.properties.connection.enum).toEqual([CALENDAR, "canvas", "tuportal", "tumail", "navigate360", "dars", "handshake"]);
+    expect(tool.input_schema.properties.connection.enum).toEqual([CALENDAR, "canvas", "tuportal", "tumail", "navigate360", "dars"]);
     expect(tool.description).toMatch(/only when/i);
   });
 

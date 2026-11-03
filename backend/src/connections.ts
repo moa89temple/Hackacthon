@@ -66,6 +66,11 @@ export interface ReadingForClaude {
 export interface ConnectionType {
   id: string;
   name: string;
+  /**
+   * Set when Buddy can't read this at all for now, in words for the Student. Nothing about it gets opened, and it
+   * can't be connected. A Read Permission it already has stays until the Student revokes it, which deletes the login.
+   */
+  notReadableYet?: string;
   card: ReadPermissionCard;
   /** What Claude is told to do with this Connection, while it's on. */
   whileOnTellClaude: string;
@@ -105,6 +110,8 @@ export interface ConnectionStatus {
   needsLogin: boolean;
   /** Revoked, but its login could only be deleted once Buddy's Browser could be reached. */
   loginNotDeletedYet: boolean;
+  /** Why Buddy can't read this for now, if it can't. See ConnectionType. */
+  notReadableYet: string | null;
   card: ReadPermissionCard;
 }
 
@@ -119,6 +126,8 @@ export class NoReadPermission extends Error {
     super(`The Student hasn't given a Read Permission for ${name}`);
   }
 }
+
+export class ConnectionNotReadableYet extends Error {}
 
 export class ReadPermissionAlreadyGiven extends Error {
   constructor(name: string) {
@@ -221,10 +230,12 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       name: type.name,
       on: permission !== null,
       lastReadAt: permission?.lastReadAt?.toISOString() ?? null,
-      lastReadProblem: permission?.lastReadProblem ?? null,
+      // What went wrong before it was put aside, and any login it asked for, aren't what's wrong now.
+      lastReadProblem: type.notReadableYet ? null : (permission?.lastReadProblem ?? null),
       logsIn: type.logsIn === true,
-      needsLogin: permission?.needsLogin ?? false,
+      needsLogin: type.notReadableYet ? false : (permission?.needsLogin ?? false),
       loginNotDeletedYet: store.loginsToDelete(THE_STUDENT).includes(type.id),
+      notReadableYet: type.notReadableYet ?? null,
       card: type.card,
     };
   }
@@ -307,6 +318,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
 
   /** Two reads of one Read Permission at once share the first one's trip to the web. */
   async function readThroughGate(type: ConnectionType, reason: ReadReason, lookFurther = false): Promise<void> {
+    if (type.notReadableYet) throw new ConnectionNotReadableYet(type.notReadableYet);
     const permission = store.readPermission(THE_STUDENT, type.id);
     if (!permission) throw new NoReadPermission(type.name);
 
@@ -335,6 +347,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     await Promise.all(
       types
         .filter((type) => {
+          if (type.notReadableYet) return false;
           const permission = store.readPermission(THE_STUDENT, type.id);
           return permission && (!permission.lastTriedAt || readRound(permission.lastTriedAt) !== currentRound);
         })
@@ -347,6 +360,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
 
     async give(id, pastedAddress) {
       const type = typeWithId(id);
+      if (type.notReadableYet) throw new ConnectionNotReadableYet(type.notReadableYet);
       if (store.readPermission(THE_STUDENT, id)) throw new ReadPermissionAlreadyGiven(type.name);
       const address = type.card.address ? type.checkAddress!(pastedAddress) : null;
       const givenAt = clock.now();
@@ -374,7 +388,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     async afterLogin(site, signedIn) {
       await deleteWaitingLogins();
       const type = types.find((candidate) => candidate.id === site && candidate.logsIn);
-      if (!signedIn || !type || !store.readPermission(THE_STUDENT, site)) return;
+      if (!signedIn || !type || type.notReadableYet || !store.readPermission(THE_STUDENT, site)) return;
       void readThroughGate(type, "logged_in").catch(logError);
     },
 
@@ -419,6 +433,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     describeForTurn() {
       return types
         .map((type) => {
+          if (type.notReadableYet) return `${type.name} can't be read yet, so you can't see it and shouldn't offer it.`;
           const permission = store.readPermission(THE_STUDENT, type.id);
           if (permission) {
             const lastRead = permission.lastReadAt

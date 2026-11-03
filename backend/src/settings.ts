@@ -15,6 +15,7 @@ import {
   HANDSHAKE_ID,
   HANDSHAKE_LOGIN_HOSTS,
   HANDSHAKE_NAME,
+  HANDSHAKE_NOT_READABLE_YET,
   HANDSHAKE_READABLE_PAGES,
   isHandshakeLoginPage,
 } from "./handshake-rules.ts";
@@ -56,7 +57,7 @@ export const settings = {
     liveView: { host: "127.0.0.1", port: 6080 },
   },
   /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
-  connectionTypes: [googleCalendar, canvas, tuportal, dars, tumail, navigate360, handshake],
+  connectionTypes: [googleCalendar, canvas, tuportal, dars, tumail, navigate360, { ...handshake, notReadableYet: HANDSHAKE_NOT_READABLE_YET }],
   /**
    * Public pages Buddy's Browser may open, each as this exact host. A whole domain would be wrong:
    * Temple's single sign-on could log it in to a Connection that has no Read Permission.
