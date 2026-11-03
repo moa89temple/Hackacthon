@@ -245,6 +245,15 @@ async function readCanvas(home: string, { browser, now, previous, reportMissed }
 }
 
 /** Goes by what's kept with each fact, because the Student can change a fact's words. */
+/**
+ * Canvas's assignments list gives an exact moment, such as 11:59:59, and its grades page only the words "11:59pm". Which
+ * of them a read got isn't a change to the date, so a due date has moved only if its minute has.
+ */
+function isSameDueMinute(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return Math.floor(Date.parse(a) / 60_000) === Math.floor(Date.parse(b) / 60_000);
+}
+
 function eventsBetween(before: FactFromConnection[], after: ConnectionFactToStore[]): ConnectionEventToStore[] {
   const known = new Map(before.map((fact) => [fact.key, dataOf(fact)]));
   const events: ConnectionEventToStore[] = [];
@@ -260,7 +269,7 @@ function eventsBetween(before: FactFromConnection[], after: ConnectionFactToStor
     switch (current.kind) {
       case "assignment":
         if (!was) events.push({ kind: "new_assignment", factKey: fact.key, text: fact.text, data: { dueAt: current.dueAt } });
-        else if (was.kind === "assignment" && was.dueAt !== current.dueAt) add("due_date_changed", fact, { from: was.dueAt, to: current.dueAt });
+        else if (was.kind === "assignment" && !isSameDueMinute(was.dueAt, current.dueAt)) add("due_date_changed", fact, { from: was.dueAt, to: current.dueAt });
         break;
       case "grade":
         if (!was) add("new_grade", fact, { to: current.score, points: current.points });

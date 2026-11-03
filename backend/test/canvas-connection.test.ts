@@ -358,6 +358,18 @@ describe("what's new since the last read", () => {
     expect(kinds).toEqual(expect.arrayContaining(["due_date_changed", "new_announcement"]));
   });
 
+  // Canvas's list gives the exact moment and its grades page only the minute, so which one Buddy read mustn't count as news.
+  it("makes no event when a due time differs only by its seconds, which nobody could see", async () => {
+    await connectCanvas();
+    changeSavedPage(backend.browser, coursePage("101", "assignments"), (html) =>
+      html.replace("2026-11-06T04:59:00Z", "2026-11-06T04:59:59Z"),
+    );
+
+    await backend.readNow(CANVAS);
+
+    expect((await events()).map((event) => event.kind)).not.toContain("due_date_changed");
+  });
+
   it("makes no events when nothing changed", async () => {
     await connectCanvas();
 
