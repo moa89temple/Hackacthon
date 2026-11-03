@@ -112,10 +112,9 @@ export function contactWithAddress(address: string, contacts: ContactAddress[]):
 }
 
 /**
- * SENDING. Everything from here down is UNVERIFIED, because nobody has seen a real compose window or a
- * real send yet. It comes from what Outlook on the web is known to do, and a real Practice send has to
- * prove each part. All of it fails closed: if Outlook differs, nothing is sent, and the card says what
- * didn't match. The guard only looks at any of this while the send routine has it open for one approved
+ * SENDING. One real Practice send went through all of this on 2026-11-03, so what's below held that once: the
+ * request, its fields, the read-back and the answer. What's marked UNVERIFIED is what that one send can't speak
+ * for. All of it fails closed: if Outlook differs, nothing is sent, and the card says what didn't match. The guard only looks at any of this while the send routine has it open for one approved
  * card, so none of it makes reading any broader. See forSending in network-guard.ts.
  */
 
@@ -136,14 +135,14 @@ export const COMPOSE_SELECTORS = {
 };
 
 /**
- * UNVERIFIED: that a new email goes out as one CreateItem on this address, carrying the whole message,
+ * Seen once: a new email goes out as one CreateItem on this address, carrying the whole message,
  * with the guard refusing everything before it, including the saves Outlook would otherwise make as a
  * Draft. If it's really a save and then a send, or anything else, the guard refuses it and nothing goes.
  */
 const SERVICE_PATH = /^\/owa(?:\/\d+)?\/service\.svc$/;
 const SEND_ACTION_QUERY = /^\?action=CreateItem(?:&(?!action=)[a-z0-9_]+=[^&;]*)*$/i;
 const SEND_ACTION_HEADER = /^CreateItem$/i;
-/** UNVERIFIED: the value that means send it, and not just save it. */
+/** Which of these real Outlook uses, in every case, is unverified. One of them is what it used in the one send seen. */
 const SENDS_THE_MESSAGE = new Set(["SendAndSaveCopy", "SendOnly"]);
 
 /** The home address and hosts are only ever something else for made-up pages in the checks of the real browser. */
@@ -185,7 +184,7 @@ function wordsInHtml(html: string): string {
   return words.join("");
 }
 
-/** UNVERIFIED: that the request's data is JSON in its body, in a header that holds the same thing URL-encoded, or both. */
+/** Seen once, in one of these places: that the request's data is JSON in its body, in a header that holds the same thing URL-encoded, or both. */
 function dataInRequest({ body, headers }: RequestToCheck): unknown[] | null {
   const held = [body, headers?.["x-owa-urlpostdata"]];
   try {
@@ -199,7 +198,7 @@ function dataInRequest({ body, headers }: RequestToCheck): unknown[] | null {
   }
 }
 
-/** UNVERIFIED: every field name here, which come from Exchange's published shape for CreateItem. */
+/** Seen once: the field names here, which come from Exchange's published shape for CreateItem. */
 function whyNotInData(data: any, email: ApprovedEmail): string | null {
   const request = data?.Body;
   if (!SENDS_THE_MESSAGE.has(request?.MessageDisposition)) return "Outlook asked to do something other than send a message, such as save a Draft.";
@@ -238,7 +237,7 @@ export function isSendAnswer(address: string): boolean {
   return url !== null && SERVICE_PATH.test(url.pathname) && SEND_ACTION_QUERY.test(url.search);
 }
 
-/** UNVERIFIED: the shape of Outlook's answer. Anything else means there's no telling, and never that it didn't go. */
+/** Seen once: the shape of Outlook's answer. Anything else means there's no telling, and never that it didn't go. */
 export function answerSaysSent(answer: string): boolean {
   try {
     const items = JSON.parse(answer)?.Body?.ResponseMessages?.Items;

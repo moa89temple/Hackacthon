@@ -27,9 +27,8 @@ const NEEDED = { newEmail: "button to write a new email", to: "To line", subject
  * What makes this the approved email isn't this code but the guard, which looks at what the request
  * really carries. Reading back is what stops Buddy pressing Send on something that doesn't match.
  *
- * UNVERIFIED, all of it against real Outlook: the selectors in tumail-rules.ts, that clicking and typing
- * work on each line this way, and what a recipient looks like once it's on the To line. Any of them being
- * wrong stops here, with nothing sent. See tumail-rules.ts.
+ * All of this worked against real Outlook in one Practice send on 2026-11-03, with no signature set. Any of it
+ * being wrong for another email stops here, with nothing sent. See tumail-rules.ts.
  */
 export async function sendEmailOnPage(page: Page, email: EmailToSend, guard: SendGuard, beforePressing: () => string | null): Promise<EmailSending> {
   await page.goto(email.inboxUrl, { waitUntil: "domcontentloaded" });
@@ -53,10 +52,10 @@ export async function sendEmailOnPage(page: Page, email: EmailToSend, guard: Sen
 
   await to.click();
   await page.keyboard.insertText(email.to);
-  // UNVERIFIED: that this turns what's typed into a recipient, with the guard refusing Outlook's lookups.
+  // Seen once: this turns what's typed into a recipient, with the guard refusing Outlook's lookups.
   await page.keyboard.press(";");
   await page.waitForTimeout(RECIPIENT_SETTLE_MS);
-  // UNVERIFIED: that filling replaces any signature, and that Outlook's editor keeps the lines. Reading back checks both.
+  // Seen once that the editor keeps the lines. UNVERIFIED: that filling replaces a signature. Reading back checks both.
   await subject.fill(email.subject);
   await body.fill(email.body);
 

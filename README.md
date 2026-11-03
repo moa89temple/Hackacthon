@@ -316,7 +316,7 @@ A card stops working if you edit the Draft, change your address, or switch betwe
 
 ### Known limits
 
-- **None of this has seen a real compose window or a real send.** Everything about Outlook's side is marked UNVERIFIED in `tumail-rules.ts`, and it all fails closed: if Outlook differs, nothing is sent and the card says what didn't match. The first real Practice send is what proves it.
+- **One real Practice send has gone through this.** It went on 2026-11-03, once, with no signature set. What it can't speak for is marked UNVERIFIED in `tumail-rules.ts` and `compose-in-page.ts`, and it all fails closed: if Outlook differs, nothing is sent and the card says what didn't match. Live has never been used.
 - Buddy can't check the address you type against the account that's logged in. It has to be a temple.edu address that no Contact has, and the card shows it before you approve, but a typing mistake would send your Practice email to whoever has that address.
 - A message goes as plain words. The number of blank lines can differ from the Draft's, because Outlook's editor keeps them its own way, but the lines themselves can't. Any signature Outlook puts in the new email is replaced.
 - The guard checks the recipient, copies, attachments, subject and words. It doesn't look at anything else a request could say, such as its From, because only Outlook's own page could put something there.
