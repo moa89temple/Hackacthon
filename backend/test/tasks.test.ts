@@ -17,7 +17,7 @@ const FORTY_CENTS = { output_tokens: 8_000 };
 const TEN_CENTS = { output_tokens: 2_000 };
 const CENT = 10_000_000;
 
-const FORM_SITE = { ...TEST_SITE, formPages: [{ path: /^\/forms\// }] };
+const FORM_SITE = { ...TEST_SITE, formPages: [{ path: /^\/forms\// }], blockedPages: [{ path: /\/quizzes(\/|$)/ }] };
 const FORM_REQUEST = {
   kind: "submit_form",
   site: "canvas",
@@ -864,6 +864,215 @@ describe("the results", () => {
     await theTask();
 
     expect(backend.storedTaskWork(1)).toBeNull();
+  });
+});
+
+describe("when the normal way doesn't work", () => {
+  const WORDS = "Words a person could read on this page, and quite a few of them. ".repeat(5);
+  const pageWithLink = (href: string) => `<html><title>A list</title><body><main>${WORDS}<a href="${href}">Apply here</a></main></body></html>`;
+
+  it("tries Claude again when a call fails, rather than losing the Task to one bad moment", async () => {
+    await startTask({ failWith: new Error("Overloaded") }, says(FOUND));
+
+    expect(await theTask()).toMatchObject({ state: "done", result: FOUND });
+  });
+
+  it("gives up plainly when Claude keeps failing", async () => {
+    await startTask({ failWith: new Error("Overloaded") }, { failWith: new Error("Overloaded") }, { failWith: new Error("Overloaded") });
+
+    expect(await theTask()).toMatchObject({ state: "failed", problem: expect.stringContaining("Something went wrong") });
+  });
+
+  it("stops trying the moment the Student cancels", async () => {
+    await startTask({ failWith: new Error("Overloaded") });
+    await new Promise((resolve) => setImmediate(resolve));
+    const requestsBefore = backend.claude.requests.length;
+
+    await backend.cancelTask((await backend.listTasks())[0].id);
+    await backend.tasks.idle();
+
+    expect((await theTask()).state).toBe("cancelled");
+    expect(backend.claude.requests).toHaveLength(requestsBefore);
+  });
+
+  it("tries Claude again when it says nothing at all", async () => {
+    await startTask({ content: [], stopReason: "end_turn" }, says(FOUND));
+
+    expect(await theTask()).toMatchObject({ state: "done", result: FOUND });
+  });
+
+  it("gets a last chance to say what it found, rather than losing everything to the limit on steps", async () => {
+    const steps = Array.from({ length: 39 }, () => tool("look_at_student"));
+    await startTask(...steps, says(FOUND));
+
+    expect(await theTask()).toMatchObject({ state: "done", result: FOUND });
+    expect(JSON.stringify(lastRequest().messages.at(-1))).toContain("last step");
+  });
+
+  it("can follow a link on a page it read, which a search didn't give it", async () => {
+    const list = "https://www.example.edu/list";
+    const apply = "https://www.example.edu/apply";
+    backend.web.save(list, pageWithLink("/apply"));
+    backend.web.save(apply, `<html><title>Apply</title><body><main>${WORDS}</main></body></html>`);
+
+    await startTask(searchFinds("anything", list), tool("read_found_page", { address: apply }), says(FOUND));
+
+    expect(await theTask()).toMatchObject({ state: "done" });
+    expect(backend.web.requests).toContain(apply);
+    expect(JSON.stringify(backend.claude.requests.at(-2)!.messages)).toContain(apply);
+  });
+
+  it("doesn't take a link a page hides, or one to this laptop", async () => {
+    const list = "https://www.example.edu/list";
+    const hidden = "https://evil.example/hidden";
+    backend.web.save(list, `<html><title>A list</title><body><main>${WORDS}<a hidden href="${hidden}">x</a><a href="http://127.0.0.1:8787/activity">y</a></main></body></html>`);
+
+    await startTask(searchFinds("anything", list), tool("read_found_page", { address: hidden }), tool("read_found_page", { address: "http://127.0.0.1:8787/activity" }), says(FOUND));
+    await theTask();
+
+    expect(backend.web.requests).not.toContain(hidden);
+    expect(backend.web.requests).not.toContain("http://127.0.0.1:8787/activity");
+  });
+
+  it("reads a short page in Buddy's Browser when a plain fetch gets nothing", async () => {
+    const page = "https://www.example.edu/short";
+    backend.browser.savedPages.set(page, { title: "Short", text: "", accessibilitySnapshot: "", html: "<html><title>Short</title><body><main>Deadline is March 1.</main></body></html>" });
+
+    await startTask(searchFinds("anything", page), says(FOUND));
+
+    expect(await theTask()).toMatchObject({ state: "done" });
+    expect(JSON.stringify(lastRequest().messages)).toContain("Deadline is March 1.");
+  });
+
+  it("shows a step before a long read, so that a card never looks stuck", async () => {
+    await backend.giveReadPermission("canvas", undefined);
+    let finishRead!: () => void;
+    const held = new Promise<void>((resolve) => (finishRead = resolve));
+    readCanvas = () => held;
+
+    await startTask(tool("check_canvas", { read_again: true }), says(FOUND));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect((await backend.listTasks())[0].steps).toEqual(["Reading your Canvas. This can take a few minutes."]);
+    finishRead();
+    await theTask();
+  });
+
+  it("says a read found things even when part of it couldn't be read", async () => {
+    await backend.giveReadPermission("canvas", undefined);
+    await backend.stop();
+    backend = await BackendHarness.start({
+      sites: { canvas: FORM_SITE },
+      extraConnectionTypes: [{ ...canvasConnection, read: async ({ reportMissed }) => { reportMissed("Part of it couldn't be read."); return []; } }],
+    });
+    await backend.giveReadPermission("canvas", undefined);
+    backend.clock.moveForward(60_000);
+
+    await startTask(tool("check_canvas", { read_again: true }), says(FOUND));
+
+    expect((await theTask()).steps).toContain("Read your Canvas again, though part of it couldn't be read.");
+  });
+
+  it("says plainly when a read found nothing new at all", async () => {
+    await backend.giveReadPermission("canvas", undefined);
+    readCanvas = async () => {
+      throw new Error("No");
+    };
+
+    await startTask(tool("check_canvas", { read_again: true }), says(FOUND));
+
+    expect((await theTask()).steps).toContain("Tried to read your Canvas again but couldn't, so looked at the last reading.");
+  });
+
+  it("writes what it found as plain text, whatever Claude did", async () => {
+    await startTask(says("# Found\n\n**Two** programs fit **you**."));
+
+    expect((await theTask()).result).toBe("Found\n\nTwo programs fit you.");
+  });
+
+  describe("reading a Connection's page itself, when its reader isn't enough", () => {
+    const HOME = TEST_SITE.homeUrl;
+    const COURSE = "https://canvas.test/courses/1";
+    const home = { title: "Canvas", text: "Your courses", accessibilitySnapshot: "", html: `<html><body><main>Your courses MARKERHOME <a href="/courses/1">Biology</a> <a href="/quizzes/1">Quiz</a></main></body></html>` };
+    const course = { title: "Biology", text: "Biology syllabus MARKERCOURSE", accessibilitySnapshot: "", html: "<html><body><main>Biology syllabus MARKERCOURSE</main></body></html>" };
+
+    beforeEach(async () => {
+      await backend.giveReadPermission("canvas", undefined);
+      backend.browser.savedPages.set(HOME, home);
+      backend.browser.savedPages.set(COURSE, course);
+      backend.browser.savedPages.set("https://canvas.test/quizzes/1", course);
+      backend.browser.actions.length = 0;
+    });
+
+    const opened = () => backend.browser.actions.filter((action) => action.type === "read").map((action: any) => action.url);
+
+    it("starts from its home page, and can follow its links", async () => {
+      await startTask(tool("read_connection_page", { connection: "canvas" }), tool("read_connection_page", { connection: "canvas", address: COURSE }), says(FOUND));
+
+      expect(await theTask()).toMatchObject({ state: "done" });
+      expect(opened()).toEqual([HOME, COURSE]);
+      expect(JSON.stringify(lastRequest().messages)).toContain("MARKERCOURSE");
+      expect(JSON.stringify(backend.claude.requests.at(-2)!.messages)).toContain(COURSE);
+    });
+
+    it("won't open an address it wasn't shown, so that nothing can be sent off in one", async () => {
+      await startTask(tool("read_connection_page", { connection: "canvas", address: "https://canvas.test/?grade=A" }), says(FOUND));
+      await theTask();
+
+      expect(opened()).toEqual([]);
+      expect(answerTo("read_connection_page").is_error).toBe(true);
+    });
+
+    it("still can't open a page Buddy never reads, and says there's no way round that", async () => {
+      await startTask(tool("read_connection_page", { connection: "canvas" }), tool("read_connection_page", { connection: "canvas", address: "https://canvas.test/quizzes/1" }), says(FOUND));
+      await theTask();
+
+      expect(opened()).toEqual([HOME]);
+      const answers = lastRequest().messages.flatMap((message) => (Array.isArray(message.content) ? (message.content as any[]) : [])).filter((block) => block.type === "tool_result");
+      expect(answers.at(-1).is_error).toBe(true);
+      expect(answers.at(-1).content).toContain("no way round");
+    });
+
+    it("can't open a Connection with no Read Permission", async () => {
+      await backend.revokeReadPermission("canvas");
+      backend.browser.actions.length = 0;
+
+      await startTask(tool("read_connection_page", { connection: "canvas" }), says(FOUND));
+      await theTask();
+
+      expect(opened()).toEqual([]);
+      expect(answerTo("read_connection_page").content).toContain("Read Permission");
+    });
+
+    it("can't open TUmail this way, which is only ever read through its own reader", async () => {
+      await backend.stop();
+      backend = await BackendHarness.start({ sites: { tumail: TEST_SITE }, extraConnectionTypes: [{ ...canvasConnection, id: "tumail", name: "TUmail" }] });
+      await backend.giveReadPermission("tumail", undefined);
+      backend.browser.actions.length = 0;
+
+      await startTask(tool("read_connection_page", { connection: "tumail" }), says(FOUND));
+      await theTask();
+
+      expect(backend.browser.actions.filter((action) => action.type === "read")).toEqual([]);
+    });
+
+    it("takes a turn in the browser, and counts as seeing the Student's records", async () => {
+      await startTask(tool("read_connection_page", { connection: "canvas" }), says(FOUND));
+      await theTask();
+
+      expect(toolNames(lastRequest())).not.toContain("web_search");
+    });
+
+    it("keeps the page's words only for the request they're in, and asks for no card straight after", async () => {
+      await startTask(tool("read_connection_page", { connection: "canvas" }, SIXTY_CENTS), tool("request_action", FORM_REQUEST, SIXTY_CENTS));
+      const { id } = await theTask();
+
+      expect(backend.storedTaskWork(id)).not.toContain("MARKERHOME");
+      await backend.keepTaskGoing(id);
+      backend.claude.willReply(says(FOUND));
+      await theTask();
+      expect(backend.actionCards.list()).toHaveLength(0);
+    });
   });
 });
 

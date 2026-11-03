@@ -5,7 +5,7 @@ import { LoginNeeded, ReadProblem, type ConnectionType, type ReadContext, type R
 import type { ContactAddress } from "./guidebook.ts";
 import type { FactFromConnection } from "./profile.ts";
 import type { ConnectionEventToStore, ConnectionFactToStore } from "./store.ts";
-import { readInboxPage, readMessagePage, shortHash, type MessageOnPage, type RowOnPage } from "./tumail-pages.ts";
+import { LONGEST_WORDS, readInboxPage, readMessagePage, shortHash, type MessageOnPage, type RowOnPage } from "./tumail-pages.ts";
 import {
   contactWithAddress,
   INBOX_IS_READY,
@@ -30,7 +30,6 @@ const MOST_OPENED_PER_READ = 10;
 const MOST_KEPT = 40;
 const KEPT_FOR_DAYS = 30;
 const DAY_MS = 24 * 3_600_000;
-const LONGEST_WORDS = 1_500;
 const LONGEST_SUBJECT = 200;
 const LONGEST_NAME = 100;
 

@@ -47,6 +47,8 @@ export interface TaskWork {
   addressesFound: string[];
   /** Each of those pages' titles, as the search gave them. */
   pageTitles: Record<string, string>;
+  /** Links on the pages of Connections it has read, which are the only other pages of theirs it may open. */
+  connectionLinks: string[];
   /** Past this point the Task has seen the Student's records, so what it asks a search engine could carry them. */
   sawPrivateRecords: boolean;
   /** What other people wrote that the Task has read, which stops anything that could outlast the Task. */

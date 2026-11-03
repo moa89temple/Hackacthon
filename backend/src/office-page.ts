@@ -19,7 +19,7 @@ function attribute(element: Html.Element, name: string): string | undefined {
 }
 
 /** Words nobody reading the page can see are also where a page could hide instructions to an AI. */
-function isHidden(element: Html.Element): boolean {
+export function isHidden(element: Html.Element): boolean {
   return (
     attribute(element, "hidden") !== undefined ||
     attribute(element, "aria-hidden") === "true" ||

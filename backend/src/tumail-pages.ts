@@ -149,6 +149,9 @@ const sameName = (one: string, other: string) => one.toLowerCase().replace(/\s+/
  * Each open message in a conversation has its own header. Only the row's sender's is read, so that anyone
  * else in the conversation, who may not be someone Buddy reads, stays out. If that isn't exactly one, nothing is.
  */
+/** How much of an email's words are kept. Several from one sender in a conversation share this. */
+export const LONGEST_WORDS = 1_500;
+
 export function readMessagePage(html: string, row?: Pick<RowOnPage, "address" | "name">): MessageOnPage {
   const pane = [...elementsIn(parse(html))].find((element) => attribute(element, "id") === "ReadingPaneContainerId" || withLabel(element, /^reading pane$/i));
   if (!pane) return { outcome: "not_recognized" };
@@ -174,8 +177,10 @@ export function readMessagePage(html: string, row?: Pick<RowOnPage, "address" | 
   });
 
   const theRowSenders = messages.filter(({ addressShown, nameMatchesRow }) => nameMatchesRow || (addressShown !== null && addressShown === row?.address));
-  if (messages.length > 1 && theRowSenders.length !== 1) return { outcome: "several_open" };
-  const message = messages.length > 1 ? theRowSenders[0]! : messages[0]!;
+  // Who wrote the others in a conversation is unknown, and they may be people Buddy doesn't open mail from.
+  if (messages.length > 1 && theRowSenders.length === 0) return { outcome: "several_open" };
+  const chosen = messages.length > 1 ? theRowSenders : messages;
+  const message = chosen[0]!;
   const address = message.addressShown ?? (message.nameMatchesRow ? row!.address : null);
   if (!address) return { outcome: "no_sender" };
 
@@ -186,7 +191,11 @@ export function readMessagePage(html: string, row?: Pick<RowOnPage, "address" | 
     address,
     name: message.nameMatchesRow ? message.shownFrom : NAME_AND_ADDRESS.exec(message.shownFrom)?.[1]?.trim() || address,
     subject: wordsIn(heading),
-    shownAt: wordsIn(message.when) || null,
-    words: wordsIn(message.body),
+    // With several, each has its own date, and which is newest isn't something the page says.
+    shownAt: chosen.length > 1 ? null : wordsIn(message.when) || null,
+    words:
+      chosen.length > 1
+        ? chosen.map(({ body, when }) => `${wordsIn(when) || "No date shown"}: ${wordsIn(body).slice(0, Math.floor(LONGEST_WORDS / chosen.length) - 40)}`).join("\n")
+        : wordsIn(message.body),
   };
 }

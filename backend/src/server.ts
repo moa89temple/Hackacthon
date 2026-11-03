@@ -240,6 +240,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     notifier: options.adapters.notifier,
     web: options.adapters.web,
     browserAccess,
+    sites,
     connections,
     services,
     actionCards,

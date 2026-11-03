@@ -176,8 +176,23 @@ describe("reading one message", () => {
       expect(message).toMatchObject({ outcome: "read", words: "Her words." });
     });
 
-    it("reads none if the row's sender wrote more than one, because it can't tell which is newest", () => {
-      expect(readMessagePage(pane(open("Jane Advisor", "x", "One."), open("Jane Advisor", "y", "Two.")), fromRow)).toEqual({ outcome: "several_open" });
+    it("reads all that the row's sender wrote in a conversation, each with its own date, and nobody else's", () => {
+      const message = readMessagePage(pane(open("Jane Advisor", "x", "MARKERONE."), open("Someone Else", "z", "MARKEROTHER."), open("Jane Advisor", "y", "MARKERTWO.")), fromRow);
+
+      expect(message).toMatchObject({ outcome: "read", address: "jane.advisor@temple.edu", shownAt: null });
+      const { words } = message as { words: string };
+      expect(words).toContain("MARKERONE.");
+      expect(words).toContain("MARKERTWO.");
+      expect(words).not.toContain("MARKEROTHER.");
+    });
+
+    it("gives each message from that sender its share of the words, so that a long one can't crowd out the others", () => {
+      const long = "word ".repeat(1000);
+      const message = readMessagePage(pane(open("Jane Advisor", "x", `${long}MARKERONE`), open("Jane Advisor", "y", "MARKERTWO.")), fromRow);
+
+      const { words } = message as { words: string };
+      expect(words).toContain("MARKERTWO.");
+      expect(words.length).toBeLessThanOrEqual(1_600);
     });
 
     it("reads none if the row's sender wrote none of them", () => {

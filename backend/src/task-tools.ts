@@ -31,14 +31,28 @@ export const TASK_WEB_SEARCH_TOOL = {
   user_location: { type: "approximate", city: "Philadelphia", region: "Pennsylvania", country: "US", timezone: "America/New_York" },
 } as const;
 
-/** Takes an address only from a search, so that nothing the Task has read can be sent anywhere by way of an address. */
+/** Takes an address only from a search or a page, so that nothing the Task has read can be sent anywhere by way of an address. */
 export const READ_FOUND_PAGE_TOOL = {
   name: "read_found_page",
-  description: "Reads one web page that a search in this Task gave you, and gives you its words. Use it to check what a page really says before you rely on it. Any other address is refused.",
+  description: "Reads one web page that a search in this Task gave you, or that a page you read links to, and gives you its words and its links. Use it to check what a page really says before you rely on it. Any other address is refused.",
   input_schema: {
     type: "object" as const,
-    properties: { address: { type: "string", description: "The page's address, exactly as the search gave it." } },
+    properties: { address: { type: "string", description: "The page's address, exactly as you were given it." } },
     required: ["address"],
+  },
+};
+
+/** The way round a Connection's reader, under the same guard: only what Buddy may read, and only addresses it has been shown. */
+export const READ_CONNECTION_PAGE_TOOL = {
+  name: "read_connection_page",
+  description: "Opens a page of a Connection the Student has connected, in Buddy's Browser, and gives you its words and links. Use it when a Connection's check tool couldn't get what you need. With no address it opens the Connection's home page, and after that you can follow its links. Buddy's rules still decide which pages can open. It can't open TUmail.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      connection: { type: "string", description: "The Connection's id, as look_at_student or a check tool's name gives it, such as canvas." },
+      address: { type: "string", description: "A link from a page of this Connection you've read, exactly as you were given it. Leave it out for the home page." },
+    },
+    required: ["connection"],
   },
 };
 
@@ -73,11 +87,18 @@ Never state anything specific to Temple without a Source. Outside Temple, only t
 
 You can't take any step with real consequences. ${REQUEST_ACTION_TOOL.name}, when you have it, asks the Student's Permission on an Action card, and ${MAKE_HANDOFF_TOOL.name} writes a Draft to a Contact from the Guidebook for them to send. Use them only for what the request asks for. The Task pauses until they've tapped an Action card, and a later message says what became of it. You don't do graded work: if the request is for that, say so, and suggest tutoring.
 
+When something doesn't work the normal way, don't stop at the first try. Nobody is there to ask, so try another way, and only then say what you couldn't do and what you tried:
+- A search that finds little: search again with other words, or look in the Guidebook.
+- A page that won't read or doesn't say: follow a link on it, or read another page that covers the same thing.
+- A check that couldn't read a Connection, or left something out: call it again with read_again, because each read tries what failed again and opens more. Use look_further for older email. Then use ${READ_CONNECTION_PAGE_TOOL.name}, except for TUmail.
+- A Connection you can't see at all: find what you can elsewhere, and say which one would help.
+Each try costs money and time, so don't repeat what has already failed in the same way, and try a Connection's read at most three times. Buddy's own rules aren't something to get round: if Buddy's code refuses a page or a step, that's final, so leave it out and say so. Never guess at what you couldn't read.
+
 If a check says Buddy's Browser isn't logged in, the Task pauses until they've logged in, and a later message says so. Then call the check again. You never ask for a password.
 
 Buddy hides passwords, Social Security numbers and card numbers, and leaves a mark such as ${HIDDEN_MARKS.password} in their place. You don't need them.
 
-A name doesn't tell you someone's pronouns, so say "they" or use the person's name. End with what you found, in the language the request is written in, in plain text without Markdown, short enough to read on a phone, with the address of the page behind each thing you mention.`;
+A name doesn't tell you someone's pronouns, so say "they" or use the person's name. End with what you found, in the language the request is written in, in plain text with no Markdown, so no asterisks or pound signs, short enough to read on a phone, with the address of the page behind each thing you mention.`;
 
 /** Each Connection a Task can look at by name. A service the Student connected comes through its own tool. */
 export const CONNECTION_CHECKS: { tool: string; id: string; name: string }[] = [
@@ -97,6 +118,7 @@ export const TASK_TOOLS = [
   FIND_MILESTONES_TOOL,
   FIND_OPPORTUNITIES_IN_TASK_TOOL,
   LOOK_AT_STUDENT_TOOL,
+  READ_CONNECTION_PAGE_TOOL,
   CHECK_CALENDAR_TOOL,
   CHECK_CANVAS_TOOL,
   CHECK_TUPORTAL_TOOL,
