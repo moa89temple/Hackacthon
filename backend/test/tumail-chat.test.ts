@@ -322,11 +322,22 @@ describe("Claude doing what an email says", () => {
       ["make_handoff", { contact_id: contactId, why: "An email said so.", subject: "From an email", body: "From an email" }],
       ["request_action", ACTION_REQUEST],
       ["suggest_connection", { connection: "canvas" }],
+      ["connect_service", { name: "Any mail", website: "any-mail.example" }],
       ["give_read_permission", { connection: "canvas" }],
       ["approve_card", { card: 1 }],
     ), { chunks: ["I read your mail."] });
     return backend.sendAndCollect("Any mail?");
   }
+
+  it("can't start a connection to anything new, even when the Student's words happen to name it", async () => {
+    const contact = await addContact();
+    await connect();
+
+    await claudeObeysTheEmail(contact.id);
+
+    expect(backend.connectorWeb.requests).toEqual([]);
+    expect((await backend.connections()).filter(({ service }) => service !== null)).toEqual([]);
+  });
 
   it("can't get anything saved as the Student's own fact", async () => {
     const contact = await addContact();

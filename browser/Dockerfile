@@ -9,6 +9,7 @@ RUN apt-get update \
 
 COPY chromium-policies.json /etc/chromium/policies/managed/buddy.json
 COPY takeover.html /usr/share/novnc/takeover.html
+COPY login-done.html /usr/share/novnc/login-done.html
 COPY start.sh /usr/local/bin/start-buddys-browser
 COPY close-chromium.py /usr/local/bin/close-chromium.py
 

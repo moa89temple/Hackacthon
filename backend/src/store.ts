@@ -5,6 +5,7 @@ import { BRIEFING_MIGRATION, createBriefingStore, type BriefingStore } from "./b
 import { createOpportunityStore, OPPORTUNITY_MIGRATION, type OpportunityStore } from "./opportunity-store.ts";
 import { createRoadmapStore, ROADMAP_MIGRATION, type RoadmapStore } from "./roadmap-store.ts";
 import { createSendingStore, SENDING_MIGRATION, type SendingStore } from "./sending-store.ts";
+import { createServiceStore, SERVICE_MIGRATION, type ServiceStore } from "./service-store.ts";
 
 /** This version has one Student, but all data is keyed by Student so more can come later. */
 export const THE_STUDENT = "the-student";
@@ -287,6 +288,7 @@ export interface Store {
   roadmap: RoadmapStore;
   /** Opportunities, kept in opportunity-store.ts. */
   opportunities: OpportunityStore;
+  services: ServiceStore;
   /** Practice mode, kept in sending-store.ts. */
   sending: SendingStore;
   /** Briefings and push tokens, kept in briefing-store.ts. */
@@ -334,7 +336,8 @@ export interface Store {
    * Deletes the Read Permission, its address, its events, every fact and Contact from this Connection, on
    * disk too. Activity's records of replies that had those facts keep their own copies. A login held in
    * Buddy's Browser can't go in the same step, so its site is noted here until it has: see loginsToDelete.
-   * Any Opportunity's page this says came from the Connection goes in the same step, with what's only on it.
+   * Any Opportunity's page this says came from the Connection goes in the same step, with what's only on it, and so
+   * does any token Buddy holds for it.
    */
   revokeReadPermission(studentId: string, connection: string, entry: NewActivityEntry, loginSite?: string, isItsOpportunityPage?: (url: string) => boolean): void;
   /** The sites whose login must go from Buddy's Browser, because their Read Permission was revoked. */
@@ -657,6 +660,7 @@ const MIGRATIONS = [
   OPPORTUNITY_MIGRATION,
   SENDING_MIGRATION,
   BRIEFING_MIGRATION,
+  SERVICE_MIGRATION,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -966,6 +970,7 @@ export function openStore(databasePath: string): Store {
       editedAt: row.edited_at ? new Date(row.edited_at) : null,
     }));
   const opportunities = createOpportunityStore(db, (work) => inTransaction(db, work), addActivity);
+  const services = createServiceStore(db, (work) => inTransaction(db, work), addActivity);
 
   return {
     appendMessages(studentId, messages, entry) {
@@ -1115,6 +1120,7 @@ export function openStore(databasePath: string): Store {
         deleteContactsFrom(studentId, connection);
         if (isItsOpportunityPage) opportunities.removePagesWithoutTransaction(isItsOpportunityPage);
         deletePermission.run(studentId, connection);
+        services.deleteLoginWithoutTransaction(studentId, connection);
         if (loginSite) insertLoginToDelete.run(studentId, loginSite);
       });
       // secure_delete covers the database file, and this empties the log of recent changes.
@@ -1465,6 +1471,7 @@ export function openStore(databasePath: string): Store {
 
     roadmap: createRoadmapStore(db, (work) => inTransaction(db, work), addActivity),
     opportunities,
+    services,
     sending: createSendingStore(db, (work) => inTransaction(db, work), addActivity),
     briefings: createBriefingStore(db, (work) => inTransaction(db, work), addActivity),
 

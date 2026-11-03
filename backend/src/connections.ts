@@ -66,6 +66,12 @@ export interface ReadingForClaude {
 export interface ConnectionType {
   id: string;
   name: string;
+  /** What a system message calls this, when its name is something the model wrote. */
+  nameForClaude?: string;
+  /** For a service the Student asked for, rather than one of Buddy's own. */
+  service?: ServiceDetails;
+  /** What Activity says a revoke deleted, for one that holds something the usual words leave out. */
+  revokeNote?: string;
   /**
    * Set when Buddy can't read this at all for now, in words for the Student. Nothing about it gets opened, and it
    * can't be connected. A Read Permission it already has stays until the Student revokes it, which deletes the login.
@@ -100,9 +106,17 @@ export interface ConnectionType {
   describeForClaude(reading: ReadingForClaude, asked?: unknown): string;
 }
 
+/** So that the Student can see what they're approving. It's all from Buddy's code, except that the name comes from the model and is only shown as plain text. */
+export interface ServiceDetails {
+  domain: string;
+  route: "own_connector" | "buddys_browser";
+  routeInWords: string;
+}
+
 export interface ConnectionStatus {
   id: string;
   name: string;
+  service: ServiceDetails | null;
   on: boolean;
   lastReadAt: string | null;
   lastReadProblem: string | null;
@@ -200,11 +214,13 @@ export interface ConnectionsDeps {
   opportunityPagesFor?: (connection: string) => OpportunityPagesFromConnection;
   /** After a read that worked has saved its facts, and after a revoke has deleted them. If this throws, it's logged and nothing else happens. */
   afterFactsChanged?: (connection: string) => void;
+  /** After a revoke, and after a revoked Connection's login is finally deleted. */
+  afterRevokeSettled?: (connection: string) => void;
   logError: (error: unknown) => void;
 }
 
 export function createConnections(deps: ConnectionsDeps): Connections {
-  const { types, web, browserAccess, clock, store, profile, contacts = () => [], opportunityPagesFor = () => NO_OPPORTUNITY_PAGES, afterFactsChanged, logError } = deps;
+  const { types, web, browserAccess, clock, store, profile, contacts = () => [], opportunityPagesFor = () => NO_OPPORTUNITY_PAGES, afterFactsChanged, afterRevokeSettled, logError } = deps;
   const readsUnderWay = new Map<number, Promise<void>>();
   /** One at a time, so that nothing is deleted twice or said twice in Activity. */
   let loginDeletions: Promise<void> = Promise.resolve();
@@ -230,6 +246,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     return {
       id: type.id,
       name: type.name,
+      service: type.service ?? null,
       on: permission !== null,
       lastReadAt: permission?.lastReadAt?.toISOString() ?? null,
       // What went wrong before it was put aside, and any login it asked for, aren't what's wrong now.
@@ -249,6 +266,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
         try {
           await browserAccess.forgetLogin(site);
           store.loginDeleted(THE_STUDENT, site, loginDeleted(name, clock.now()));
+          afterRevokeSettled?.(site);
         } catch (error) {
           // The Student is using the browser, so this waits for Done and isn't a problem to report.
           if (error instanceof TakeoverInProgress) continue;
@@ -373,12 +391,15 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     async revoke(id) {
       const type = typeWithId(id);
       if (store.readPermission(THE_STUDENT, id)) {
-        const entry = readPermissionRevoked(type.name, type.card.address !== null, clock.now(), type.isItsOpportunityPage !== undefined);
+        const usual = readPermissionRevoked(type.name, type.card.address !== null, clock.now(), type.isItsOpportunityPage !== undefined);
+        const entry = type.revokeNote ? { ...usual, detail: type.revokeNote } : usual;
         store.revokeReadPermission(THE_STUDENT, id, entry, type.logsIn ? id : undefined, type.isItsOpportunityPage);
         tellFactsChanged(id);
       }
       await deleteWaitingLogins();
-      return statusOf(type);
+      const status = statusOf(type);
+      afterRevokeSettled?.(id);
+      return status;
     },
 
     async beforeLogin(site) {
@@ -435,18 +456,19 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     describeForTurn() {
       return types
         .map((type) => {
-          if (type.notReadableYet) return `${type.name} can't be read yet, so you can't see it and shouldn't offer it.`;
+          const name = type.nameForClaude ?? type.name;
+          if (type.notReadableYet) return `${name} can't be read yet, so you can't see it and shouldn't offer it.`;
           const permission = store.readPermission(THE_STUDENT, type.id);
           if (permission) {
             const lastRead = permission.lastReadAt
               ? `last read ${describeInPhiladelphia(permission.lastReadAt)}`
               : "but Buddy hasn't managed to read it yet";
             const login = permission.needsLogin
-              ? ` Buddy's Browser isn't logged in to it, so tell the Student to tap Log in to ${type.name} on the You tab. They log in themselves, and you never ask for a password.`
+              ? ` Buddy's Browser isn't logged in to it, so tell the Student to tap Log in to ${name} on the You tab. They log in themselves, and you never ask for a password.`
               : "";
-            return `${type.name} is connected, ${lastRead}.${login} ${type.whileOnTellClaude}`;
+            return `${name} is connected, ${lastRead}.${login} ${type.whileOnTellClaude}`;
           }
-          return `${type.name} isn't connected, so don't use or mention anything you saw from it earlier in this conversation. Offer it only when reading it is actually needed to answer what they've just asked, or they ask for it. Having offered it before doesn't change that.`;
+          return `${name} isn't connected, so don't use or mention anything you saw from it earlier in this conversation. Offer it only when reading it is actually needed to answer what they've just asked, or they ask for it. Having offered it before doesn't change that.`;
         })
         .join(" ");
     },

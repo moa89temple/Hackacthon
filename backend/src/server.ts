@@ -7,6 +7,7 @@ import { addBriefingRoutes } from "./briefing-routes.ts";
 import { createBriefings, type Briefings } from "./briefings.ts";
 import {
   BrowserUnreachable,
+  ConnectorUnreachable,
   createBrowserAccess,
   NoReadPermissionForLogin,
   NoTakeover,
@@ -48,6 +49,7 @@ import { addOpportunityRoutes } from "./opportunity-routes.ts";
 import { createProfile, type Profile } from "./profile.ts";
 import { addRoadmapRoutes } from "./roadmap-routes.ts";
 import { createRoadmap } from "./roadmap.ts";
+import { createServiceConnections, type ServiceConnections } from "./service-connections.ts";
 import { createSending } from "./sending.ts";
 import { addSendingRoutes } from "./sending-routes.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
@@ -89,11 +91,14 @@ export interface RunningBackend {
 
 export async function startBackend(options: BackendOptions): Promise<RunningBackend> {
   const store = openStore(options.databasePath);
+  // Copies, because a service the Student asks for joins these while Buddy runs. See service-connections.ts.
+  const sites: Record<string, Site> = { ...options.sites };
+  const connectionTypes: ConnectionType[] = [...options.connectionTypes];
   const devices = createDevices({ store, clock: options.adapters.clock });
   const profile = createProfile({
     store,
     clock: options.adapters.clock,
-    connectionName: (id) => options.connectionTypes.find((type) => type.id === id)?.name ?? id,
+    connectionName: (id) => connectionTypes.find((type) => type.id === id)?.name ?? id,
   });
   const guidebook = createGuidebook({ store, clock: options.adapters.clock });
   const drafts = createDrafts({ store, clock: options.adapters.clock, guidebook });
@@ -106,8 +111,19 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     ...options.discovery,
     logError: (error) => app.log.error(error),
   });
+  const services = createServiceConnections({
+    // The one Claude for reading the services a Student asked to connect.
+    claude: options.adapters.claude,
+    model: options.discovery.model,
+    web: options.adapters.connectorWeb,
+    store,
+    clock: options.adapters.clock,
+    types: connectionTypes,
+    sites,
+    publicHosts: options.publicHosts ?? [],
+  });
   const guards = createGuardPolicy({
-    sites: options.sites,
+    sites,
     publicHosts: options.publicHosts ?? [],
     hasReadPermission: (site) => store.readPermission(THE_STUDENT, site) !== null,
   });
@@ -115,7 +131,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     browser: options.adapters.browser,
     clock: options.adapters.clock,
     store,
-    sites: options.sites,
+    sites,
     guards,
     onControlEnded: () => liveView.closeAll(),
     logError: (error) => app.log.error(error),
@@ -131,7 +147,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     logError: (error) => app.log.error(error),
   });
   const connections = createConnections({
-    types: options.connectionTypes,
+    types: connectionTypes,
     web: options.adapters.web,
     browserAccess,
     clock: options.adapters.clock,
@@ -149,6 +165,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     afterFactsChanged: (connection) => {
       if (connection === DARS_ID) darsCards.compareWithRoadmap();
     },
+    afterRevokeSettled: (connection) => services.removeIfFinished(connection),
     logError: (error) => app.log.error(error),
   });
   const darsCards = createDarsCards({ store, clock: options.adapters.clock, profile });
@@ -157,9 +174,9 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     store,
     clock: options.adapters.clock,
     routines: [
-      formSubmitRoutine({ sites: options.sites, guards, browserAccess, logError: (error) => app.log.error(error) }),
+      formSubmitRoutine({ sites, guards, browserAccess, logError: (error) => app.log.error(error) }),
       emailSendRoutine({
-        sites: options.sites,
+        sites,
         drafts,
         sending,
         contacts: () => guidebook.contacts(),
@@ -199,6 +216,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     milestones,
     roadmap,
     opportunities,
+    services,
     logError: (error) => app.log.error(error),
   });
   const briefings = createBriefings({
@@ -209,7 +227,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     roadmap,
     opportunities,
     connections,
-    connectionTypes: options.connectionTypes,
+    connectionTypes,
     logError: (error) => app.log.error(error),
   });
 
@@ -281,14 +299,14 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
 
   addProfileRoutes(app, profile);
-  addBrowserRoutes(app, browserAccess, connections);
+  addBrowserRoutes(app, browserAccess, connections, services);
   addConnectionRoutes(app, connections);
 
   addGuidebookRoutes(app, guidebook);
   addActionCardRoutes(app, actionCards, isStoredId);
   addDraftRoutes(app, drafts, () => actionCards.expireDue());
   addSendingRoutes(app, { sending, actionCards, drafts, lastMessageShown: conversation.lastMessageShown, isStoredId });
-  addCrisisEmailRoutes(app, { sites: options.sites, store, sending, actionCards, lastMessageShown: conversation.lastMessageShown, isStoredId });
+  addCrisisEmailRoutes(app, { sites, store, sending, actionCards, lastMessageShown: conversation.lastMessageShown, isStoredId });
   addRoadmapRoutes(app, roadmap, isStoredId);
   addOpportunityRoutes(app, opportunities, isStoredId);
   addBriefingRoutes(app, briefings, devices);
@@ -364,7 +382,7 @@ function addConnectionRoutes(app: FastifyInstance, connections: Connections): vo
   }));
 }
 
-function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess, connections: Connections): void {
+function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess, connections: Connections, services: ServiceConnections): void {
   app.get("/takeover", async () => ({ takeover: browserAccess.currentTakeover() }));
 
   app.post<{ Body: { site?: unknown } }>("/takeover", async (request, reply) => {
@@ -376,6 +394,7 @@ function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess, co
 
   app.post("/takeover/done", async () => {
     const finished = await browserAccess.finishTakeover();
+    services.afterLogin(finished.site, finished.signedIn);
     await connections.afterLogin(finished.site, finished.signedIn);
     return finished;
   });
@@ -409,6 +428,6 @@ function browserErrorStatus(error: unknown): number | undefined {
   if (error instanceof UnknownSite) return 404;
   if (error instanceof NoReadPermissionForLogin) return 403;
   if (error instanceof TakeoverInProgress || error instanceof NoTakeover) return 409;
-  if (error instanceof BrowserUnreachable) return 503;
+  if (error instanceof BrowserUnreachable || error instanceof ConnectorUnreachable) return 503;
   return undefined;
 }

@@ -229,6 +229,7 @@ function watchingBrowser(
     sendEmail: async () => notInACheck(),
     clearScreen: async () => notInACheck(),
     forgetLogin: async () => notInACheck(),
+    addressOnScreenStarting: async () => notInACheck(),
 
     async read(url, guard) {
       // The same answer to the reader for either, which stops it. The check says which it was afterwards.

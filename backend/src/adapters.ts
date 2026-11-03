@@ -2,6 +2,7 @@ import type { BuddysBrowser } from "./buddys-browser.ts";
 import { containerBrowser, type ContainerBrowserSettings } from "./container-browser.ts";
 import { anthropicClaude, type Claude } from "./claude.ts";
 import { systemClock, type Clock } from "./clock.ts";
+import { realConnectorWeb, type ConnectorWeb } from "./connector-web.ts";
 import { firebaseNotifierFromFile } from "./firebase-notifier.ts";
 import type { Notifier } from "./notifier.ts";
 import { realWeb, type Web } from "./web.ts";
@@ -15,6 +16,7 @@ export interface Adapters {
   clock: Clock;
   browser: BuddysBrowser;
   web: Web;
+  connectorWeb: ConnectorWeb;
   notifier: Notifier;
 }
 
@@ -29,6 +31,7 @@ export function productionAdapters(
     clock: systemClock,
     browser: containerBrowser(browserSettings),
     web: realWeb(),
+    connectorWeb: realConnectorWeb(),
     notifier: firebaseNotifierFromFile(firebaseServiceAccountFile, systemClock),
   };
 }

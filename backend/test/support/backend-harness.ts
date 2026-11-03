@@ -14,6 +14,7 @@ import { saveOfficePages, TEST_OFFICES } from "./office-pages.ts";
 import { readEvents } from "./read-events.ts";
 import { RecordingBrowser } from "./recording-browser.ts";
 import { RecordingNotifier } from "./recording-notifier.ts";
+import { SavedConnectors } from "./saved-connectors.ts";
 import { SavedWeb } from "./saved-web.ts";
 import { ScriptedClaude } from "./scripted-claude.ts";
 
@@ -56,6 +57,7 @@ export class BackendHarness {
   readonly clock = new MovableClock("2026-11-02T14:00:00Z");
   readonly browser = new RecordingBrowser();
   readonly web = new SavedWeb();
+  readonly connectorWeb = new SavedConnectors();
   readonly notifier = new RecordingNotifier();
   readonly #directory = mkdtempSync(join(tmpdir(), "buddy-test-"));
   #backend!: RunningBackend;
@@ -92,7 +94,7 @@ export class BackendHarness {
 
   async #boot(): Promise<void> {
     this.#backend = await startBackend({
-      adapters: { claude: this.claude, clock: this.clock, browser: this.browser, web: this.web, notifier: this.notifier },
+      adapters: { claude: this.claude, clock: this.clock, browser: this.browser, web: this.web, connectorWeb: this.connectorWeb, notifier: this.notifier },
       sites: this.#sites,
       publicHosts: [new URL(PUBLIC_TEST_PAGE).hostname],
       connectionTypes: [googleCalendar, warnedConnection, ...this.#extraConnectionTypes],

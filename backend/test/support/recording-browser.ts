@@ -10,6 +10,7 @@ export type RecordedAction =
   | { type: "submit"; form: FormToSubmit }
   | { type: "send-email"; email: EmailToSend }
   | { type: "clear-screen" }
+  | { type: "address-on-screen"; start: string }
   | { type: "forget-login"; hosts: string[] };
 
 export interface SavedPage {
@@ -37,6 +38,8 @@ export class RecordingBrowser implements BuddysBrowser {
   readonly actions: RecordedAction[] = [];
   readonly savedPages = new Map<string, SavedPage>();
   readonly liveView = { host: "127.0.0.1", port: 0 };
+  /** Where the tab the Student left is. */
+  addressOnScreen: string | null = null;
   /** When set, the browser behaves as if the container were stopped. */
   unreachable = false;
   /** When set, reads wait on this before finishing. */
@@ -153,6 +156,12 @@ export class RecordingBrowser implements BuddysBrowser {
   async clearScreen(): Promise<void> {
     this.#failIfUnreachable();
     this.actions.push({ type: "clear-screen" });
+  }
+
+  async addressOnScreenStarting(start: string): Promise<string | null> {
+    this.#failIfUnreachable();
+    this.actions.push({ type: "address-on-screen", start });
+    return this.addressOnScreen?.startsWith(start) ? this.addressOnScreen : null;
   }
 
   async forgetLogin(hosts: string[]): Promise<void> {
