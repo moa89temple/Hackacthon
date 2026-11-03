@@ -119,10 +119,10 @@ describe("sending through Firebase Cloud Messaging", () => {
     expect(init.headers).toMatchObject({ authorization: "Bearer access-1", "content-type": "application/json" });
     expect(JSON.parse(String(init.body))).toEqual({
       message: {
-        token: PUSH_TOKEN,
+        fid: PUSH_TOKEN,
         notification: { title: "Your Briefing", body: "1 Milestone." },
         data: { type: "briefing" },
-        android: { priority: "HIGH", collapse_key: "briefing", notification: { tag: "briefing" } },
+        android: { priority: "high", collapse_key: "briefing", notification: { tag: "briefing" } },
       },
     });
   });

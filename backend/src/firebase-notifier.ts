@@ -73,10 +73,11 @@ export function firebaseNotifier(account: ServiceAccount, clock: Clock, fetchFro
       headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
       body: JSON.stringify({
         message: {
-          token,
+          // A phone's push token is its Firebase Installation ID, which is what Firebase now says to send to.
+          fid: token,
           notification: { title, body },
           data,
-          android: { priority: "HIGH", collapse_key: replaces, notification: { tag: replaces } },
+          android: { priority: "high", collapse_key: replaces, notification: { tag: replaces } },
         },
       }),
       redirect: "error",
