@@ -710,6 +710,7 @@ void main() {
       await settleApp(tester);
 
       backend.crisisOffer = offer();
+      await tester.dragUntilVisible(find.text('Back to Practice mode'), find.byType(ListView).last, const Offset(0, -200));
       await tapThrough(tester, find.text('Back to Practice mode'));
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
       await tester.pumpAndSettle();
