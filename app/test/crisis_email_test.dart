@@ -647,6 +647,44 @@ void main() {
 
     Finder onActionCard(String text) => find.descendant(of: find.byType(Card), matching: find.widgetWithText(OutlinedButton, text));
 
+    testWidgets('the card it makes comes into view by itself, on the very turn the Crisis card came', (tester) async {
+      useOrdinaryPhone(tester);
+      final backend = FakeBackend()..crisisCardToMake = practiceCard();
+      await openUnlockedApp(tester, backend);
+      await sendMessage(tester, 'I want to kill myself');
+      backend.reply.add(const ReplyCrisisCard());
+      await tester.pumpAndSettle();
+      backend.reply.add(ReplyDone(buddy('I am really glad you told me. ' * 12)));
+      await backend.reply.close();
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(find.text(offerTitle), find.byType(ListView).first, const Offset(0, 200));
+      await tester.pumpAndSettle();
+      await openForm(tester);
+      await fillIn(tester, 'Their email address', friendAddress);
+
+      await tapThrough(tester, find.text('Show me the email'));
+
+      final approve = find.widgetWithText(FilledButton, 'Approve');
+      expect(approve, findsOneWidget);
+      final composer = tester.getRect(find.widgetWithText(TextField, 'Message Buddy'));
+      expect(tester.getRect(approve).bottom, lessThanOrEqualTo(composer.top));
+      expect(tester.getRect(approve).top, greaterThanOrEqualTo(0));
+    });
+
+    testWidgets('making the card closes the keyboard, so that it does not reopen over the card', (tester) async {
+      final backend = FakeBackend()..crisisCardToMake = practiceCard();
+      await showCrisisCard(tester, backend);
+      // As it really goes: the Student has just typed to Buddy, which is where focus falls back to.
+      await tester.tap(find.widgetWithText(TextField, 'Message Buddy'));
+      await tester.pumpAndSettle();
+      await openForm(tester);
+      await fillIn(tester, 'Their email address', friendAddress);
+      await tapThrough(tester, find.text('Show me the email'));
+
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<TextField>(), isNull);
+    });
+
     testWidgets('the Action card says the email goes to the Student, and offers Live', (tester) async {
       await showPracticeCard(tester, FakeBackend());
 

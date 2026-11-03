@@ -24,6 +24,10 @@ class CrisisCardItem extends ConversationItem {
 
   /// Here rather than on the screen, which forgets a card as the list scrolls and new messages move it.
   final CrisisEmailWords emailWords = CrisisEmailWords();
+
+  /// Also here, because the list builds the card again each time it scrolls back into range, and
+  /// that mustn't pull the Student away from whatever they've gone to since.
+  bool hasComeIntoView = false;
 }
 
 /// What the Student has written so far on a Crisis card's offer to email someone.

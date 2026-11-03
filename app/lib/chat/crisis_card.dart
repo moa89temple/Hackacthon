@@ -72,7 +72,8 @@ class _CrisisCardState extends State<CrisisCard> {
   @override
   void initState() {
     super.initState();
-    if (widget.announce) {
+    if (widget.announce && !widget.item.hasComeIntoView) {
+      widget.item.hasComeIntoView = true;
       // With large text the card can be taller than the screen, and the list is anchored to its
       // bottom. This starts the Student at the top, with the title and 988.
       _bringTopIntoView();

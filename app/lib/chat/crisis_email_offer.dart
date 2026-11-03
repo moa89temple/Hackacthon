@@ -130,6 +130,9 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
     final address = _address.text.trim();
     setState(() => _tapped = true);
     if (address.isEmpty) return _say(_writeAddress, problem: true);
+    // Going to the new card can take this form off the list. Focus would then fall back to the message
+    // box, and the keyboard would open again over the card the Student is waiting on.
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _asking = true);
     try {
       final refusal = await widget.chat.askForCrisisEmailCard(name: _name.text.trim(), address: address, subject: _subject.text, body: _body.text);
