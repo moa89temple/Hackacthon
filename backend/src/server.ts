@@ -47,6 +47,8 @@ import { createSending } from "./sending.ts";
 import { addSendingRoutes } from "./sending-routes.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { BUDDY_OPENING } from "./system-prompt.ts";
+import { addBriefingRoutes } from "./briefing-routes.ts";
+import { createBriefings, type Briefings } from "./briefings.ts";
 
 const PAIR_ROUTE = "/devices/pair";
 
@@ -78,6 +80,7 @@ export interface RunningBackend {
   discovery: Discovery;
   opportunities: Opportunities;
   opportunityDiscovery: OpportunityDiscovery;
+  briefings: Briefings;
   close(): Promise<void>;
 }
 
@@ -187,6 +190,17 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     opportunities,
     logError: (error) => app.log.error(error),
   });
+  const briefings = createBriefings({
+    store,
+    clock: options.adapters.clock,
+    notifier: options.adapters.notifier,
+    milestones,
+    roadmap,
+    opportunities,
+    connections,
+    connectionTypes: options.connectionTypes,
+    logError: (error) => app.log.error(error),
+  });
 
   const app = fastify({ logger: options.logger });
   const liveView = createLiveViewProxy({
@@ -201,6 +215,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     connections.stopSchedule();
     discovery.stopSchedule();
     opportunityDiscovery.stopSchedule();
+    briefings.stopSchedule();
     store.close();
   });
 
@@ -264,10 +279,11 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addSendingRoutes(app, { sending, actionCards, drafts, lastMessageShown: conversation.lastMessageShown, isStoredId });
   addRoadmapRoutes(app, roadmap, isStoredId);
   addOpportunityRoutes(app, opportunities, isStoredId);
+  addBriefingRoutes(app, briefings, devices);
   app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, opportunities, opportunityDiscovery, close: () => app.close() };
+  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, opportunities, opportunityDiscovery, briefings, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {

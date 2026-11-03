@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { BRIEFING_MIGRATION, createBriefingStore, type BriefingStore } from "./briefing-store.ts";
 import { createOpportunityStore, OPPORTUNITY_MIGRATION, type OpportunityStore } from "./opportunity-store.ts";
 import { createRoadmapStore, ROADMAP_MIGRATION, type RoadmapStore } from "./roadmap-store.ts";
 import { createSendingStore, SENDING_MIGRATION, type SendingStore } from "./sending-store.ts";
@@ -288,6 +289,8 @@ export interface Store {
   opportunities: OpportunityStore;
   /** Practice mode, kept in sending-store.ts. */
   sending: SendingStore;
+  /** Briefings and push tokens, kept in briefing-store.ts. */
+  briefings: BriefingStore;
   /**
    * Appends the messages, and any Activity entry for them, together: either all of them are saved
    * or none are. Messages never change once saved.
@@ -652,6 +655,7 @@ const MIGRATIONS = [
   ROADMAP_MIGRATION,
   OPPORTUNITY_MIGRATION,
   SENDING_MIGRATION,
+  BRIEFING_MIGRATION,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -1459,6 +1463,7 @@ export function openStore(databasePath: string): Store {
     roadmap: createRoadmapStore(db, (work) => inTransaction(db, work), addActivity),
     opportunities: createOpportunityStore(db, (work) => inTransaction(db, work), addActivity),
     sending: createSendingStore(db, (work) => inTransaction(db, work), addActivity),
+    briefings: createBriefingStore(db, (work) => inTransaction(db, work), addActivity),
 
     close() {
       db.close();

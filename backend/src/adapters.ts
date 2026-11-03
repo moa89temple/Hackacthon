@@ -2,6 +2,8 @@ import type { BuddysBrowser } from "./buddys-browser.ts";
 import { containerBrowser, type ContainerBrowserSettings } from "./container-browser.ts";
 import { anthropicClaude, type Claude } from "./claude.ts";
 import { systemClock, type Clock } from "./clock.ts";
+import { firebaseNotifierFromFile } from "./firebase-notifier.ts";
+import type { Notifier } from "./notifier.ts";
 import { realWeb, type Web } from "./web.ts";
 
 /**
@@ -13,16 +15,20 @@ export interface Adapters {
   clock: Clock;
   browser: BuddysBrowser;
   web: Web;
+  notifier: Notifier;
 }
 
 export function productionAdapters(
   secrets: { anthropicApiKey: string },
   browserSettings: ContainerBrowserSettings,
+  /** Where the Firebase service account file is. Without one, phone notifications are off. */
+  firebaseServiceAccountFile?: string,
 ): Adapters {
   return {
     claude: anthropicClaude(secrets.anthropicApiKey),
     clock: systemClock,
     browser: containerBrowser(browserSettings),
     web: realWeb(),
+    notifier: firebaseNotifierFromFile(firebaseServiceAccountFile, systemClock),
   };
 }
