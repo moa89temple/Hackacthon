@@ -586,7 +586,7 @@ describe("the login", () => {
 
     await backend.readNow(NAVIGATE360);
 
-    expect((await statusOf()).lastReadProblem).toMatch(/in control/);
+    expect((await statusOf()).lastReadProblem).toMatch(/a Takeover was open/);
     expect(advisors()).toEqual([before]);
   });
 });

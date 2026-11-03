@@ -481,7 +481,7 @@ describe("when the Student isn't ready", () => {
     });
 
     expect(browser.actions.length).toBeLessThanOrEqual(1);
-    expect(output).toMatch(/in control/i);
+    expect(output).toMatch(/Takeover/i);
   });
 
   it("says plainly when the login has expired", async () => {

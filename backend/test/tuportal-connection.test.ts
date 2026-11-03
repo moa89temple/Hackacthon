@@ -479,7 +479,7 @@ describe("the login", () => {
     await readAgain();
 
     expect(pagesOpened()).toEqual([]);
-    expect((await statusOf()).lastReadProblem).toMatch(/in control/);
+    expect((await statusOf()).lastReadProblem).toMatch(/a Takeover was open/);
   });
 });
 

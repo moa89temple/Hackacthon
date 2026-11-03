@@ -492,7 +492,7 @@ describe("while the Student is in control", () => {
     await backend.readNow(CANVAS);
 
     expect(pagesOpened()).toEqual([]);
-    expect((await statusOf()).lastReadProblem).toMatch(/You're in control/);
+    expect((await statusOf()).lastReadProblem).toMatch(/a Takeover was open/);
     expect((await statusOf()).needsLogin).toBe(false);
   });
 });
