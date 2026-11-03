@@ -87,6 +87,8 @@ export interface PageToTakeIn {
   event: ListedEvent | null;
   /** The Goal a search found this page for. */
   goal: GoalMatch | null;
+  /** All the Goals to check it against, for a page that wasn't found by searching for any one of them. */
+  goals?: GoalMatch[];
 }
 
 function extractionRequest(model: string, { url, page, event }: PageToTakeIn, goals: GoalMatch[], today: string): ClaudeRequest {
@@ -192,7 +194,8 @@ export async function takeInOpportunityPage(
   const { url, page, event, goal } = input;
   // Those it's been read for and this one, so that a read for one Goal can't lose what's there for another.
   const earlier = store.goalsOfPage(THE_STUDENT, url);
-  const goals = goal && !earlier.some(({ key }) => key === goal.key) ? [...earlier, goal] : earlier;
+  const wanted = [...(goal ? [goal] : []), ...(input.goals ?? [])];
+  const goals = [...earlier, ...wanted.filter((one) => !earlier.some(({ key }) => key === one.key))];
   const textHash = hashOf(input, goals);
   if (store.pageHash(url) === textHash) {
     store.confirmPage(url, page.title, now);

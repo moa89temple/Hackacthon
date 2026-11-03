@@ -101,6 +101,10 @@ export interface OpportunityStore {
   confirmSeen(url: string, at: Date): void;
   /** Its Source says it's off, so it leaves now, saved or not. */
   removePage(url: string): void;
+  /** When this page was last read, whether or not anything was found on it. */
+  pageLastReadAt(url: string): Date | null;
+  /** Every page these say to, as removePage does. Only for inside a transaction that's already open. */
+  removePagesWithoutTransaction(isGone: (url: string) => boolean): void;
   /** Pages with something on them, still listed by their last reading, that hasn't been seen there since then. */
   pagesLastSeenBefore(before: Date): string[];
   /** Takes out what hasn't been seen on its page since then. What's left with no page leaves, unless it was reported. */
@@ -128,7 +132,8 @@ export function createOpportunityStore(
   inTransaction: <T>(work: () => T) => T,
   addActivity: (studentId: string, entry: NewActivityEntry) => void,
 ): OpportunityStore {
-  const selectPage = db.prepare(`SELECT text_hash FROM opportunity_pages WHERE url = ?`);
+  const selectPage = db.prepare(`SELECT text_hash, last_read_at FROM opportunity_pages WHERE url = ?`);
+  const selectAllPages = db.prepare(`SELECT url FROM opportunity_pages`);
   const upsertPage = db.prepare(
     `INSERT INTO opportunity_pages (url, title, text_hash, last_read_at) VALUES (?, ?, ?, ?)
      ON CONFLICT (url) DO UPDATE SET title = excluded.title, text_hash = excluded.text_hash, last_read_at = excluded.last_read_at`,
@@ -233,6 +238,18 @@ export function createOpportunityStore(
         deletePage.run(url);
         clearOrphans();
       });
+    },
+
+    pageLastReadAt: (url) => dateOrNull((selectPage.get(url) as any)?.last_read_at),
+
+    removePagesWithoutTransaction(isGone) {
+      for (const { url } of selectAllPages.all() as any[]) {
+        if (!isGone(url)) continue;
+        deletePageMentions.run(url);
+        deletePageGoals.run(url);
+        deletePage.run(url);
+      }
+      clearOrphans();
     },
 
     pagesLastSeenBefore: (before) => (selectPagesLastSeenBefore.all(before.toISOString()) as any[]).map((row) => row.url),

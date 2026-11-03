@@ -26,11 +26,15 @@ export function readPermissionGiven(connectionName: string, at: Date): NewActivi
   return { kind: "read_permission_given", title: `You gave Buddy a Read Permission for ${connectionName}`, at };
 }
 
-export function readPermissionRevoked(connectionName: string, hadAddress: boolean, at: Date): NewActivityEntry {
+export function readPermissionRevoked(connectionName: string, hadAddress: boolean, at: Date, foundOpportunities = false): NewActivityEntry {
   return {
     kind: "read_permission_revoked",
     title: `You revoked the Read Permission for ${connectionName}`,
-    detail: hadAddress ? "Buddy deleted the address and every fact from it." : "Buddy deleted every fact from it.",
+    detail: foundOpportunities
+      ? "Buddy deleted every fact from it, and every Opportunity that came only from it."
+      : hadAddress
+        ? "Buddy deleted the address and every fact from it."
+        : "Buddy deleted every fact from it.",
     at,
   };
 }
