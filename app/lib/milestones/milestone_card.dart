@@ -9,13 +9,26 @@ const _mostSourcesShown = 3;
 /// A Standard Milestone with its date and Source, on the Today tab and in the conversation.
 /// Everything on it comes from the backend's own record of the page, never from what Claude wrote.
 class MilestoneCard extends StatefulWidget {
-  const MilestoneCard({super.key, required this.milestone, required this.openPhone, this.announce = false});
+  const MilestoneCard({
+    super.key,
+    required this.milestone,
+    required this.openPhone,
+    this.announce = false,
+    this.label = 'Standard Milestone',
+    this.notes = const [],
+  });
 
   final StandardMilestone milestone;
   final PhoneOpener openPhone;
 
   /// True when it has just appeared, so it should be read out.
   final bool announce;
+
+  /// What a screen reader calls it.
+  final String label;
+
+  /// More lines for one from the Roadmap, such as its Goal.
+  final List<String> notes;
 
   @override
   State<MilestoneCard> createState() => _MilestoneCardState();
@@ -59,6 +72,7 @@ class _MilestoneCardState extends State<MilestoneCard> {
       milestone.when,
       ?milestone.term,
       if (milestone.passed) 'This date has passed.',
+      ...widget.notes,
     ];
     return Card(
       // It holds a control as well as words, so it's a set of separate nodes rather than one.
@@ -73,7 +87,7 @@ class _MilestoneCardState extends State<MilestoneCard> {
             Semantics(
               container: true,
               liveRegion: widget.announce,
-              label: 'Standard Milestone: ${milestone.name}. ${lines.map((line) => line.endsWith('.') ? line : '$line.').join(' ')}',
+              label: '${widget.label}: ${milestone.name}. ${lines.map((line) => line.endsWith('.') ? line : '$line.').join(' ')}',
               excludeSemantics: true,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

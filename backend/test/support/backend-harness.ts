@@ -13,6 +13,7 @@ import { MovableClock } from "./movable-clock.ts";
 import { saveOfficePages, TEST_OFFICES } from "./office-pages.ts";
 import { readEvents } from "./read-events.ts";
 import { RecordingBrowser } from "./recording-browser.ts";
+import { RecordingNotifier } from "./recording-notifier.ts";
 import { SavedWeb } from "./saved-web.ts";
 import { ScriptedClaude } from "./scripted-claude.ts";
 
@@ -55,6 +56,7 @@ export class BackendHarness {
   readonly clock = new MovableClock("2026-11-02T14:00:00Z");
   readonly browser = new RecordingBrowser();
   readonly web = new SavedWeb();
+  readonly notifier = new RecordingNotifier();
   readonly #directory = mkdtempSync(join(tmpdir(), "buddy-test-"));
   #backend!: RunningBackend;
   /** The key of the phone every helper here acts as, paired the way the real app pairs. */
@@ -90,7 +92,7 @@ export class BackendHarness {
 
   async #boot(): Promise<void> {
     this.#backend = await startBackend({
-      adapters: { claude: this.claude, clock: this.clock, browser: this.browser, web: this.web },
+      adapters: { claude: this.claude, clock: this.clock, browser: this.browser, web: this.web, notifier: this.notifier },
       sites: this.#sites,
       publicHosts: [new URL(PUBLIC_TEST_PAGE).hostname],
       connectionTypes: [googleCalendar, warnedConnection, ...this.#extraConnectionTypes],
@@ -127,6 +129,41 @@ export class BackendHarness {
   /** What the backend's timer calls each minute, for Opportunities. */
   get opportunityDiscovery(): RunningBackend["opportunityDiscovery"] {
     return this.#backend.opportunityDiscovery;
+  }
+
+  /** What the backend's timer calls each minute, for Briefings. */
+  get briefings(): RunningBackend["briefings"] {
+    return this.#backend.briefings;
+  }
+
+  /** What the Today tab asks for. */
+  async latestBriefing(): Promise<any> {
+    const response = await fetch(`${this.url}/briefings/latest`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { briefing: any }).briefing;
+  }
+
+  /** What the You tab shows. */
+  async briefingSettings(): Promise<any> {
+    const response = await fetch(`${this.url}/briefings/settings`, { headers: this.deviceHeaders });
+    return await response.json();
+  }
+
+  /** The Student saving new times in the You tab. */
+  changeBriefingTimes(times: unknown): Promise<Response> {
+    return fetch(`${this.url}/briefings/settings`, {
+      method: "PUT",
+      headers: { ...this.deviceHeaders, "content-type": "application/json" },
+      body: JSON.stringify(times),
+    });
+  }
+
+  /** The app telling the backend where to reach this phone. */
+  registerPushToken(token: unknown, key: Record<string, string> = this.deviceHeaders): Promise<Response> {
+    return fetch(`${this.url}/devices/push-token`, {
+      method: "PUT",
+      headers: { ...key, "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
   }
 
   /** What the rest of the backend sees of the Standard Milestones. */

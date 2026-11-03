@@ -14,4 +14,8 @@ export class MovableClock implements Clock {
   moveForward(milliseconds: number): void {
     this.#now = new Date(this.#now.getTime() + milliseconds);
   }
+
+  moveTo(moment: string): void {
+    this.#now = new Date(moment);
+  }
 }

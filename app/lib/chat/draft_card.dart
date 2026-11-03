@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../backend/buddy_backend.dart';
+import '../widgets/work_in_progress.dart';
 import 'chat_controller.dart';
 import 'draft_edit_screen.dart';
 import 'outlook.dart';
@@ -87,6 +88,7 @@ class _DraftCardState extends State<DraftCard> {
   Future<void> _edit() async {
     final saved = await Navigator.of(context).push<DraftSaved>(
       MaterialPageRoute(
+        settings: workInProgress,
         builder: (context) => DraftEditScreen(
           draft: _draft,
           onSave: (subject, body) => widget.chat.editDraft(_draft.id, subject: subject, body: body),

@@ -3,6 +3,14 @@
 .env.*
 !.env.example
 
+# Firebase: the app's config and the backend's service account, whose key can send to the phone
+app/android/app/google-services.json
+app/ios/Runner/GoogleService-Info.plist
+app/lib/firebase_options.dart
+backend/secrets/
+*service-account*.json
+*firebase-adminsdk*.json
+
 # Dependencies and build output
 node_modules/
 .next/

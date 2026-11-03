@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../activity/activity_screen.dart';
 import '../backend/buddy_backend.dart';
+import '../briefings/briefings_controller.dart';
+import '../briefings/briefings_section.dart';
+import '../briefings/phone_notifications_controller.dart';
 import '../connections/connections_controller.dart';
 import '../connections/connections_section.dart';
 import '../profile/profile_controller.dart';
@@ -19,8 +22,12 @@ class YouTab extends StatelessWidget {
     required this.connections,
     required this.roadmap,
     required this.sending,
+    required this.briefings,
+    required this.phoneNotifications,
   });
 
+  final BriefingsController briefings;
+  final PhoneNotificationsController phoneNotifications;
   final BuddyBackend backend;
   final ProfileController profile;
   final ConnectionsController connections;
@@ -44,6 +51,8 @@ class YouTab extends StatelessWidget {
         GoalsSection(roadmap: roadmap),
         const SizedBox(height: 32),
         ProfileSection(profile: profile),
+        const SizedBox(height: 32),
+        BriefingsSection(briefings: briefings, phone: phoneNotifications),
         const SizedBox(height: 32),
         SendingSection(sending: sending),
         const SizedBox(height: 32),

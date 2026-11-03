@@ -10,6 +10,7 @@ import { createBrowserAccess, TakeoverInProgress, type Site } from "../../src/br
 import { PageBlocked, type FormToSubmit } from "../../src/buddys-browser.ts";
 import { canvasAt } from "../../src/canvas.ts";
 import { EXIT_LOGIN_NEEDED, runCanvasCheck } from "../../src/canvas-check.ts";
+import { offNotifier } from "../../src/notifier.ts";
 import { CANVAS_BLOCKED_PAGES, canvasReadablePages } from "../../src/canvas-rules.ts";
 import type { ConnectionType } from "../../src/connections.ts";
 import { containerBrowser } from "../../src/container-browser.ts";
@@ -173,6 +174,7 @@ async function bootBackend(): Promise<void> {
       clock: systemClock,
       browser,
       web: { get: () => { throw new Error("The web isn't part of these checks"); } },
+      notifier: offNotifier("Notifications aren't part of these checks"),
     },
     sites: SITES,
     publicHosts: [PUBLIC_HOST],

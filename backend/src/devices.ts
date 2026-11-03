@@ -28,6 +28,8 @@ export interface Devices {
    */
   liveViewCookie(headers: IncomingHttpHeaders, liveViewToken: string): string | null;
   anyPaired(): boolean;
+  /** Which paired phone a request comes from, as the hash that's stored. Null if it doesn't carry a good key. */
+  keyHashOf(headers: IncomingHttpHeaders): string | null;
 }
 
 export function createDevices({ store, clock }: { store: Store; clock: Clock }): Devices {
@@ -91,6 +93,8 @@ export function createDevices({ store, clock }: { store: Store; clock: Clock }):
     anyPaired() {
       return store.deviceKeyHashes().length > 0;
     },
+
+    keyHashOf: presentedKeyHash,
   };
 }
 
