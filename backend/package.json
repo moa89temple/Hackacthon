@@ -17,6 +17,7 @@
     "smoke:handoff": "node scripts/smoke-handoff.ts",
     "smoke:milestones": "node scripts/smoke-milestones.ts",
     "smoke:roadmap": "node scripts/smoke-roadmap.ts",
+    "smoke:opportunities": "node scripts/smoke-opportunities.ts",
     "save-bulletin-pages": "node scripts/save-bulletin-pages.ts",
     "check-login": "node scripts/check-login.ts",
     "forget-login": "node scripts/forget-login.ts",

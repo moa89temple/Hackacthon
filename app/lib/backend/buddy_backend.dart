@@ -255,6 +255,66 @@ class StandardMilestone {
   final List<GuidebookSource> sources;
 }
 
+/// Something with a deadline or a date, as the backend shows it. Everything here comes from its record of the
+/// page, never from what Claude wrote.
+class Opportunity {
+  const Opportunity({
+    required this.id,
+    required this.name,
+    required this.summary,
+    required this.when,
+    required this.cost,
+    this.worthItBecause,
+    required this.outsideTemple,
+    this.place,
+    this.forGoals = const [],
+    required this.saved,
+    required this.sources,
+  });
+
+  factory Opportunity.fromJson(Map<String, dynamic> json) => Opportunity(
+        id: json['id'] as int,
+        name: json['name'] as String,
+        summary: json['summary'] as String,
+        when: json['when'] as String,
+        cost: json['cost'] as String,
+        worthItBecause: json['worthItBecause'] as String?,
+        outsideTemple: json['outsideTemple'] as bool,
+        place: json['place'] as String?,
+        forGoals: [for (final goal in json['forGoals'] as List<dynamic>) goal as String],
+        saved: json['saved'] as bool,
+        sources: [
+          for (final source in json['sources'] as List<dynamic>) GuidebookSource.fromJson(source as Map<String, dynamic>),
+        ],
+      );
+
+  final int id;
+  final String name;
+  final String summary;
+
+  /// The date in words.
+  final String when;
+
+  /// What it costs in Buddy's own words, which always says something.
+  final String cost;
+
+  /// The one line on why it's worth its fee. Anything with a fee has one.
+  final String? worthItBecause;
+  final bool outsideTemple;
+  final String? place;
+  final List<String> forGoals;
+  final bool saved;
+  final List<GuidebookSource> sources;
+}
+
+/// An Opportunity's card in the conversation. Not const, so that each is its own object and the newest can
+/// be told from earlier ones. With no Opportunity, Buddy no longer shows it.
+class OpportunityCardItem extends ConversationItem {
+  OpportunityCardItem(this.opportunity);
+
+  final Opportunity? opportunity;
+}
+
 /// A Standard Milestone's card in the conversation. Not const, so that each is its own object and
 /// the newest can be told from earlier ones. With no Milestone, its date has gone from its Source.
 class MilestoneCardItem extends ConversationItem {
@@ -520,6 +580,12 @@ class ReplyMilestoneCard extends ReplyEvent {
   final StandardMilestone milestone;
 }
 
+/// Buddy is showing an Opportunity's card.
+class ReplyOpportunityCard extends ReplyEvent {
+  const ReplyOpportunityCard(this.opportunity);
+  final Opportunity opportunity;
+}
+
 /// Buddy is showing a Roadmap card.
 class ReplyRoadmapCard extends ReplyEvent {
   const ReplyRoadmapCard(this.card);
@@ -656,6 +722,15 @@ abstract interface class BuddyBackend implements RoadmapBackend {
 
   /// The Standard Milestones still to come, soonest first.
   Future<List<StandardMilestone>> loadUpcomingMilestones();
+
+  /// Temple's first, then those outside Temple. Nothing whose date has passed.
+  Future<List<Opportunity>> loadOpportunities();
+
+  /// Saving one twice changes nothing.
+  Future<void> setOpportunitySaved(int id, bool saved);
+
+  /// Hides it for every Student. Also succeeds if it has already gone.
+  Future<void> reportOpportunity(int id);
 
   /// Newest first. There's nothing here to change or remove an entry, because nothing can.
   Future<List<ActivityEntry>> loadActivity();
@@ -838,6 +913,31 @@ class HttpBuddyBackend with HttpRoadmapCalls implements BuddyBackend {
     _check(response.statusCode, 'Sending a Report');
   }
 
+  @override
+  Future<List<Opportunity>> loadOpportunities() async {
+    final response = await _client.get(_baseUrl.replace(pathSegments: ['opportunities']), headers: _keyHeader);
+    _check(response.statusCode, 'Loading Opportunities');
+    return [
+      for (final opportunity in _decode(response)['opportunities'] as List<dynamic>)
+        Opportunity.fromJson(opportunity as Map<String, dynamic>),
+    ];
+  }
+
+  @override
+  Future<void> setOpportunitySaved(int id, bool saved) async {
+    final url = _baseUrl.replace(pathSegments: ['opportunities', '$id', 'saved']);
+    final response = saved ? await _client.put(url, headers: _keyHeader) : await _client.delete(url, headers: _keyHeader);
+    if (response.statusCode == 204) return;
+    _check(response.statusCode, saved ? 'Saving an Opportunity' : 'Removing a saved Opportunity');
+  }
+
+  @override
+  Future<void> reportOpportunity(int id) async {
+    final response = await _client.post(_baseUrl.replace(pathSegments: ['opportunities', '$id', 'report']), headers: _keyHeader);
+    if (response.statusCode == 204 || response.statusCode == 404) return;
+    _check(response.statusCode, 'Sending a Report');
+  }
+
   Uri _actionCardUrl(int id, [String? operation]) =>
       _baseUrl.replace(pathSegments: ['action-cards', '$id', ?operation]);
 
@@ -991,6 +1091,10 @@ class HttpBuddyBackend with HttpRoadmapCalls implements BuddyBackend {
             final Map<String, dynamic> milestone => StandardMilestone.fromJson(milestone),
             _ => null,
           }),
+        'opportunity_card' => OpportunityCardItem(switch (json['opportunity']) {
+            final Map<String, dynamic> opportunity => Opportunity.fromJson(opportunity),
+            _ => null,
+          }),
         'roadmap_card' => RoadmapCardItem(RoadmapCard.fromJson(json['card'] as Map<String, dynamic>)),
         _ => ChatMessage.fromJson(json),
       };
@@ -1005,6 +1109,7 @@ class HttpBuddyBackend with HttpRoadmapCalls implements BuddyBackend {
         'action_card' => ReplyActionCard(ActionCard.fromJson(json['card'] as Map<String, dynamic>)),
         'draft_card' => ReplyDraftCard(Draft.fromJson(json['draft'] as Map<String, dynamic>)),
         'milestone_card' => ReplyMilestoneCard(StandardMilestone.fromJson(json['milestone'] as Map<String, dynamic>)),
+        'opportunity_card' => ReplyOpportunityCard(Opportunity.fromJson(json['opportunity'] as Map<String, dynamic>)),
         'roadmap_card' => ReplyRoadmapCard(RoadmapCard.fromJson(json['card'] as Map<String, dynamic>)),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),

@@ -23,8 +23,8 @@ const SHORTEST_PAGE_CHARACTERS = 200;
 const LONGEST_PAGE_CHARACTERS = 200_000;
 
 /** A quote has to be about cost, because any sentence from the page would pass as being on the page. */
-const SAYS_FREE = /\b(free|no cost|no charge|no fee|without charge|complimentary)\b/i;
-const SAYS_PAID = /\$|\b(fees?|costs?|charges?|prices?|pay)\b/i;
+export const SAYS_FREE = /\b(free|no cost|no charge|no fee|without charge|complimentary)\b/i;
+export const SAYS_PAID = /\$|\b(fees?|costs?|charges?|prices?|pay)\b/i;
 
 export interface Discovery {
   /** Reads every office page now. Two runs at once share the first one's trip. Never throws. */
@@ -165,7 +165,7 @@ function hashOf(page: OfficePage): string {
 }
 
 /** Which day's read this moment belongs to. A moment before 6 a.m. still belongs to yesterday's. */
-function readDay(moment: Date): string {
+export function readDay(moment: Date): string {
   const { hour, year, month, day } = philadelphiaClock(moment);
   if (hour >= READ_FROM_HOUR) return `${year}-${month}-${day}`;
   // It's before 6 a.m., so 12 hours back is always yesterday, even on a day the clocks change.

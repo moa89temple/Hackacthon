@@ -64,6 +64,10 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   List<MilestoneCardItem> newestMilestoneCards = const [];
 
+  /// The Opportunities' cards from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  List<OpportunityCardItem> newestOpportunityCards = const [];
+
   /// The Roadmap cards from the latest turn, which should be read out.
   /// Cards loaded from history are never announced.
   List<RoadmapCardItem> newestRoadmapCards = const [];
@@ -98,6 +102,7 @@ class ChatController extends ChangeNotifier {
     newestActionCards = const [];
     newestDraftCard = null;
     newestMilestoneCards = const [];
+    newestOpportunityCards = const [];
     newestRoadmapCards = const [];
     _changed();
 
@@ -143,6 +148,11 @@ class ChatController extends ChangeNotifier {
             final card = MilestoneCardItem(event.milestone);
             items = [...items, card];
             newestMilestoneCards = [...newestMilestoneCards, card];
+            _changed();
+          case ReplyOpportunityCard():
+            final card = OpportunityCardItem(event.opportunity);
+            items = [...items, card];
+            newestOpportunityCards = [...newestOpportunityCards, card];
             _changed();
           case ReplyRoadmapCard():
             final card = RoadmapCardItem(event.card);

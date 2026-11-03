@@ -13,6 +13,7 @@ import 'device/pairing_details.dart';
 import 'device/pairing_screen.dart';
 import 'device/qr_scanner.dart';
 import 'milestones/milestones_controller.dart';
+import 'opportunities/opportunities_controller.dart';
 import 'profile/profile_controller.dart';
 import 'roadmap/roadmap_controller.dart';
 import 'roadmap/roadmap_tab.dart';
@@ -240,6 +241,7 @@ class _TabsState extends State<_Tabs> {
   )..load();
   late final MilestonesController _milestones = MilestonesController(widget.backend)..load();
   late final RoadmapController _roadmap = RoadmapController(widget.backend)..load();
+  late final OpportunitiesController _opportunities = OpportunitiesController(widget.backend)..load();
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
   int _selected = 0;
@@ -259,6 +261,7 @@ class _TabsState extends State<_Tabs> {
     if (index == _roadmapTab) _roadmap.load();
     if (index == _todayTab) {
       _milestones.load();
+      _opportunities.load();
       // A read since the last look may have found that a login expired.
       _connections.load();
     }
@@ -304,6 +307,7 @@ class _TabsState extends State<_Tabs> {
     _connections.dispose();
     _milestones.dispose();
     _roadmap.dispose();
+    _opportunities.dispose();
     super.dispose();
   }
 
@@ -318,8 +322,8 @@ class _TabsState extends State<_Tabs> {
       body: IndexedStack(
         index: _selected,
         children: [
-          BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, openPhone: widget.openPhone, openDraft: widget.openDraft),
-          TodayTab(milestones: _milestones, connections: _connections, openPhone: widget.openPhone),
+          BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, opportunities: _opportunities, openPhone: widget.openPhone, openDraft: widget.openDraft),
+          TodayTab(milestones: _milestones, opportunities: _opportunities, connections: _connections, openPhone: widget.openPhone),
           RoadmapTab(roadmap: _roadmap, openPhone: widget.openPhone, askBuddy: _askBuddy),
           YouTab(
             backend: widget.backend,

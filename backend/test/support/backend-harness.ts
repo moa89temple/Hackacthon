@@ -124,6 +124,11 @@ export class BackendHarness {
     return this.#backend.discovery;
   }
 
+  /** What the backend's timer calls each minute, for Opportunities. */
+  get opportunityDiscovery(): RunningBackend["opportunityDiscovery"] {
+    return this.#backend.opportunityDiscovery;
+  }
+
   /** What the rest of the backend sees of the Standard Milestones. */
   get milestones(): RunningBackend["milestones"] {
     return this.#backend.milestones;

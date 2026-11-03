@@ -46,6 +46,12 @@ export interface GuardPolicy {
    * Read Permission, it's for that site alone, and it still can't change anything.
    */
   forLoginCheck(siteId: string): RequestGuard;
+  /**
+   * For reading one public page that's on no list, such as a search result. It may open only that page's
+   * exact host, it only ever reads, and it stays out of every Connection and sign-on, even one with a
+   * Read Permission, because those logins are in this browser and the page could be anyone's.
+   */
+  forPublicPage(address: string): RequestGuard;
   /** For one approved step. Only the gate in BrowserAccess asks for this. */
   forApprovedStep(): ArmableGuard;
   /** Whether this is a page Buddy never opens, whatever a card says. */
@@ -175,6 +181,26 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
       check: (request) => checkRequest(request, (id) => id === siteId || hasReadPermission(id), neverApproved),
     }),
 
+    forPublicPage(address) {
+      const openedHost = withoutFinalDot(URL.parse(address)?.hostname ?? "");
+      return {
+        check(request) {
+          const url = URL.parse(request.url);
+          if (!url) return refuse("That isn't an address");
+          if (LOCAL_SCHEMES.has(url.protocol)) return allow;
+          if (!WEB_SCHEMES.has(url.protocol)) return refuse(`Buddy's Browser only goes on the web, not to ${url.protocol}`);
+          if (!READING_METHODS.has(request.method.toUpperCase())) return refuse(`A public page only gets read, so a ${request.method} request is refused: ${url.host}`);
+          if (siteEntries.some(([, site]) => isOnSite(url.hostname, site))) return refuse(`A public page stays out of the Student's Connections: ${url.host}`);
+          // Before the list below, because what the tab ends up on gets kept as having come from the address asked for.
+          if (request.opensPage && withoutFinalDot(url.hostname) !== openedHost) return refuse(`This page may only open its own host: ${url.host}`);
+          if (publicHostSet.has(url.hostname)) return allow;
+          if (isOnSignOnDomain(url.hostname)) return refuse(`A public page stays out of a single sign-on's domain: ${url.host}`);
+          if (!isPublicAddress(url.hostname)) return refuse(`This isn't a public address: ${url.host}`);
+          return allow;
+        },
+      };
+    },
+
     forApprovedStep() {
       let approved: ApprovedRequest | null = null;
       let progress: StepProgress = "disarmed";
@@ -224,7 +250,7 @@ function decodedAndLower(part: string): string {
  * it's how a page would reach this laptop or a cloud's metadata service, and URL has already turned
  * the other spellings of those, such as 2130706433, into plain numbers.
  */
-function isPublicAddress(hostname: string): boolean {
+export function isPublicAddress(hostname: string): boolean {
   const name = withoutFinalDot(hostname);
   if (name.startsWith("[") || /^\d+(\.\d+){3}$/.test(name)) return false;
   if (!name.includes(".")) return false;

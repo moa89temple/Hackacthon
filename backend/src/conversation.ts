@@ -13,6 +13,8 @@ import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from
 import { hiddenNote, maskSecrets } from "./masking.ts";
 import { newMilestoneTurn, type ToolOutcome } from "./milestone-chat.ts";
 import { NAVIGATE360_ID } from "./navigate360-rules.ts";
+import type { Opportunities, Opportunity } from "./opportunities.ts";
+import { FIND_OPPORTUNITIES_TOOL, newOpportunityTurn, reportedOpportunitiesNote } from "./opportunity-chat.ts";
 import { describeProfile, type Profile } from "./profile.ts";
 import { newRoadmapTurn } from "./roadmap-chat.ts";
 import { ROADMAP_TOOLS } from "./roadmap-tools.ts";
@@ -147,6 +149,13 @@ export interface MilestoneCardEntry {
   sentAt: string;
 }
 
+/** An Opportunity's card as it should look now. Null once its date has passed, it's reported or it's left its Source. */
+export interface OpportunityCardEntry {
+  type: "opportunity_card";
+  opportunity: Opportunity | null;
+  sentAt: string;
+}
+
 /** A Roadmap card as it stands now. Accepting it takes one tap, and it isn't a Permission. */
 export interface RoadmapCardEntry {
   type: "roadmap_card";
@@ -164,6 +173,7 @@ export type ConversationEvent =
   | { type: "action_card"; card: ActionCard }
   | { type: "draft_card"; draft: Draft }
   | { type: "milestone_card"; milestone: StandardMilestone }
+  | { type: "opportunity_card"; opportunity: Opportunity }
   | { type: "roadmap_card"; card: RoadmapCard }
   | { type: "done"; reply: ChatMessage }
   | { type: "error"; message: string };
@@ -175,7 +185,7 @@ export interface Conversation {
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
-  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry | MilestoneCardEntry | RoadmapCardEntry)[];
+  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry | MilestoneCardEntry | OpportunityCardEntry | RoadmapCardEntry)[];
 }
 
 export interface ConversationDeps {
@@ -191,11 +201,12 @@ export interface ConversationDeps {
   drafts: Drafts;
   milestones: StandardMilestones;
   roadmap: Roadmap;
+  opportunities: Opportunities;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, roadmap, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, roadmap, opportunities, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -555,9 +566,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
         const lastReply = store.listMessages(THE_STUDENT).findLast((message) => message.role === "assistant");
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${roadmap.describeForTurn()}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${drafts.newestEditNote(lastReply?.createdAt)}\n\n${QUESTIONS_REMINDER}${actionCards.noteForTurn()}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${roadmap.describeForTurn()}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${reportedOpportunitiesNote(opportunities.reportedIds())}${drafts.newestEditNote(lastReply?.createdAt)}\n\n${QUESTIONS_REMINDER}${actionCards.noteForTurn()}`,
         };
         const milestoneTurn = newMilestoneTurn({ milestones, store, logError, afterMessageId: studentMessageId!, now, turn });
+        const opportunityTurn = newOpportunityTurn({ opportunities, store, logError, afterMessageId: studentMessageId!, now, turn });
         const roadmapTurn = newRoadmapTurn({ roadmap, afterMessageId: studentMessageId!, turn, logError });
         const history = [...toClaudeMessages(store.listMessages(THE_STUDENT)), turnContext];
         const toolRounds: NewMessage[] = [];
@@ -633,6 +645,10 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   answers.push(toolResultFrom(call, outcome));
                 } else if (call.name === FIND_MILESTONES_TOOL.name) {
                   answers.push(toolResultFrom(call, milestoneTurn.find(call.input)));
+                } else if (call.name === FIND_OPPORTUNITIES_TOOL.name) {
+                  const { cards, ...outcome } = opportunityTurn.find(call.input);
+                  for (const opportunity of cards) yield { type: "opportunity_card", opportunity };
+                  answers.push(toolResultFrom(call, outcome));
                 } else if (call.name === SHOW_MILESTONE_CARDS_TOOL.name) {
                   const { cards, ...outcome } = milestoneTurn.show(call.input);
                   for (const milestone of cards) yield { type: "milestone_card", milestone };
@@ -728,6 +744,8 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const milestoneCards = store.listMilestoneCards(THE_STUDENT);
       const milestonesOnCards = milestones.withIds(milestoneCards.map((card) => card.milestoneId));
       const roadmapCards = roadmap.cards();
+      const opportunityCards = store.opportunities.listCards(THE_STUDENT);
+      const opportunitiesOnCards = opportunities.withIds(opportunityCards.map((card) => card.opportunityId));
       return store
         .listMessages(THE_STUDENT)
         .filter(isShownToStudent)
@@ -755,6 +773,13 @@ export function createConversation(deps: ConversationDeps): Conversation {
             .map((card) => ({
               type: "milestone_card" as const,
               milestone: milestonesOnCards.find((milestone) => milestone.id === card.milestoneId) ?? null,
+              sentAt: card.createdAt.toISOString(),
+            })),
+          ...opportunityCards
+            .filter((card) => card.afterMessageId === message.id)
+            .map((card) => ({
+              type: "opportunity_card" as const,
+              opportunity: opportunitiesOnCards.find((opportunity) => opportunity.id === card.opportunityId) ?? null,
               sentAt: card.createdAt.toISOString(),
             })),
           ...actionCardsSoFar
@@ -809,6 +834,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       MAKE_HANDOFF_TOOL,
       FIND_MILESTONES_TOOL,
       SHOW_MILESTONE_CARDS_TOOL,
+      FIND_OPPORTUNITIES_TOOL,
       ...ROADMAP_TOOLS,
     ],
     messages,

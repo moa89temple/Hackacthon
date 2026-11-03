@@ -263,14 +263,50 @@ An item leaves two weeks after it went missing from its page, unless another of 
 - A Report covers one item. A Resource and a Contact with the same name are two items, so the other can still show. A reported item that Haiku later names quite differently would come back as new, though it's told the reported names so as not to.
 - Search goes by words. Haiku adds everyday words for each item, and Claude picks the words to search for, but a question that shares no word with an item won't find it.
 - Only the pages on the list are read, so a new page isn't noticed. A page that moves stops answering, Activity lists it, and its address needs changing in the list. Its items leave after two weeks.
-- Opportunities aren't in the Guidebook yet (#12). The Bulletin and the academic calendar aren't in it either: Buddy reads those for Roadmaps and Standard Milestones.
+- The Bulletin and the academic calendar aren't in it: Buddy reads those for Roadmaps and Standard Milestones.
 - Reads depend on the laptop being on and awake, and on the Claude budget that #27 will limit.
 
 After changing the page list, run `npm run save-office-pages` in `backend` to refresh the saved copies the tests use. `npm run save-bulletin-pages` does the same for the Bulletin's pages.
 
+## Opportunities
+
+Opportunities are things with a date or a deadline that you could miss. On the Today tab, tap **See Opportunities**. Temple's come first, and anything from elsewhere comes after them, labeled **Outside Temple**. Tap **Save** on one and it shows at the top of Today until its date has passed. Claude finds them with its `find_opportunities` tool, which puts up their cards, and only your tap saves one.
+
+Two things find them, both from the backend's timer, so if the laptop was asleep they run when it wakes:
+
+- **Temple's events.** Once a day, from 6 a.m. Philadelphia time, Discovery reads the first 15 pages of now.temple.edu's events, which reach a little over two weeks ahead, and then each event's own page. Only a page whose words have changed goes to Haiku. The name and the date come from the list, not from Haiku.
+- **Searches for your Goals.** Haiku runs Claude's web search for each Goal, at most 5 searches, and picks at most 8 pages. A Goal is searched within a minute of being added or having its words changed, and again each week. If its search or all of its pages fail, it tries again in an hour. Only your Goal's words go into the search, and they go to Anthropic and its search provider. What a search found goes when its Goal does, unless you saved it. Its pages get read again each week whatever later searches pick, so it stays as long as its page says it.
+
+Buddy reads a page with a plain fetch if that works. If a page is built by script or turns plain fetches away, it goes through Buddy's Browser with its own guard: only that page's exact host opens, only reading gets through, and neither the page nor anything it loads can reach a Connection or Temple's sign-on, even with a Read Permission.
+
+### What's checked, and what's only asked of Claude
+
+Buddy's own code does these:
+
+- **The date.** A search's result needs the page's own words for its date, with the month's name, and they have to give that day. Otherwise it's dropped. An Opportunity with no date isn't one, so a rolling deadline is dropped too.
+- **The place.** Whether it's Outside Temple goes by the Source's address alone: `temple.edu` and its subdomains are Temple's.
+- **The Source.** An address counts only if a search really gave it, and it has to be `https` on a public address, so Claude can't make one up or point Buddy at this laptop.
+- **Fees.** Something with a fee shows only with what it costs, in words quoted from the page, and a one-line reason from Claude that it's worth it. With no amount or no reason it's hidden, even if another of its pages doesn't mention a fee. An event is treated the same if its own page gives a price that Haiku didn't. Something is only called free if the page says so in the words quoted, and those words give no price. Otherwise the card says its Source doesn't say.
+- **When it goes.** It's hidden from the day after its date, on Philadelphia's clock, saved or not. It leaves two weeks after it was last seen on its page or, for an event, on the list, and a new reading of its page that doesn't list it counts as not seeing it. An event the list says is cancelled goes at once. A Report hides it for every Student.
+
+Whether a fee is really worth it is Claude's own judgment, and so is whether a page fits a Goal. Claude is told to say what's outside Temple isn't Temple's, and that's an instruction, not a guarantee.
+
+### Known limits
+
+- **Searches are broad on purpose, for now.** There's no check on what kind of site a Source is, so a Source outside Temple can be anyone's, which goes against the glossary's rule that only trustworthy pages count. Read its Source before you sign up, and tap **Report** if it's wrong.
+- On a search's page, a fee Haiku doesn't notice shows as "Its Source doesn't say". Only an event's own page gets checked for a price Haiku left out, and that check can hide an event for a sum that wasn't its price.
+- An event that moves to another day gets a new address, so its old card shows until its old date passes or two weeks go by. So does a cancelled one whose address changed in some way other than gaining the word.
+- A PDF isn't read, and neither is a date written only in numbers, such as 12/1/2026.
+- A page that redirects to another host can't be read at all, because the plain fetch won't follow it and the guard won't open it. Neither can a Temple page that isn't on the public list, except by plain fetch.
+- Items merge by name and date, so a reworded one counts as new, and its save stays with the old one until that leaves.
+- The check that a search result isn't this laptop goes by its name, so a public name that points back here would get a plain fetch. The backend refuses any host name it doesn't know.
+- A page opened in Buddy's Browser can leave cookies in its profile, which is the one that holds your logins. It can also load things from any public host, as any public page can. The guard keeps it from reaching your logins. `npm run forget-login` doesn't clear what it leaves.
+- These runs depend on the Claude budget that #27 will limit. The first read of the events makes about 180 Haiku calls.
+- Nothing nudges you about a saved Opportunity yet: that's for the Alerts ticket.
+
 ## See what Buddy did
 
-On the You tab, tap **See your Activity**. It lists, newest first, every read of a Connection (including failed ones, and why each happened), every Read Permission you gave or revoked, each time Buddy opened a site to check your login, each day's read of Temple's office pages, each Report you made, and each of Buddy's replies, including one it couldn't finish. Tap **How Buddy decided** on a reply to see the tools it used, the Sources it looked at and the Profile facts it had.
+On the You tab, tap **See your Activity**. It lists, newest first, every read of a Connection (including failed ones, and why each happened), every Read Permission you gave or revoked, each time Buddy opened a site to check your login, each day's read of Temple's office pages and of its events, each web search for a Goal and each time it read those pages again, each Report you made, and each of Buddy's replies, including one it couldn't finish. Tap **How Buddy decided** on a reply to see the tools it used, the Sources it looked at and the Profile facts it had.
 
 The backend writes all of this itself, in words from Buddy's own code, and Claude doesn't get a say. An entry can't be edited or removed one by one: the backend has no route for it, and the store has no method for it. Later tickets add their own kinds of entry, and the app shows them as they are.
 
@@ -335,6 +371,7 @@ npm run smoke:handoff     # real Claude calls for Handoffs
 npm run smoke:guidebook   # real Temple pages and real Claude calls for the Guidebook
 npm run smoke:milestones  # real Temple pages and real Claude calls for Standard Milestones
 npm run smoke:roadmap     # real Bulletin pages and real Claude calls for a Roadmap
+npm run smoke:opportunities  # real events, a real web search and real Claude calls, printing what it found
 
 cd app
 flutter test
