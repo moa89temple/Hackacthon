@@ -264,6 +264,8 @@ A new service is refused if it overlaps Temple's domain, an existing Connection'
 - A name that leads to a public address when Buddy checks could point elsewhere later. Buddy's own requests check it at each connection. Buddy's Browser's guard goes by names, as it does everywhere.
 - The token is stored like everything else in this version, without encryption. See Out of scope in the spec.
 - A connector that only speaks the older SSE protocol can't be used, because Buddy can't ask it for its tools.
+- Revoking deletes the login on the service's own domain. If you logged in with another account, such as Google, Buddy's Browser stays logged in to that account, because Buddy can't tell which you used. The guard still keeps Buddy out of it, and the card says so.
+- A service whose own domain doesn't answer by itself, only at `www.`, can't be connected, because Buddy checks the domain first and opens it there.
 
 ## Goals and your Roadmap
 

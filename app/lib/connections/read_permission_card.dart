@@ -68,6 +68,13 @@ class _ReadPermissionCardState extends State<ReadPermissionCard> {
               header: true,
               child: Text('Let Buddy read ${widget.connection.name}?', style: theme.textTheme.titleMedium),
             ),
+            if (widget.connection.service case final service?) ...[
+              const SizedBox(height: 12),
+              _Heading('The service'),
+              _Line('Name: ${widget.connection.name}'),
+              _Line('Web address: ${service.domain}'),
+              _Line('How Buddy reads it: ${service.routeInWords}.'),
+            ],
             const SizedBox(height: 12),
             _Heading('What Buddy will read'),
             for (final line in content.reads) _Line(line),
@@ -161,7 +168,11 @@ class ConversationReadPermissionCard extends StatelessWidget {
       builder: (context, _) {
         final connection = connections.withId(connectionId);
         if (connection == null) {
-          if (!connections.couldNotLoad) return const SizedBox.shrink();
+          if (!connections.couldNotLoad) {
+            // Asking while this is being drawn would ask to draw it again.
+            WidgetsBinding.instance.addPostFrameCallback((_) => connections.lookFor(connectionId));
+            return const SizedBox.shrink();
+          }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

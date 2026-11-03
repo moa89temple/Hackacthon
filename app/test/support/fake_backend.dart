@@ -34,6 +34,9 @@ class FakeBackend with FakeRoadmapCalls, FakeSendingCalls, FakeBriefingCalls imp
   List<Connection> connections = [];
   Object? connectionsError;
 
+  /// Revoking takes it off the list altogether, as for a service the Student asked for.
+  bool revokeRemovesIt = false;
+
   /// Makes every read and revoke fail.
   Object? connectionChangeError;
   Object? giveError;
@@ -240,7 +243,9 @@ class FakeBackend with FakeRoadmapCalls, FakeSendingCalls, FakeBriefingCalls imp
   Future<Connection> revokeReadPermission(String id) async {
     if (connectionChangeError case final error?) throw error;
     revoked.add(id);
-    return _changed(id, connectionAfterRevoke);
+    final updated = _changed(id, connectionAfterRevoke);
+    if (revokeRemovesIt) connections = [for (final old in connections) if (old.id != id) old];
+    return updated;
   }
 
   @override

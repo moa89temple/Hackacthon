@@ -1256,14 +1256,16 @@ describe("revoking", () => {
     await backend.startTakeover(NOTION);
     const shown = backend.browser.actions.findLast((action) => action.type === "show") as { url: string };
     backend.browser.addressOnScreen = `${LOGIN_RETURN_ADDRESS}?code=made-up-code&state=${new URL(shown.url).searchParams.get("state")}`;
-    const revoking = connector.nextTokens;
+    const tokens = connector.nextTokens;
+    let revoked: Promise<unknown> | undefined;
     connector.web.on("POST", `${connector.origin}/token`, () => {
-      void backend.revokeReadPermission(NOTION);
-      return revoking;
+      revoked = backend.revokeReadPermission(NOTION);
+      return tokens;
     });
 
     await backend.finishTakeover();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await revoked;
+    await backend.untilReadsFinish(NOTION);
 
     expect(backend.storageContains(ACCESS_TOKEN)).toBe(false);
   });

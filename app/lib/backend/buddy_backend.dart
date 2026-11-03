@@ -458,6 +458,20 @@ class ReadPermissionCardContent {
   final AddressRequest? address;
 }
 
+/// For a service the Student asked to connect, so that they can see what they're approving.
+class ServiceDetails {
+  const ServiceDetails({required this.domain, required this.routeInWords});
+
+  factory ServiceDetails.fromJson(Map<String, dynamic> json) =>
+      ServiceDetails(domain: json['domain'] as String, routeInWords: json['routeInWords'] as String);
+
+  /// The service's own web address, which is what Buddy goes by.
+  final String domain;
+
+  /// How Buddy reads it. These words come from Buddy's code.
+  final String routeInWords;
+}
+
 /// A system Buddy can read for the Student, once they give its Read Permission.
 class Connection {
   const Connection({
@@ -470,6 +484,7 @@ class Connection {
     this.needsLogin = false,
     this.loginNotDeletedYet = false,
     this.notReadableYet,
+    this.service,
     required this.card,
   });
 
@@ -486,6 +501,10 @@ class Connection {
         needsLogin: json['needsLogin'] as bool? ?? false,
         loginNotDeletedYet: json['loginNotDeletedYet'] as bool? ?? false,
         notReadableYet: json['notReadableYet'] as String?,
+        service: switch (json['service']) {
+          final Map<String, dynamic> service => ServiceDetails.fromJson(service),
+          _ => null,
+        },
         card: ReadPermissionCardContent.fromJson(json['card'] as Map<String, dynamic>),
       );
 
@@ -508,6 +527,9 @@ class Connection {
 
   /// Its Read Permission was revoked, but its login couldn't be deleted yet. Buddy keeps trying.
   final bool loginNotDeletedYet;
+
+  /// Set when the Student asked for this, rather than it being one of Buddy's own. Its name came from the model, so it's only ever shown as plain text.
+  final ServiceDetails? service;
   final ReadPermissionCardContent card;
 }
 

@@ -99,10 +99,10 @@ const logIn = ({ name }: StoredService) => `Buddy needs you to log in to ${name}
 
 function cardFor(service: StoredService): ReadPermissionCard {
   const { name, domain, connectorUrl, loginPlan, fellBackBecause } = service;
-  const whichService = `The service: ${name}, at ${domain}. Check that it's the one you meant. Buddy goes by this web address, not by the name.`;
+  const whichService = `Check that ${domain} is the service you meant. Buddy goes by that web address, not by the name.`;
   const schedule = "Buddy reads it at 7 a.m., 1 p.m. and 7 p.m., and when you ask. Reads show in Activity, without what was read.";
   const revoking = (what: string) => `You can revoke this at any time on the You tab. That deletes every fact from it, ${what}, and takes it off your list. Whatever was already shown to Claude stays in your conversation's history until that's deleted, and Buddy is told not to use it.`;
-  const takeover = "You log in yourself through a Takeover, so Buddy never learns your password.";
+  const takeover = "You log in yourself through a Takeover, so Buddy never learns your password. If you log in with another account, such as Google, Buddy's Browser stays logged in to that account after you revoke this, because Buddy can't tell which one you used.";
 
   if (connectorUrl) {
     return {

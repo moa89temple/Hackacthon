@@ -82,6 +82,7 @@ class _ConnectionRow extends StatelessWidget {
 
   /// Exactly what goes, which depends on what this Connection holds.
   String get _whatRevokingDeletes {
+    if (connection.service != null) return "every fact from it and anything it holds to log in, including your login in Buddy's Browser, and takes it off your list";
     if (connection.logsIn) return "every fact from it and your login in Buddy's Browser";
     if (connection.card.address != null) return 'the address and every fact from it';
     return 'every fact from it';
@@ -123,6 +124,7 @@ class _ConnectionRow extends StatelessWidget {
                   header: true,
                   child: Text(connection.name, style: theme.textTheme.titleSmall),
                 ),
+                if (connection.service case final service?) Text('${service.domain}. ${service.routeInWords}.'),
                 Text(connection.notReadableYet ?? _status(context)),
                 if (connection.lastReadProblem case final problem?)
                   Text(problem, style: TextStyle(color: theme.colorScheme.error)),
@@ -168,6 +170,12 @@ class _ConnectionRow extends StatelessWidget {
                       onPressed: () => _openCard(context),
                       child: Text('Connect', semanticsLabel: 'Connect ${connection.name}'),
                     ),
+                    // It's on the list only because the Student asked, so they can change their mind.
+                    if (connection.service != null)
+                      TextButton(
+                        onPressed: () => connections.remove(connection),
+                        child: Text('Remove', semanticsLabel: 'Remove ${connection.name} from your list'),
+                      ),
                     // Buddy stays out until the Student taps Done, even if the Read Permission has gone since.
                     if (connections.takeoverSite == connection.id)
                       LogInButton(connection: connection, connections: connections),

@@ -39,6 +39,13 @@ class ConnectionsController extends ChangeNotifier {
   String? note;
   bool noteIsProblem = false;
 
+  /// A service the Student has just asked for can appear on a card before it's on this list.
+  final Set<String> _lookedFor = {};
+
+  void lookFor(String id) {
+    if (_lookedFor.add(id)) load();
+  }
+
   Connection? withId(String id) {
     for (final connection in connections ?? const <Connection>[]) {
       if (connection.id == id) return connection;
@@ -121,7 +128,14 @@ class ConnectionsController extends ChangeNotifier {
       );
       return;
     }
-    _setNote('You\'re logged in to ${finished.siteName}. Buddy opened "${finished.title}" to check.', isProblem: false);
+    _setNote(
+      switch (finished.title) {
+        final String title => 'You\'re logged in to ${finished.siteName}. Buddy opened "$title" to check.',
+        // With a connector, it's a login token that shows it worked, and Buddy opened nothing.
+        _ => "You're logged in to ${finished.siteName}.",
+      },
+      isProblem: false,
+    );
     await read(connection, sayWhenDone: false);
   }
 
@@ -184,10 +198,17 @@ class ConnectionsController extends ChangeNotifier {
     try {
       final updated = await _backend.revokeReadPermission(connection.id);
       _replace(updated);
+      // A service the Student asked for goes from the list altogether, once nothing of it is left.
+      if (connection.service != null && !updated.loginNotDeletedYet) await load();
       if (updated.loginNotDeletedYet) {
         _setNote(
           "Buddy can't read ${connection.name} any more, and deleted the facts it saved from it, but it couldn't delete your login yet. It will keep trying.",
           isProblem: true,
+        );
+      } else if (connection.service != null) {
+        _setNote(
+          "Buddy can't read ${connection.name} any more, deleted the facts it saved from it and anything it held to log in, and took it off your list.",
+          isProblem: false,
         );
       } else {
         _setNote(
@@ -198,6 +219,18 @@ class ConnectionsController extends ChangeNotifier {
         );
       }
       onFactsChanged();
+    } on Exception {
+      _setNote(couldNotReach, isProblem: true);
+    }
+  }
+
+  /// A service the Student asked for and then didn't connect. Buddy holds nothing of theirs for it, so this asks no more.
+  Future<void> remove(Connection connection) async {
+    try {
+      final updated = await _backend.revokeReadPermission(connection.id);
+      _replace(updated);
+      await load();
+      _setNote('Buddy took ${connection.name} off your list.', isProblem: false);
     } on Exception {
       _setNote(couldNotReach, isProblem: true);
     }
