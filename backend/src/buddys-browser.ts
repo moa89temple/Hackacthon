@@ -127,7 +127,7 @@ export interface EmailStep extends ApprovedEmail {
 
 export interface EmailToSend extends ApprovedEmail {
   /** Where to write a new email. */
-  composeUrl: string;
+  inboxUrl: string;
 }
 
 /** How the send routine ended. Only "sent" means it worked. */

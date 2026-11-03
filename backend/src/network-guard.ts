@@ -250,14 +250,14 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
 
     /**
      * Sending's narrow exception. Rules 1 and 2 stay as they are, and so does the read-only list. On top
-     * of them, a page only opens if it's one a read may open or the page to write an email, and exactly
+     * of them, a page only opens if it's one a read may open, and exactly
      * one request of the site's sendRequests goes through, while it's open, if it carries exactly the
      * approved email. It shuts the moment that has gone, and nothing keeps this object afterwards.
      */
     forSending(siteId) {
       const site = Object.hasOwn(sites, siteId) ? sites[siteId] : undefined;
       const rules = site?.sending;
-      const pages = [...(site?.readablePages ?? []), ...(rules?.pages ?? [])];
+      const pages = site?.readablePages ?? [];
       let approved: ApprovedEmail | null = null;
       let progress: SendProgress = "shut";
       const refusals: string[] = [];

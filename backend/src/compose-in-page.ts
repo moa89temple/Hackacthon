@@ -16,7 +16,7 @@ const ANSWER_TIMEOUT_MS = 30_000;
 /** How long the To line gets to turn what was typed into a recipient. */
 const RECIPIENT_SETTLE_MS = 500;
 
-const NEEDED = { to: "To line", subject: "subject line", body: "place for the message", send: "Send button" } as const;
+const NEEDED = { newEmail: "button to write a new email", to: "To line", subject: "subject line", body: "place for the message", send: "Send button" } as const;
 
 /**
  * The part of the send routine that happens on the page, in order: open a new email, fill it in, read it
@@ -32,9 +32,15 @@ const NEEDED = { to: "To line", subject: "subject line", body: "place for the me
  * wrong stops here, with nothing sent. See tumail-rules.ts.
  */
 export async function sendEmailOnPage(page: Page, email: EmailToSend, guard: SendGuard, beforePressing: () => string | null): Promise<EmailSending> {
-  await page.goto(email.composeUrl, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(COMPOSE_SELECTORS.ready, { state: "attached", timeout: COMPOSE_TIMEOUT_MS }).catch(() => {});
-  if (isTumailLoginPage(page.url(), [new URL(email.composeUrl).hostname, ...TUMAIL_APP_HOSTS])) return { outcome: "login_needed" };
+  await page.goto(email.inboxUrl, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(COMPOSE_SELECTORS.inboxReady, { state: "attached", timeout: COMPOSE_TIMEOUT_MS }).catch(() => {});
+  if (isTumailLoginPage(page.url(), [new URL(email.inboxUrl).hostname, ...TUMAIL_APP_HOSTS])) return { outcome: "login_needed" };
+
+  const newEmail = page.locator(COMPOSE_SELECTORS.newEmail);
+  const newEmailButtons = await newEmail.count();
+  if (newEmailButtons !== 1) return { outcome: "not_sent", why: `Outlook's inbox didn't have exactly one ${NEEDED.newEmail}: Buddy found ${newEmailButtons}, so it didn't go on.` };
+  await newEmail.click();
+  await page.waitForSelector(COMPOSE_SELECTORS.body, { state: "attached", timeout: COMPOSE_TIMEOUT_MS }).catch(() => {});
 
   const to = page.locator(COMPOSE_SELECTORS.to);
   const subject = page.locator(COMPOSE_SELECTORS.subject);

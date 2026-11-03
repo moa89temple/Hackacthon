@@ -114,7 +114,7 @@ describe("Buddy sends it", () => {
 
     expect(after.status).toBe("done");
     expect(sends()).toHaveLength(1);
-    expect(sends()[0].email).toEqual({ composeUrl: "https://outlook.office.com/mail/deeplink/compose", to: OWN_ADDRESS, subject: SUBJECT, body: FULL_BODY });
+    expect(sends()[0].email).toEqual({ inboxUrl: "https://outlook.office.com/mail/", to: OWN_ADDRESS, subject: SUBJECT, body: FULL_BODY });
   });
 
   it("gives the same card to a repeated tap, rather than a second card", async () => {

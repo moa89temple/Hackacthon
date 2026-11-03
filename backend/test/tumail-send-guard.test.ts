@@ -192,9 +192,13 @@ describe("what the guard says it stopped while open, for working out what Outloo
 });
 
 describe("reaching the window to write in", () => {
-  it.each(TUMAIL_APP_HOSTS)("opens on %s only for the send routine", (host) => {
-    const address = `https://${host}/mail/deeplink/compose`;
-    expect(policy().forSending(TUMAIL_ID).check(opening(address)).allowed).toBe(true);
+  it.each(TUMAIL_APP_HOSTS)("starts from the inbox on %s", (host) => {
+    expect(policy().forSending(TUMAIL_ID).check(opening(`https://${host}/mail/`)).allowed).toBe(true);
+  });
+
+  // Seen on 2026-11-03: it stops at Microsoft's "Pick an account", and nobody is there to pick.
+  it.each(TUMAIL_APP_HOSTS)("won't open the address that writes a new email on %s", (host) => {
+    expect(policy().forSending(TUMAIL_ID).check(opening(`https://${host}/mail/deeplink/compose`)).allowed).toBe(false);
   });
 
   it("can still see that a login has expired", () => {
@@ -203,7 +207,7 @@ describe("reaching the window to write in", () => {
   });
 
   it("doesn't open with no Read Permission", () => {
-    expect(policy([]).forSending(TUMAIL_ID).check(opening("https://outlook.office.com/mail/deeplink/compose")).allowed).toBe(false);
+    expect(policy([]).forSending(TUMAIL_ID).check(opening("https://outlook.office.com/mail/")).allowed).toBe(false);
   });
 });
 

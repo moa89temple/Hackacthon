@@ -279,14 +279,21 @@ LONG_LIST = """
 # A made-up new email, in the shape Buddy assumes Outlook's has. Nothing sends anywhere but this server.
 # Each ?variant= does one thing a real page might: see the send routine's checks.
 OUTLOOK_COMPOSE = """
-<title>New email</title>
+<title>Mail</title>
+<button id="new" aria-label="New">Create a new email message</button>
+<div id="pane"></div>
+<template id="new-email">
 <div id="to" role="textbox" aria-label="To" contenteditable="true"></div>
 <div id="cc-place"></div>
-<input id="subject" aria-label="Add a subject">
+<input id="subject" aria-label="Subject">
 <div id="body" role="textbox" aria-label="Message body" contenteditable="true"><div>Sent from a signature</div></div>
 <button id="send" aria-label="Send">Send</button>
+</template>
 <script>
   const variant = new URLSearchParams(location.search).get("variant") || "";
+  if (variant === "no-new-button") document.getElementById("new").remove();
+  document.getElementById("new")?.addEventListener("click", () => {
+  document.getElementById("pane").append(document.getElementById("new-email").content.cloneNode(true));
   const to = document.getElementById("to");
   const subject = document.getElementById("subject");
   const body = document.getElementById("body");
@@ -318,6 +325,7 @@ OUTLOOK_COMPOSE = """
     if (variant === "answers-with-an-error") return request("SendAndSaveCopy", recipient(), "&made_up=error");
     request("SendAndSaveCopy", recipient());
     if (variant === "sends-twice") { request("SendAndSaveCopy", recipient()); setTimeout(() => request("SendAndSaveCopy", recipient()), 100); }
+  });
   });
 </script>
 """
@@ -516,7 +524,7 @@ class Pages(BaseHTTPRequestHandler):
             self.page("Dashboard", '<h1>Dashboard</h1><p>Your courses</p><button>Open a course</button>')
         elif self.path == "/home":
             self.redirect("/login-required")
-        elif self.path.split("?")[0] == "/mail/deeplink/compose":
+        elif self.path.startswith("/mail/?variant="):
             self.send_response(200)
             self.page_with_type("text/html", f"<!doctype html>{OUTLOOK_COMPOSE}".encode())
         elif self.path == "/login-required":

@@ -119,12 +119,14 @@ export function contactWithAddress(address: string, contacts: ContactAddress[]):
  * card, so none of it makes reading any broader. See forSending in network-guard.ts.
  */
 
-/** UNVERIFIED: that this address opens a new email by itself. The app's Open in Outlook button already uses it, on the phone. */
-const COMPOSE_PATH = "/mail/deeplink/compose";
-
-/** UNVERIFIED: each of these. The roles and labels Outlook's compose window has, which are all there is to go by. */
+/**
+ * Seen on 2026-11-03, with a real login and the guard shut: the send routine starts from the inbox and taps New,
+ * which opens a new email with all but Bcc of these, on the same address. Going straight to /mail/deeplink/compose
+ * stops at Microsoft's "Pick an account", where nobody is there to pick, so the guard refuses it.
+ */
 export const COMPOSE_SELECTORS = {
-  ready: `[aria-label="Message body"][contenteditable="true"], ${LOGIN_FORM}`,
+  inboxReady: `button[aria-label="New"], ${LOGIN_FORM}`,
+  newEmail: 'button[aria-label="New"]',
   to: '[aria-label="To"]',
   cc: '[aria-label="Cc"]',
   bcc: '[aria-label="Bcc"]',
@@ -147,8 +149,7 @@ const SENDS_THE_MESSAGE = new Set(["SendAndSaveCopy", "SendOnly"]);
 /** The home address and hosts are only ever something else for made-up pages in the checks of the real browser. */
 export function tumailSending(appHosts: string[], home: string = TUMAIL_HOME): SendingRules {
   return {
-    composeUrl: new URL(COMPOSE_PATH, home).href,
-    pages: appHosts.map((host) => ({ host, path: /^\/mail(?:\/\d+)?\/deeplink\/compose\/?$/ })),
+    inboxUrl: home,
     sendRequests: appHosts.map((host) => ({
       method: "POST",
       host,

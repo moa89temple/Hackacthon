@@ -1545,7 +1545,7 @@ describe("the send routine", () => {
   const composeGuards = createGuardPolicy({ sites: composeSites, publicHosts: [], hasReadPermission: () => true });
   const sendOn = (variant: string, beforePressing: () => string | null = () => null) => {
     const guard = composeGuards.forSending(TUMAIL_ID);
-    return { guard, sent: browser.sendEmail({ ...EMAIL, composeUrl: `${sending.composeUrl}?variant=${variant}` }, guard, beforePressing) };
+    return { guard, sent: browser.sendEmail({ ...EMAIL, inboxUrl: `${sending.inboxUrl}?variant=${variant}` }, guard, beforePressing) };
   };
   const sendsInLedger = () => pathsThatChanged().filter((path) => path.includes("action=CreateItem"));
 
@@ -1606,6 +1606,12 @@ describe("the send routine", () => {
     expect(await sent).toEqual({ outcome: "not_sent", why: "Something changed." });
 
     expect(guard.progress()).toBe("shut");
+    expect(sendsInLedger()).toEqual([]);
+  });
+
+  it("sends nothing from an inbox with no button to write a new email", async () => {
+    expect(await sendOn("no-new-button").sent).toMatchObject({ outcome: "not_sent" });
+
     expect(sendsInLedger()).toEqual([]);
   });
 

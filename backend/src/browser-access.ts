@@ -57,10 +57,8 @@ export interface KnownRequest {
  * network-guard.ts.
  */
 export interface SendingRules {
-  /** Where to write a new email. */
-  composeUrl: string;
-  /** The pages only the send routine opens, on top of the site's readablePages. */
-  pages: PagePattern[];
+  /** Where the send routine starts, to write a new email from. It opens only what a read may open. */
+  inboxUrl: string;
   /** The only requests that can carry the send. */
   sendRequests: KnownRequest[];
   /** Null only when the request carries exactly this email and nothing more. In Buddy's words, with none of the email's. */
@@ -365,9 +363,9 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
       const rules = Object.hasOwn(sites, step.site) ? sites[step.site]!.sending : undefined;
       if (!rules) throw new NoActionPermission();
       const guard = guards.forSending(step.site);
-      failIfGuardRefuses(guard, rules.composeUrl);
+      failIfGuardRefuses(guard, rules.inboxUrl);
       try {
-        const email = { composeUrl: rules.composeUrl, to: step.to, subject: step.subject, body: step.body };
+        const email = { inboxUrl: rules.inboxUrl, to: step.to, subject: step.subject, body: step.body };
         const sent = await browser.sendEmail(email, guard, () => beforePressing(step));
         // Once the guard has opened, Send has been pressed, whatever the browser makes of what followed.
         return sent.outcome === "not_sent" && guard.progress() !== "shut" ? { outcome: "pressed_nothing_seen" as const, why: sent.why } : sent;
