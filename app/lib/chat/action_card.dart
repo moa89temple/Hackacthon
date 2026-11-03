@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
+import '../sending/sending_section.dart';
 import 'chat_controller.dart';
+import 'crisis_card.dart';
 
 const _couldNotApprove =
     "The app couldn't reach Buddy, so it may or may not have started. It's safe to tap Approve again: Buddy won't do it twice.";
 const _couldNotReach = "The app couldn't reach Buddy. Check that the backend is running, then try again.";
+const _couldNotSwitch = "The app couldn't reach Buddy, so it may or may not have switched. Check on the You tab, then try again.";
+const _needSomeoneNow = "Need someone right now? You don't have to wait for this email.";
+const _couldNotCall = "Your phone couldn't open that. Dial 988 yourself, or use another phone if you can.";
 
 /// Shows exactly what will happen, and asks for the Student's tap. Everything on it comes from the
 /// backend's own record of the card, never from what Claude wrote in the chat, and Approve is the only
 /// thing in the app that can give an Action Permission.
 class ActionCardView extends StatefulWidget {
-  const ActionCardView({super.key, required this.card, required this.chat, required this.announce});
+  const ActionCardView({super.key, required this.card, required this.chat, required this.openPhone, required this.announce});
 
   final ActionCard card;
   final ChatController chat;
+  final PhoneOpener openPhone;
 
   /// True when it has just appeared, so it should be read out.
   final bool announce;
@@ -41,6 +47,24 @@ class _ActionCardViewState extends State<ActionCardView> {
       problem = couldNotReach;
     }
     if (mounted) setState(() => _problem = problem);
+  }
+
+  /// Asks first, as the You tab does. Live is the Student's to choose, and it makes a new card for them to approve.
+  Future<void> _switchToLive() async {
+    final card = widget.card;
+    final yes = await askToSwitchToLive(context, goesTo: 'the person you chose', waitingCards: 'This card stops working and Buddy makes a new one for you to approve');
+    if (yes) await _tap(() => widget.chat.switchCardToLive(card), _couldNotSwitch);
+  }
+
+  /// The Crisis card may have scrolled out of view by now, and this must never stand between the Student and help.
+  Future<void> _call988() async {
+    bool opened;
+    try {
+      opened = await widget.openPhone(Uri.parse('tel:988'));
+    } on Exception {
+      opened = false;
+    }
+    if (mounted) setState(() => _problem = opened ? null : _couldNotCall);
   }
 
   @override
@@ -122,6 +146,13 @@ class _ActionCardViewState extends State<ActionCardView> {
                 onPressed: busy ? null : () => _tap(() => chat.decline(card), _couldNotReach),
                 child: Text('Decline', semanticsLabel: 'Decline: ${card.title}'),
               ),
+              if (card.offersLive) ...[
+                const SizedBox(height: 4),
+                OutlinedButton(
+                  onPressed: busy ? null : _switchToLive,
+                  child: Text('Switch to Live', semanticsLabel: 'Switch to Live: ${card.title}'),
+                ),
+              ],
             ],
             if (card.isRunning) ...[
               const SizedBox(height: 8),
@@ -132,6 +163,12 @@ class _ActionCardViewState extends State<ActionCardView> {
                 }, _couldNotReach),
                 child: Text('Check again', semanticsLabel: 'Check again: ${card.title}'),
               ),
+            ],
+            if (card.isCrisisEmail) ...[
+              const SizedBox(height: 12),
+              Semantics(container: true, child: Text(_needSomeoneNow, style: theme.textTheme.bodySmall)),
+              const SizedBox(height: 4),
+              FilledButton.icon(icon: const Icon(Icons.call), label: const Text('Call 988'), onPressed: _call988),
             ],
           ],
         ),

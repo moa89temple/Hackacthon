@@ -36,7 +36,7 @@ void main() {
       for (final label in expectedActions.keys) {
         expect(find.text(label), findsOneWidget, reason: label);
       }
-      expect(find.textContaining('Tuttleman Counseling'), findsOneWidget);
+      expect(find.text('Tuttleman Counseling at Temple'), findsOneWidget);
       expect(find.textContaining('Crisis Text Line'), findsOneWidget);
     });
 

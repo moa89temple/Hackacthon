@@ -231,6 +231,7 @@ class _TabsState extends State<_Tabs> {
   static const _youTab = 3;
 
   late final ChatController _chat = ChatController(widget.backend)
+    ..onSendingChanged = (() => _sending.load())
     ..loadHistory()
     ..addListener(_showNewCrisisCard)
     ..addListener(_refreshProfileAfterTurn);

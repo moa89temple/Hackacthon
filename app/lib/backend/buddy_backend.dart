@@ -20,6 +20,20 @@ sealed class ConversationItem {
 /// Not const, so that each card is its own object and the newest can be told from earlier ones.
 class CrisisCardItem extends ConversationItem {
   CrisisCardItem();
+
+  /// Here rather than on the screen, which forgets a card as the list scrolls and new messages move it.
+  final CrisisEmailWords emailWords = CrisisEmailWords();
+}
+
+/// What the Student has written so far on a Crisis card's offer to email someone.
+class CrisisEmailWords {
+  bool isOpen = false;
+  String name = '';
+  String address = '';
+
+  /// Null until the Student changes the words the card starts with.
+  String? subject;
+  String? body;
 }
 
 /// A Read Permission card that Buddy suggested. Its content comes from the backend's list of
@@ -73,6 +87,8 @@ class ActionCard {
     this.outcome,
     required this.fingerprint,
     required this.canDecide,
+    this.isCrisisEmail = false,
+    this.offersLive = false,
   });
 
   factory ActionCard.fromJson(Map<String, dynamic> json) => ActionCard(
@@ -85,7 +101,15 @@ class ActionCard {
         outcome: json['outcome'] as String?,
         fingerprint: json['fingerprint'] as String,
         canDecide: json['canDecide'] as bool,
+        isCrisisEmail: json['crisisEmail'] != null,
+        offersLive: (json['crisisEmail'] as Map<String, dynamic>?)?['offersLive'] == true,
       );
+
+  /// An email from the Crisis card, which keeps a way to help next to it.
+  final bool isCrisisEmail;
+
+  /// A Practice card for such an email, which offers to switch to Live while it's waiting.
+  final bool offersLive;
 
   final int id;
   final String title;
