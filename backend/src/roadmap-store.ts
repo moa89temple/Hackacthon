@@ -58,7 +58,7 @@ export interface StoredPlanPage {
   lastSeenAt: Date;
 }
 
-export type MilestoneKind = "standard_date" | "plan" | "goal" | "unwritten_rule" | "added";
+export type MilestoneKind = "standard_date" | "plan" | "goal" | "unwritten_rule" | "added" | "audit_requirement";
 
 /** One Milestone on a card or on the Roadmap. A Goal of null means it's a Standard Milestone. */
 export interface MilestoneFields {
@@ -76,6 +76,8 @@ export interface MilestoneFields {
   standardMilestoneId: number | null;
   sources: GuidebookSource[];
   sourceNote: string | null;
+  /** The fact of the DARS requirement this came from, once a card from an audit has added it. */
+  auditRequirement?: string;
 }
 
 export interface StoredRoadmapMilestone extends MilestoneFields {
@@ -91,6 +93,14 @@ export interface RoadmapCardContent {
   note: string | null;
   adds: MilestoneFields[];
   removes: { id: number; name: string }[];
+  /** On a card from comparing the audit with the Roadmap: what it shows, so that nothing's shown twice. See dars-roadmap.ts. */
+  fromAudit?: { changes: AuditChange[] };
+}
+
+/** One difference a card from an audit shows, for the requirement with this fact. */
+export interface AuditChange {
+  kind: "add" | "remove";
+  requirement: string;
 }
 
 export interface StoredRoadmapCard {
@@ -123,6 +133,8 @@ export interface RoadmapStore {
    * Roadmap and takes off what it removes, all at once, with its Activity entry.
    */
   decideCard(studentId: string, id: number, status: "accepted" | "not_now", at: Date, entry: NewActivityEntry): StoredRoadmapCard | null;
+  /** Stops a waiting card working, because what it says is no longer true. Any other card stays as it is. */
+  retireCard(studentId: string, id: number, at: Date): void;
 
   listMilestones(studentId: string): StoredRoadmapMilestone[];
   addMilestone(studentId: string, fields: MilestoneFields, at: Date): void;
@@ -273,6 +285,10 @@ export function createRoadmapStore(
         addActivity(studentId, entry);
         return findCard(studentId, id);
       });
+    },
+
+    retireCard(studentId, id, at) {
+      if (findCard(studentId, id)?.status === "waiting") setCardStatus.run("out_of_date", at.toISOString(), studentId, id);
     },
 
     listMilestones,

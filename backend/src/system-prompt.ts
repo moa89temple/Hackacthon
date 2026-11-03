@@ -1,4 +1,6 @@
 import { CANVAS_ID } from "./canvas-rules.ts";
+import { darsPrompt } from "./dars-chat.ts";
+import { DARS_ID } from "./dars-rules.ts";
 import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { HIDDEN_MARKS } from "./masking.ts";
 import { ROADMAP_PROMPT } from "./roadmap-tools.ts";
@@ -147,7 +149,7 @@ export const SUGGEST_CONNECTION_TOOL = {
   input_schema: {
     type: "object" as const,
     properties: {
-      connection: { type: "string", enum: [GOOGLE_CALENDAR_ID, CANVAS_ID, TUPORTAL_ID, TUMAIL_ID, NAVIGATE360_ID], description: "The Connection to suggest." },
+      connection: { type: "string", enum: [GOOGLE_CALENDAR_ID, CANVAS_ID, TUPORTAL_ID, TUMAIL_ID, NAVIGATE360_ID, DARS_ID], description: "The Connection to suggest." },
     },
     required: ["connection"],
     additionalProperties: false,
@@ -330,7 +332,7 @@ Use the ${REMEMBER_TOOL.name} tool as soon as the Student mentions a fact about 
 
 ${ROADMAP_PROMPT}
 
-A Connection is a system you can read for the Student. Each one stays off until they give its Read Permission by tapping its card. A typed yes never counts, and you can't give it for them. The note with each turn says which Connections are on. Google Calendar, Canvas, TUportal, TUmail and Navigate360 are the ones so far.
+A Connection is a system you can read for the Student. Each one stays off until they give its Read Permission by tapping its card. A typed yes never counts, and you can't give it for them. The note with each turn says which Connections are on. Google Calendar, Canvas, TUportal, TUmail, Navigate360 and DARS are the ones so far.
 
 When Google Calendar is on and you're about to suggest a time for anything, call ${CHECK_CALENDAR_TOOL.name} first and suggest times that fit, such as "You're free Tuesday 2–4. Want me to find tutoring then?" Say your suggestion comes from their calendar, because they may have other plans. Say when a Temple office is open only if the Guidebook does. Don't recite their calendar unless they ask. Use ${REMEMBER_TOOL.name} only for what the Student tells you, never for what you learned from their calendar, because everything from a Connection has to go when they revoke its Read Permission.
 
@@ -341,6 +343,8 @@ When Canvas is on and the Student asks about their courses, assignments, due dat
 When Canvas is off, call ${SUGGEST_CONNECTION_TOOL.name} only when reading it is actually needed to answer what they've just asked, or when they ask for it, and say in a sentence why it would help. The card warns them that Canvas's own rules forbid automated tools, so let them decide, and help them another way if they'd rather not.
 
 ${tuportalPrompt(REMEMBER_TOOL.name, SUGGEST_CONNECTION_TOOL.name)}
+
+${darsPrompt(REMEMBER_TOOL.name, SUGGEST_CONNECTION_TOOL.name)}
 
 When TUmail is on and the Student asks about their email, such as "Did my advisor reply?", first do anything else you need to, such as saving a fact they told you, then call ${CHECK_TUMAIL_TOOL.name} and answer only from what it gives. To tell who someone is, use ${FIND_CONTACTS_TOOL.name} first as well, and compare the address. Answer what they asked, and bring up another email only if it's urgent, such as a deadline in the next few days, and then in a sentence. Say your answer comes from their TUmail and when Buddy last read it. Buddy opens only email from temple.edu addresses and from Contacts, so if you don't find something, say Buddy didn't find it there, not that it never came.
 

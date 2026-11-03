@@ -223,6 +223,7 @@ class _Tabs extends StatefulWidget {
 
 class _TabsState extends State<_Tabs> {
   static const _titles = ['Buddy', 'Today', 'Roadmap', 'You'];
+  static const _buddyTab = 0;
   static const _todayTab = 1;
   static const _roadmapTab = 2;
   static const _youTab = 3;
@@ -253,6 +254,7 @@ class _TabsState extends State<_Tabs> {
 
   void _selectTab(int index) {
     setState(() => _selected = index);
+    if (index == _buddyTab) _chat.pickUpRoadmapCards();
     if (index == _youTab) _refreshYouTab();
     if (index == _roadmapTab) _roadmap.load();
     if (index == _todayTab) {

@@ -180,11 +180,13 @@ export interface ConnectionsDeps {
   profile: Profile;
   /** Where a Connection gets the Contacts. Left out, there are none. */
   contacts?: () => ContactAddress[];
+  /** After a read that worked has saved its facts, and after a revoke has deleted them. If this throws, it's logged and nothing else happens. */
+  afterFactsChanged?: (connection: string) => void;
   logError: (error: unknown) => void;
 }
 
 export function createConnections(deps: ConnectionsDeps): Connections {
-  const { types, web, browserAccess, clock, store, profile, contacts = () => [], logError } = deps;
+  const { types, web, browserAccess, clock, store, profile, contacts = () => [], afterFactsChanged, logError } = deps;
   const readsUnderWay = new Map<number, Promise<void>>();
   /** One at a time, so that nothing is deleted twice or said twice in Activity. */
   let loginDeletions: Promise<void> = Promise.resolve();
@@ -194,6 +196,15 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     const type = types.find((candidate) => candidate.id === id);
     if (!type) throw new UnknownConnection();
     return type;
+  }
+
+  /** The read or revoke has happened, whatever becomes of this. */
+  function tellFactsChanged(id: string): void {
+    try {
+      afterFactsChanged?.(id);
+    } catch (error) {
+      logError(error);
+    }
   }
 
   function statusOf(type: ConnectionType): ConnectionStatus {
@@ -270,6 +281,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
         problem: missed,
         ...(type.contactsFrom ? { contacts: type.contactsFrom(facts) } : {}),
       });
+      tellFactsChanged(type.id);
     } catch (error) {
       // Only words from Buddy's own code reach the log, so that the address can't get there in an error.
       const problem = problemFor(type, error);
@@ -339,6 +351,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
       if (store.readPermission(THE_STUDENT, id)) {
         const entry = readPermissionRevoked(type.name, type.card.address !== null, clock.now());
         store.revokeReadPermission(THE_STUDENT, id, entry, type.logsIn ? id : undefined);
+        tellFactsChanged(id);
       }
       await deleteWaitingLogins();
       return statusOf(type);

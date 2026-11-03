@@ -6,6 +6,8 @@ import { NoReadPermission, type Connections } from "./connections.ts";
 import type { CrisisCheck, CrisisOutcome } from "./crisis-check.ts";
 import type { Draft, Drafts } from "./drafts.ts";
 import { CANVAS_ID } from "./canvas-rules.ts";
+import { cardsSince, CHECK_DARS_TOOL, DARS_CARD_SHOWN, newestCardId } from "./dars-chat.ts";
+import { DARS_ID } from "./dars-rules.ts";
 import { GOOGLE_CALENDAR_ID } from "./google-calendar.ts";
 import { sameName, type Guidebook, type GuidebookItem, type GuidebookKind } from "./guidebook.ts";
 import { hiddenNote, maskSecrets } from "./masking.ts";
@@ -464,6 +466,15 @@ export function createConversation(deps: ConversationDeps): Conversation {
         "Navigate360 couldn't be checked. Tell the Student, and don't guess at who their advisor is or when their appointments are.",
       );
     }
+    if (call.name === CHECK_DARS_TOOL.name) {
+      return lookAtConnection(
+        call,
+        turn,
+        DARS_ID,
+        "DARS",
+        "DARS couldn't be checked. Tell the Student, and don't guess at their requirements. Above all, don't say a requirement is met or missing.",
+      );
+    }
     if (call.name === SEARCH_GUIDEBOOK_TOOL.name) return searchGuidebook(call, turn);
     if (call.name === FIND_CONTACTS_TOOL.name) return searchGuidebook(call, turn, "contact");
     if (call.name === CRISIS_CARD_TOOL.name) {
@@ -626,6 +637,14 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   const { cards, ...outcome } = milestoneTurn.show(call.input);
                   for (const milestone of cards) yield { type: "milestone_card", milestone };
                   answers.push(toolResultFrom(call, outcome));
+                } else if (call.name === CHECK_DARS_TOOL.name) {
+                  const newestBefore = newestCardId(roadmap.cards());
+                  const answer = await answerCall(call, studentMessageId!, turn);
+                  const fresh = cardsSince(roadmap.cards(), newestBefore);
+                  answers.push(fresh.length > 0 ? { ...answer, content: `${answer.content}\n\n${DARS_CARD_SHOWN}` } : answer);
+                  const card = askForLoginIfNeeded(DARS_ID, suggestedThisTurn, studentMessageId!, now);
+                  if (card) yield { type: "read_permission_card", connection: card };
+                  for (const roadmapCard of fresh) yield { type: "roadmap_card", card: roadmapCard };
                 } else {
                   const answer = await answerCall(call, studentMessageId!, turn);
                   answers.push(answer);
@@ -781,6 +800,7 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       CHECK_TUPORTAL_TOOL,
       CHECK_TUMAIL_TOOL,
       CHECK_NAVIGATE360_TOOL,
+      CHECK_DARS_TOOL,
       SUGGEST_CONNECTION_TOOL,
       SEARCH_GUIDEBOOK_TOOL,
       FIND_CONTACTS_TOOL,
@@ -821,7 +841,7 @@ function joinWords(earlier: string, later: string): string {
 }
 
 /** Tool rounds are for Claude. The Student sees the reply they led to, and the card. */
-function isShownToStudent(message: StoredMessage): boolean {
+export function isShownToStudent(message: StoredMessage): boolean {
   if (message.role === "system" || message.stopReason === "tool_use") return false;
   return message.role === "assistant" || textOf(message.content as ContentBlock[]) !== "";
 }

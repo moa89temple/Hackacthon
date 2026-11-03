@@ -43,7 +43,7 @@ export function attribute(element: Html.Element, name: string): string | undefin
   return element.attrs.find((attr) => attr.name === name)?.value;
 }
 
-function* elementsIn(node: Node): Generator<Html.Element> {
+export function* elementsIn(node: Node): Generator<Html.Element> {
   if (!("childNodes" in node)) return;
   for (const child of node.childNodes) {
     if ("tagName" in child) yield child;

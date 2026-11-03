@@ -126,7 +126,7 @@ const LATEST_TARGET_YEARS = 10;
 const isRealDay = (value: unknown): value is string => realDay(value) !== null;
 
 /** These dates are Buddy's suggestions. The others are Temple's, or the Student's own. */
-const TARGETS: MilestoneKind[] = ["plan", "goal", "unwritten_rule"];
+const TARGETS: MilestoneKind[] = ["plan", "goal", "unwritten_rule", "audit_requirement"];
 
 function compactDay(iso: string): string {
   return iso.replaceAll("-", "");

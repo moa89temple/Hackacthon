@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { canvas } from "./canvas.ts";
 import { CANVAS_BLOCKED_PAGES, CANVAS_HOME, CANVAS_ID, CANVAS_READABLE_PAGES } from "./canvas-rules.ts";
+import { dars } from "./dars.ts";
+import { DARS_ID, DARS_SITE } from "./dars-rules.ts";
 import { googleCalendar } from "./google-calendar.ts";
 import { MILESTONE_OFFICES } from "./milestone-pages.ts";
 import { navigate360 } from "./navigate360.ts";
@@ -42,7 +44,7 @@ export const settings = {
     liveView: { host: "127.0.0.1", port: 6080 },
   },
   /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
-  connectionTypes: [googleCalendar, canvas, tuportal, tumail, navigate360],
+  connectionTypes: [googleCalendar, canvas, tuportal, dars, tumail, navigate360],
   /**
    * Public pages Buddy's Browser may open, each as this exact host. A whole domain would be wrong:
    * Temple's single sign-on could log it in to a Connection that has no Read Permission.
@@ -77,6 +79,7 @@ export const settings = {
       blockedPages: CANVAS_BLOCKED_PAGES,
     },
     [TUPORTAL_ID]: TUPORTAL_SITE,
+    [DARS_ID]: DARS_SITE,
     [TUMAIL_ID]: {
       name: "TUmail",
       homeUrl: TUMAIL_HOME,

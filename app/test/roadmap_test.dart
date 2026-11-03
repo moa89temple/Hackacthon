@@ -216,6 +216,43 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('shows a card left by a read when the Student comes back to the Buddy tab, and reads it out', (tester) async {
+      final handle = tester.ensureSemantics();
+      final backend = FakeBackend(history: [student('Hello')]);
+      await openTab(tester, backend, 'You');
+      expect(acceptButton, findsNothing);
+
+      backend.history = [student('Hello'), RoadmapCardItem(firstCard())];
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.pumpAndSettle();
+
+      expect(acceptButton, findsOneWidget);
+      expect(tester.getSemantics(find.bySemanticsLabel(RegExp('^Roadmap card: Your first Roadmap'))).flagsCollection.isLiveRegion, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('stops offering a card that a read has stopped working', (tester) async {
+      final backend = FakeBackend(history: [student('Hello'), RoadmapCardItem(firstCard())]);
+      await openTab(tester, backend, 'You');
+
+      backend.history = [student('Hello'), RoadmapCardItem(firstCard(status: RoadmapCardStatus.outOfDate))];
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.pumpAndSettle();
+
+      expect(acceptButton, findsNothing);
+    });
+
+    testWidgets('leaves the conversation as it is when nothing about the cards is new', (tester) async {
+      final backend = FakeBackend(history: [student('Hello')]);
+      await openTab(tester, backend, 'You');
+
+      backend.history = [student('Something that would only show if the list were swapped')];
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Hello'), findsOneWidget);
+    });
+
     testWidgets('changes nothing on Not now, and says so', (tester) async {
       final backend = FakeBackend(history: [student('Make me a Roadmap'), RoadmapCardItem(firstCard())])
         ..answerToNotNow = RoadmapCardAnswer(card: firstCard(status: RoadmapCardStatus.notNow), milestones: const []);
