@@ -58,7 +58,7 @@ const TURN_INSTRUCTIONS: Record<CrisisOutcome, string> = {
   nothing: "",
   "check-in":
     " Buddy's safety check found the Student may be struggling, but it isn't clear. Gently check in and ask how they're doing, in a sentence or two, before anything else. Don't list crisis numbers unless what they say calls for it.",
-  crisis: ` Buddy's safety check found the Student's safety may be at risk, and the app has already shown them the Crisis card, so don't call ${CRISIS_CARD_TOOL.name}. Reply briefly and with care, and encourage them to reach out to someone on the card.`,
+  crisis: ` Buddy's safety check found the Student's safety may be at risk, and the app has already shown them the Crisis card, so don't call ${CRISIS_CARD_TOOL.name}. Reply briefly and with care, and encourage them to reach out to someone on the card. The card also offers to email someone they choose and asks whom, so gently ask whether there's someone they'd like to reach. If TUmail isn't connected or Buddy's Browser isn't logged in to it, say plainly that the email can't go out yet, and that everyone on the card can be reached right now.`,
 };
 
 /**

@@ -231,6 +231,7 @@ class _TabsState extends State<_Tabs> {
   static const _youTab = 3;
 
   late final ChatController _chat = ChatController(widget.backend)
+    ..onSendingChanged = (() => _sending.load())
     ..loadHistory()
     ..addListener(_showNewCrisisCard)
     ..addListener(_refreshProfileAfterTurn);
@@ -243,7 +244,10 @@ class _TabsState extends State<_Tabs> {
   late final MilestonesController _milestones = MilestonesController(widget.backend)..load();
   late final RoadmapController _roadmap = RoadmapController(widget.backend)..load();
   late final OpportunitiesController _opportunities = OpportunitiesController(widget.backend)..load();
-  late final SendingController _sending = SendingController(widget.backend, onChanged: () => _chat.checkWaitingCards())..load();
+  late final SendingController _sending = SendingController(widget.backend, onChanged: () {
+    _chat.checkWaitingCards();
+    _chat.checkCrisisOffers();
+  })..load();
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
   int _selected = 0;
@@ -258,7 +262,10 @@ class _TabsState extends State<_Tabs> {
 
   void _selectTab(int index) {
     setState(() => _selected = index);
-    if (index == _buddyTab) _chat.pickUpRoadmapCards();
+    if (index == _buddyTab) {
+      _chat.pickUpRoadmapCards();
+      _chat.checkCrisisOffers();
+    }
     if (index == _youTab) _refreshYouTab();
     if (index == _roadmapTab) _roadmap.load();
     if (index == _todayTab) {

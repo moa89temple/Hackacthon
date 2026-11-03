@@ -2,8 +2,28 @@ import 'package:flutter/material.dart';
 
 import 'sending_controller.dart';
 
-/// The You tab's control over where what Buddy sends goes. This is the only place in the app that can
-/// switch to Live, and nothing Buddy reads or writes can reach it.
+/// Asks before the switch to Live, wherever the Student started it. True only if they said yes.
+Future<bool> askToSwitchToLive(BuildContext context, {String goesTo = 'the Contact', String cardsStopping = 'Any card waiting for a tap stops working'}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      title: const Text('Switch to Live?'),
+      content: Text(
+        "What you approve will really go to $goesTo, from your TUmail, and it can't be taken back. "
+        'Buddy still sends nothing without your Approve tap. $cardsStopping, and you can switch back at any time.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Stay in Practice mode')),
+        FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Switch to Live')),
+      ],
+    ),
+  );
+  return confirmed == true;
+}
+
+/// The You tab's control over where what Buddy sends goes. The only other ways to Live are the Student's
+/// taps on the Crisis card's offer and on the Action card it makes, and nothing Buddy reads or writes can reach any of them.
 class SendingSection extends StatefulWidget {
   const SendingSection({super.key, required this.sending});
 
@@ -26,22 +46,7 @@ class _SendingSectionState extends State<SendingSection> {
   }
 
   Future<void> _askAboutLive() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        scrollable: true,
-        title: const Text('Switch to Live?'),
-        content: const Text(
-          "What you approve will really go to the Contact, from your TUmail, and it can't be taken back. "
-          'Buddy still sends nothing without your Approve tap. Any card waiting for a tap stops working, and you can switch back at any time.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Stay in Practice mode')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Switch to Live')),
-        ],
-      ),
-    );
-    if (confirmed == true) await widget.sending.switchToLive();
+    if (await askToSwitchToLive(context)) await widget.sending.switchToLive();
   }
 
   @override

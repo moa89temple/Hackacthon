@@ -117,6 +117,7 @@ It never acts without the Student's tap, and it doesn't replace advisors.
   - The card lists 988 (call or text), the Crisis Text Line (text HOME to 741741), 911, and Tuttleman Counseling at (215) 204-7276.
   - The card comes from Buddy's own code, so it appears even if the AI fails or refuses.
   - Buddy contacts no one without an Action Permission.
+  - The card also offers to email someone the Student chooses, through an Action card. It comes after the crisis Resources, which never wait for it. If TUmail isn't connected or its login has expired, Buddy says plainly that the email can't go out yet.
 
 ## Drafts and sending
 

@@ -121,6 +121,10 @@ class _MessageListState extends State<_MessageList> {
               announce: identical(item, chat.newestReply) || identical(item, chat.newestHidden),
             ),
           CrisisCardItem() => CrisisCard(
+              // Keeps its state with its own item as the list changes around it.
+              key: ObjectKey(item),
+              item: item,
+              chat: chat,
               announce: identical(item, chat.newestCard),
               openPhone: widget.openPhone,
             ),
@@ -142,6 +146,7 @@ class _MessageListState extends State<_MessageList> {
               key: ValueKey('action-card-${item.card.id}'),
               card: item.card,
               chat: chat,
+              openPhone: widget.openPhone,
               announce: chat.newestActionCards.any((newest) => identical(newest, item)),
             ),
           DraftCardItem() => DraftCard(

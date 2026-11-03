@@ -44,8 +44,8 @@ const STATUS_FOR_CLAUDE: Record<ActionCardStatus, string> = {
 /** Why the Student's tap makes no new card, when one with the same content has got this far. */
 const ALREADY_HAPPENED: Partial<Record<ActionCardStatus, string>> = {
   running: "Buddy is doing exactly this now, so it won't start it again.",
-  done: "Buddy has already done exactly this, so it won't do it again. If you have more to say, change the Draft first.",
-  unknown: "Buddy can't tell whether this happened, so it won't risk doing it twice. Please check first. If it didn't happen, you can do it yourself or change the Draft for a new card.",
+  done: "Buddy has already done exactly this, so it won't do it again. If you have more to say, change the words first.",
+  unknown: "Buddy can't tell whether this happened, so it won't risk doing it twice. Please check first. If it didn't happen, you can do it yourself or change the words for a new card.",
 };
 
 export interface CardLine {
@@ -57,6 +57,8 @@ export interface CardDescription {
   title: string;
   /** Exactly what will happen, line by line. */
   shows: CardLine[];
+  /** Only on an email from the Crisis card. It says whether the card should offer to switch to Live. */
+  crisisEmail?: { offersLive: boolean };
 }
 
 /** One card as the app gets it. The app shows the words as they are. */

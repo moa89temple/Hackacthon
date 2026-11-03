@@ -24,6 +24,7 @@ import {
 } from "./connections.ts";
 import { createConversation } from "./conversation.ts";
 import { createCrisisCheck } from "./crisis-check.ts";
+import { addCrisisEmailRoutes } from "./crisis-email-routes.ts";
 import { createDarsCards } from "./dars-roadmap.ts";
 import { DARS_ID } from "./dars-rules.ts";
 import { createDiscovery, type Discovery } from "./discovery.ts";
@@ -262,6 +263,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addActionCardRoutes(app, actionCards, isStoredId);
   addDraftRoutes(app, drafts, () => actionCards.expireDue());
   addSendingRoutes(app, { sending, actionCards, drafts, lastMessageShown: conversation.lastMessageShown, isStoredId });
+  addCrisisEmailRoutes(app, { sites: options.sites, store, sending, actionCards, contacts: () => guidebook.contacts(), lastMessageShown: conversation.lastMessageShown, isStoredId });
   addRoadmapRoutes(app, roadmap, isStoredId);
   addOpportunityRoutes(app, opportunities, isStoredId);
   app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));

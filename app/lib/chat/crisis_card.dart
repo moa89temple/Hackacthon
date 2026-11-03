@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../backend/buddy_backend.dart';
+import 'chat_controller.dart';
+import 'crisis_email_offer.dart';
+
 /// Opens a tel:, sms:, mailto: or https: address in the phone's own app. Returns false if it couldn't.
 typedef PhoneOpener = Future<bool> Function(Uri address);
 
@@ -45,7 +49,10 @@ const _crisisResources = [
 ];
 
 class CrisisCard extends StatefulWidget {
-  const CrisisCard({super.key, required this.announce, required this.openPhone});
+  const CrisisCard({super.key, required this.item, required this.chat, required this.announce, required this.openPhone});
+
+  final CrisisCardItem item;
+  final ChatController chat;
 
   /// True when it has just appeared, so it should be read out and brought into view.
   final bool announce;
@@ -58,16 +65,64 @@ class CrisisCard extends StatefulWidget {
 class _CrisisCardState extends State<CrisisCard> {
   bool _couldNotOpenLast = false;
 
+  /// True while this card's turn is still arriving and the Student hasn't scrolled themselves.
+  bool _keepingInView = false;
+  ScrollPosition? _position;
+
   @override
   void initState() {
     super.initState();
     if (widget.announce) {
       // With large text the card can be taller than the screen, and the list is anchored to its
       // bottom. This starts the Student at the top, with the title and 988.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Scrollable.ensureVisible(context, alignment: 1);
-      });
+      _bringTopIntoView();
+      // The reply goes below the card and the list is anchored to its bottom, so the reply would push
+      // the title and 988 off the top. They matter more, so the reply goes below the fold if it must.
+      // The list can also build this card again long after its turn, and then there's nothing to hold.
+      if (widget.chat.replyInProgress != null) {
+        _keepingInView = true;
+        widget.chat.addListener(_keepTopInView);
+      }
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final position = Scrollable.maybeOf(context)?.position;
+    if (identical(position, _position)) return;
+    _position?.isScrollingNotifier.removeListener(_stopIfStudentScrolled);
+    _position = position;
+    if (_keepingInView) position?.isScrollingNotifier.addListener(_stopIfStudentScrolled);
+  }
+
+  @override
+  void dispose() {
+    _stopKeepingInView();
+    super.dispose();
+  }
+
+  void _bringTopIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Scrollable.ensureVisible(context, alignment: 1);
+    });
+  }
+
+  void _keepTopInView() {
+    // A new turn has started, so what's new now is below this card.
+    _bringTopIntoView();
+    if (widget.chat.replyInProgress == null) _stopKeepingInView();
+  }
+
+  void _stopIfStudentScrolled() {
+    if (_position?.isScrollingNotifier.value == true) _stopKeepingInView();
+  }
+
+  void _stopKeepingInView() {
+    if (!_keepingInView) return;
+    _keepingInView = false;
+    widget.chat.removeListener(_keepTopInView);
+    _position?.isScrollingNotifier.removeListener(_stopIfStudentScrolled);
   }
 
   Future<void> _open(_Action action) async {
@@ -131,6 +186,14 @@ class _CrisisCardState extends State<CrisisCard> {
                   child: Text(_couldNotOpen, style: TextStyle(color: colors.error)),
                 ),
               ],
+              // Last, and on its own, so that none of it can come before or hold up the Resources above.
+              CrisisEmailOfferView(
+                words: widget.item.emailWords,
+                chat: widget.chat,
+                openPhone: widget.openPhone,
+                announce: widget.announce,
+                onOpened: _stopKeepingInView,
+              ),
             ],
           ),
         ),

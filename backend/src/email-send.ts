@@ -5,13 +5,14 @@ import { PageBlocked, SEND_EMAIL, type EmailSending, type EmailStep } from "./bu
 import type { Clock } from "./clock.ts";
 import type { Draft, Drafts } from "./drafts.ts";
 import type { ContactAddress } from "./guidebook.ts";
-import { hiddenNote } from "./masking.ts";
+import { hiddenNote, maskSecrets } from "./masking.ts";
 import type { Sending } from "./sending.ts";
 import { THE_STUDENT, type Store } from "./store.ts";
 import { addressesIn, contactWithAddress } from "./tumail-rules.ts";
 
 const NOTHING_SENT = "Nothing was sent.";
 const NEW_CARD = "Tap Buddy sends it again for a new card.";
+const NEW_CRISIS_CARD = "You can make a new one on the Crisis card.";
 const OWN_ADDRESS_IS_A_CONTACTS = "The address saved as yours belongs to a Contact, so a practice email would really reach them. Check it on the You tab.";
 
 export interface EmailSendDeps {
@@ -22,7 +23,7 @@ export interface EmailSendDeps {
   contacts: () => ContactAddress[];
   browserAccess: Pick<BrowserAccess, "sendApprovedEmail" | "currentTakeover">;
   hasReadPermission: (siteId: string) => boolean;
-  store: Pick<Store, "actionCard" | "addActivity">;
+  store: Pick<Store, "actionCard" | "addActivity" | "readPermission">;
   clock: Clock;
   logError: (error: unknown) => void;
 }
@@ -37,15 +38,46 @@ function contactAddress(draft: Draft): { address: string } | { problem: string }
   return { address: addresses[0]! };
 }
 
-const asStep = (content: unknown): EmailStep => {
+export const asStep = (content: unknown): EmailStep => {
   const step = content as EmailStep;
   const fields = [step?.site, step?.mode, step?.to, step?.contactName, step?.contactAddress, step?.subject, step?.body];
-  if (!fields.every((field) => typeof field === "string") || typeof step.draftId !== "number") throw new Error("This isn't an email on a card");
+  const draftIsRight = step?.crisis === true ? step.draftId === null : typeof step?.draftId === "number";
+  if (!fields.every((field) => typeof field === "string") || !draftIsRight) throw new Error("This isn't an email on a card");
   return step;
 };
 
+/** What the Crisis card sends once the Student has said who to email, and in what words. Only their tap can give it. */
+export interface CrisisEmailRequest {
+  name?: unknown;
+  address?: unknown;
+  subject?: unknown;
+  body?: unknown;
+}
+
 /**
- * The send routine, which only the Student's tap on "Buddy sends it" can ask for. A card holds the
+ * Why an email from the Crisis card can't go out yet, in words for the Student, or null if it can. The
+ * crisis Resources are in the app's own code, so they never wait for this or depend on it.
+ */
+export function whyCrisisEmailCantGoYet(sites: Record<string, Site>, store: Pick<Store, "readPermission">): string | null {
+  const siteId = Object.entries(sites).find(([, site]) => site.sending)?.[0];
+  if (siteId === undefined) return "Buddy can't send email yet.";
+  const permission = store.readPermission(THE_STUDENT, siteId);
+  if (!permission) return "TUmail isn't connected, so an email can't go out yet. You can connect it on the You tab.";
+  if (permission.needsLogin) return "Buddy's Browser isn't logged in to TUmail, so an email can't go out yet. Tap Log in to TUmail on the You tab.";
+  return null;
+}
+
+/** One address and nothing else, because it goes straight on the To line. */
+function wholeAddressIn(written: unknown): string | null {
+  if (typeof written !== "string") return null;
+  const address = written.trim().toLowerCase();
+  const found = addressesIn(address);
+  return found.length === 1 && found[0] === address ? address : null;
+}
+
+/**
+ * The send routine, which only the Student's tap on "Buddy sends it", or on the Crisis card's offer to
+ * email someone they chose, can ask for. That offer has no Draft, so its card is all there is of it. A card holds the
  * recipient, subject and body as they stood when it was made, and everything after that works from the
  * card: nothing is looked up again except to see that it hasn't changed. In Practice mode the recipient
  * is the Student's own address, and with no such address there's no card, because a real recipient is
@@ -60,9 +92,12 @@ export function emailSendRoutine(deps: EmailSendDeps): ActionRoutine {
   function noLongerValid(content: unknown): string | null {
     const step = asStep(content);
     const now = sending.settings();
-    if (step.mode !== now.mode) return `You switched to ${now.mode === "live" ? "Live" : "Practice mode"} after this card was made, so it no longer works. ${NEW_CARD}`;
-    if (step.mode === "practice" && step.to !== now.ownAddress) return `Your TUmail address changed after this card was made, so it no longer works. ${NEW_CARD}`;
+    const newCard = step.crisis ? NEW_CRISIS_CARD : NEW_CARD;
+    if (step.mode !== now.mode) return `You switched to ${now.mode === "live" ? "Live" : "Practice mode"} after this card was made, so it no longer works. ${newCard}`;
+    if (step.mode === "practice" && step.to !== now.ownAddress) return `Your TUmail address changed after this card was made, so it no longer works. ${newCard}`;
     if (step.mode === "practice" && contactWithAddress(step.to, contacts())) return OWN_ADDRESS_IS_A_CONTACTS;
+    // There's no Draft to have changed: the card is all there is of this email.
+    if (step.crisis) return null;
     const draft = draftWithId(step.draftId);
     if (!draft || draft.subject !== step.subject || draft.body !== step.body) return `You edited the Draft after this card was made, so it no longer works. ${NEW_CARD}`;
     const contact = contactAddress(draft);
@@ -104,6 +139,36 @@ export function emailSendRoutine(deps: EmailSendDeps): ActionRoutine {
     }
   }
 
+  /** The person the Student chose and the words they kept, from their own tap. Nothing here comes through Claude. */
+  function prepareCrisisEmail(request: CrisisEmailRequest): EmailStep {
+    const why = whyCrisisEmailCantGoYet(sites, store);
+    if (why) throw new ActionRefused(why);
+    const address = wholeAddressIn(request.address);
+    if (!address) throw new ActionRefused("That doesn't look like one email address. Check it, then try again.");
+    const [name, subject, body] = [request.name, request.subject, request.body].map((words) => (typeof words === "string" ? maskSecrets(words.trim()) : "")) as [string, string, string];
+    if (subject === "") throw new ActionRefused("This email has no subject. Add one, then try again.");
+    if (body === "") throw new ActionRefused("This email has no message. Add one, then try again.");
+    if (hiddenNote(`${name}\n${subject}\n${body}`)) {
+      throw new ActionRefused("Buddy hid something in this email, and it won't send the mark it left in its place. Change that part, then try again.");
+    }
+    const { mode, ownAddress } = sending.settings();
+    if (mode === "practice" && ownAddress === null) {
+      throw new ActionRefused("You're in Practice mode, where everything goes to your own TUmail address, and Buddy doesn't know it yet. Add it on the You tab, or switch to Live.");
+    }
+    if (mode === "practice" && contactWithAddress(ownAddress!, contacts())) throw new ActionRefused(OWN_ADDRESS_IS_A_CONTACTS);
+    return {
+      site: siteId!,
+      draftId: null,
+      crisis: true,
+      mode,
+      to: mode === "practice" ? ownAddress! : address,
+      contactName: name || address,
+      contactAddress: address,
+      subject,
+      body,
+    };
+  }
+
   return {
     kind: SEND_EMAIL,
     onlyTheStudentAsks: true,
@@ -111,6 +176,8 @@ export function emailSendRoutine(deps: EmailSendDeps): ActionRoutine {
     isAvailable: () => siteId !== undefined,
 
     prepare(input): EmailStep {
+      const crisisEmail = (input as { crisis_email?: CrisisEmailRequest } | null)?.crisis_email;
+      if (crisisEmail) return prepareCrisisEmail(crisisEmail);
       if (siteId === undefined) throw new ActionRefused("Buddy can't send email yet.");
       if (!hasReadPermission(siteId)) throw new ActionRefused("Buddy sends from TUmail, so it needs its Read Permission first. You can give it on the You tab.");
       const draft = draftWithId((input as { draft_id?: unknown } | null)?.draft_id);
@@ -145,17 +212,25 @@ export function emailSendRoutine(deps: EmailSendDeps): ActionRoutine {
         { label: "Subject", value: step.subject },
         { label: "Message", value: step.body },
       ];
+      const crisisEmail = step.crisis ? { crisisEmail: { offersLive: step.mode === "practice" } } : {};
       return step.mode === "practice"
         ? {
+            ...crisisEmail,
             title: "Send a practice email to yourself",
             shows: [
-              { label: "Practice mode", value: `This goes to you, not to ${step.contactName}.` },
+              {
+                label: "Practice mode",
+                value: step.crisis
+                  ? `This email will go to you, not to ${step.contactName}. To send it to ${step.contactName} instead, tap Switch to Live.`
+                  : `This goes to you, not to ${step.contactName}.`,
+              },
               { label: "To", value: step.to },
               { label: "In Live, this would go to", value: `${step.contactName} <${step.contactAddress}>` },
               ...email,
             ],
           }
         : {
+            ...crisisEmail,
             title: "Send a real email from your TUmail",
             shows: [{ label: "Live", value: `This really goes to ${step.contactName}.` }, { label: "To", value: step.to }, ...email],
           };

@@ -240,12 +240,74 @@ class ChatController extends ChangeNotifier {
     } on SendingRefused catch (refused) {
       return refused.message;
     }
+    _showTappedCard(card);
+    return null;
+  }
+
+  void _showTappedCard(ActionCard card) {
     final item = ActionCardItem(card);
     items = [...items.where((existing) => !(existing is ActionCardItem && existing.card.id == card.id)), item];
     newestActionCards = [item];
     newestTappedCard = item;
     _changed();
+  }
+
+  /// Called when something here has changed the mode, so that the You tab shows it.
+  VoidCallback? onSendingChanged;
+
+  /// How things stand for the Crisis card's offer. Throws if the backend can't be reached.
+  Future<CrisisEmailOffer> loadCrisisEmailOffer() => _backend.loadCrisisEmailOffer();
+
+  /// Goes up whenever a Crisis card's offer should ask again how things stand.
+  int crisisOfferChecks = 0;
+
+  /// The mode can change on the You tab or on a card, and TUmail can be connected or logged in to.
+  void checkCrisisOffers() {
+    crisisOfferChecks++;
+    _changed();
+  }
+
+  /// The Student's tap on the Crisis card's offer, which makes a card and sends nothing. Returns why
+  /// there's no card, when there isn't. Throws if the backend can't be reached.
+  Future<String?> askForCrisisEmailCard({required String name, required String address, required String subject, required String body}) async {
+    final ActionCard card;
+    try {
+      card = await _backend.askForCrisisEmailCard(name: name, address: address, subject: subject, body: body);
+    } on SendingRefused catch (refused) {
+      return refused.message;
+    }
+    _showTappedCard(card);
     return null;
+  }
+
+  /// The Student's tap on the offer to switch to Live, once they've said yes to the switch. Throws if the
+  /// backend can't be reached.
+  Future<void> switchToLive() async {
+    await _backend.switchToLive();
+    onSendingChanged?.call();
+    unawaited(checkWaitingCards());
+  }
+
+  /// The same from a Practice card, which stops that card and makes a new one needing its own Approve tap.
+  /// Returns why there's no new card, when there isn't. Throws if the backend can't be reached.
+  Future<String?> switchCardToLive(ActionCard card) async {
+    if (!_cardsBeingDecided.add(card.id)) return null;
+    _changed();
+    try {
+      String? refusal;
+      try {
+        _showTappedCard(await _backend.switchCrisisEmailToLive(card.id));
+      } on SendingRefused catch (refused) {
+        refusal = refused.message;
+      }
+      onSendingChanged?.call();
+      checkCrisisOffers();
+      await checkWaitingCards();
+      return refusal;
+    } finally {
+      _cardsBeingDecided.remove(card.id);
+      _changed();
+    }
   }
 
   /// A change somewhere else can stop a waiting card, so these ask the backend how each stands. If it
