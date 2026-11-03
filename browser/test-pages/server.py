@@ -311,6 +311,31 @@ OUTLOOK_MESSAGE = """
 </script>
 """
 
+# A made-up DARS, in the shape remembered of u.achieve. Nobody has seen the real one, and nothing here came
+# from an account. Every MARKER is something the DARS check must never print. Its scripts try what a read must
+# never do: running an audit, by opening its page and by sending the request, and deleting one.
+DARS_PAGES = {
+    "/selfservice/audit/list.html": """
+<title>MARKERPAGETITLE</title>
+<h2>Completed Audit Requests</h2>
+<table>
+  <tr><th>ID</th><th>Program</th><th>Catalog Year</th><th>Created</th><th>Audit Type</th><th>View</th><th>Delete</th></tr>
+  <tr><td>9000</td><td>MARKERPROGRAM</td><td>202636</td><td>10/30/2026 3:52 PM</td><td></td><td><a href="/selfservice/audit/read.html?id=MARKERID">View Audit</a></td><td><input type="checkbox"></td></tr>
+</table>
+<iframe src="/selfservice/audit/delete.html"></iframe>
+<script>
+  fetch('/selfservice/audit/create.html', {method: 'POST', body: 'x=1'}).catch(() => {});
+  fetch('/selfservice/audit/create.html?who=MARKERSTUDENT').catch(() => {});
+</script>
+""",
+    "/selfservice/audit/read.html?id=MARKERID": """
+<title>MARKERPAGETITLE</title>
+<p>Prepared for MARKERSTUDENT</p>
+<div class="requirement Status_OK"><div class="reqTitle">MARKERCOMPLETE</div><p>MARKERGRADE</p></div>
+<div class="requirement Status_NO"><div class="reqTitle">MARKERMISSING</div></div>
+""",
+}
+
 # A made-up Navigate360, modelled on the public scripts at /app/, /app/v1/ and /app/v2/: a page that picks
 # the version, then one that fetches late and draws inside its own element. Nothing here came from an account.
 NAVIGATE360_PAGES = {
@@ -460,6 +485,18 @@ class Pages(BaseHTTPRequestHandler):
         elif self.path in TUPORTAL_PAGES:
             self.send_response(200)
             self.page_with_type("text/html", f"<!doctype html>{TUPORTAL_PAGES[self.path]}".encode())
+        elif self.path == "/made-up-dars-login":
+            self.send_response(200)
+            self.send_header("set-cookie", "dars_session=signed-in; Path=/; HttpOnly")
+            self.page("Signed in", "<h1>Signed in</h1>")
+        elif self.path == "/selfservice/general/loginroute.html":
+            self.send_response(200)
+            self.page("MARKERPAGETITLE", "<h1>MARKERSTUDENT, log in</h1>")
+        elif self.path in DARS_PAGES and "dars_session" not in cookies:
+            self.redirect("/selfservice/general/loginroute.html")
+        elif self.path in DARS_PAGES:
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{DARS_PAGES[self.path]}".encode())
         elif self.path == "/made-up-long-list":
             self.send_response(200)
             self.page_with_type("text/html", f"<!doctype html>{LONG_LIST}".encode())

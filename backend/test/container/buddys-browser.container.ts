@@ -13,6 +13,9 @@ import { EXIT_LOGIN_NEEDED, runCanvasCheck } from "../../src/canvas-check.ts";
 import { CANVAS_BLOCKED_PAGES, canvasReadablePages } from "../../src/canvas-rules.ts";
 import type { ConnectionType } from "../../src/connections.ts";
 import { containerBrowser } from "../../src/container-browser.ts";
+import { darsAt } from "../../src/dars.ts";
+import { runDarsCheck } from "../../src/dars-check.ts";
+import { darsSiteAt } from "../../src/dars-rules.ts";
 import { createGuardPolicy } from "../../src/network-guard.ts";
 import { navigate360At } from "../../src/navigate360.ts";
 import { runNavigate360Check } from "../../src/navigate360-check.ts";
@@ -1400,5 +1403,66 @@ describe("the Navigate360 reader, against made-up pages in the real browser", ()
     await expect(access.read(`${ORIGIN}/app/v2/#/native/my/apps/as3/appointment-new`)).rejects.toThrow(PageBlocked);
 
     expect(visited()).toEqual([]);
+  });
+});
+
+describe("the DARS reader, against made-up pages in the real browser", () => {
+  const HOST = "127.0.0.9";
+  const ORIGIN = `http://${HOST}:8000`;
+  const DARS_TEST_SITE = darsSiteAt(ORIGIN, []);
+  const sites = { dars: DARS_TEST_SITE };
+  const logIn = async () => {
+    await browser.show(`${ORIGIN}/made-up-dars-login`);
+    await settle(300);
+  };
+  const visited = () => ledger().filter((entry) => entry.host.startsWith(HOST)).map((entry) => `${entry.method} ${entry.path}`);
+
+  async function runCheck() {
+    const lines: string[] = [];
+    const exitCode = await runDarsCheck({
+      browser,
+      connection: darsAt(ORIGIN),
+      sites,
+      student: () => ({ hasReadPermission: true, takeoverUnderWay: false, oldLoginRemains: false }),
+      print: (line) => lines.push(line),
+    });
+    return { exitCode, output: lines.join("\n") };
+  }
+
+  beforeEach(async () => {
+    await browser.forgetLogin([HOST]);
+    clearLedger();
+  });
+
+  it("reads both pages through the real guard, and prints nothing from them", async () => {
+    await logIn();
+
+    const { exitCode, output } = await runCheck();
+
+    expect(exitCode).toBe(0);
+    expect(output).toMatch(/list of audits \/selfservice\/audit\/list\.html: understood/);
+    expect(output).toMatch(/audit \/selfservice\/audit\/read\.html\?id=:value: understood/);
+    expect(output).not.toMatch(/marker/i);
+  });
+
+  it("lets nothing out that could run or delete an audit, whatever a page tries", async () => {
+    await logIn();
+    clearLedger();
+
+    const { output } = await runCheck();
+    await settle();
+
+    const requests = visited();
+    expect(requests).toContain("GET /selfservice/audit/list.html");
+    expect(requests.filter((request) => /create|delete/.test(request))).toEqual([]);
+    expect(requests.filter((request) => !request.startsWith("GET "))).toEqual([]);
+    expect(output).toContain("/selfservice/audit/create.html");
+  });
+
+  it("says a read with no login needs one, and takes nothing from the way to the sign-on", async () => {
+    const { exitCode, output } = await runCheck();
+
+    expect(exitCode).toBe(EXIT_LOGIN_NEEDED);
+    expect(output).not.toMatch(/marker/i);
   });
 });

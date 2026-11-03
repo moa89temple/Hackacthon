@@ -24,6 +24,8 @@ import {
 } from "./connections.ts";
 import { createConversation } from "./conversation.ts";
 import { createCrisisCheck } from "./crisis-check.ts";
+import { createDarsCards } from "./dars-roadmap.ts";
+import { DARS_ID } from "./dars-rules.ts";
 import { createDiscovery, type Discovery } from "./discovery.ts";
 import { createDrafts, type Drafts } from "./drafts.ts";
 import { createGuidebook, type Guidebook } from "./guidebook.ts";
@@ -112,8 +114,12 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     store,
     profile,
     contacts: () => guidebook.contacts(),
+    afterFactsChanged: (connection) => {
+      if (connection === DARS_ID) darsCards.compare();
+    },
     logError: (error) => app.log.error(error),
   });
+  const darsCards = createDarsCards({ store, clock: options.adapters.clock, profile });
   const actionCards = createActionCards({
     store,
     clock: options.adapters.clock,

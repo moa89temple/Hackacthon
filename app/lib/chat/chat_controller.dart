@@ -240,6 +240,31 @@ class ChatController extends ChangeNotifier {
     return edited.hiddenNote;
   }
 
+  /// A read that isn't part of a turn can leave a Roadmap card in the conversation, or stop one working. The
+  /// Student finds that when they come back to this tab. With nothing new about the cards, nothing moves.
+  Future<void> pickUpRoadmapCards() async {
+    if (isLoading || replyInProgress != null) return;
+    final List<ConversationItem> loaded;
+    try {
+      loaded = await _backend.loadHistory();
+    } on Exception {
+      return;
+    }
+    if (_disposed || replyInProgress != null) return;
+    final known = {
+      for (final item in items)
+        if (item is RoadmapCardItem) item.card.id: item.card.status,
+    };
+    final cards = loaded.whereType<RoadmapCardItem>();
+    if (cards.every((item) => known[item.card.id] == item.card.status)) return;
+    items = loaded;
+    newestRoadmapCards = [
+      for (final item in cards)
+        if (!known.containsKey(item.card.id)) item,
+    ];
+    _changed();
+  }
+
   /// A Roadmap card as the backend says it stands, after a tap on it.
   void showRoadmapCard(RoadmapCard card) {
     items = [

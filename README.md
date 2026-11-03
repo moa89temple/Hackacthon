@@ -144,7 +144,7 @@ Revoking the Read Permission deletes the address and every fact from the calenda
 
 ## Connect Temple's systems
 
-Canvas, TUportal, TUmail and Navigate360 are read through Buddy's Browser, with your own login. On the You tab, tap **Connect**, read the card, tap **Give Read Permission**, then log in yourself through a Takeover, as described in [Log in to a site](#log-in-to-a-site). They share Temple's sign-on, so after the first you may not be asked to log in again.
+Canvas, TUportal, TUmail, Navigate360 and DARS are read through Buddy's Browser, with your own login. On the You tab, tap **Connect**, read the card, tap **Give Read Permission**, then log in yourself through a Takeover, as described in [Log in to a site](#log-in-to-a-site). They share Temple's sign-on, so after the first you may not be asked to log in again.
 
 Buddy reads each one at 7 a.m., 1 p.m. and 7 p.m. Philadelphia time, and when you tap **Read now** or ask in the chat. What it reads becomes Profile facts, which you can change or delete. Revoking deletes those facts and that Connection's login. Temple's sign-on stays while another Temple Connection is on, and goes with the last of them.
 
@@ -156,6 +156,15 @@ Buddy's code decides what can be opened, in each Connection's `*-rules.ts`, and 
 | TUportal | Your holds and your balance | Holds are on Banner's View Holds, and the balance is in a frame on the Cost & Aid tab |
 | TUmail | Recent email from `temple.edu` addresses and from Contacts | Your inbox in Outlook on the web |
 | Navigate360 | Your assigned advisor, who becomes a Contact, and your upcoming appointments | What the app's own scripts get from its server |
+| DARS | Which requirements are complete, missing, in progress or planned on your newest audit | Your list of audits and that audit, at `prd-dars.temple.edu`. **Nobody has checked this against a real login yet** |
+
+### DARS
+
+Everything assumed about DARS is in `dars-rules.ts`, which says what was seen and what's a guess. Its pages in the tests are made up, so until `npm run check-dars` has run against a real login, none of this is known to fit. One thing the reader doesn't understand anywhere on a page means it keeps what it had and says it couldn't read it, because a wrong "complete" could mislead you about graduating.
+
+Buddy reads the newest audit already on your list, and never runs one, deletes one or opens a What-If audit. So it's only as new as your latest audit: run one yourself at `dars.temple.edu`, then tap **Read now**. It doesn't keep your name, ID, GPA or grades.
+
+When a recent audit doesn't match your Roadmap, Buddy shows a card in the conversation, a few changes at a time. A read outside a conversation leaves it there for when you come back to the Buddy tab. Nothing changes until you tap **Accept**, and the same change isn't shown twice. A requirement is matched to a Milestone by the Milestone's name or by a course it names, so a card can miss one or suggest one that's already covered. An audit older than 30 days makes no card.
 
 ### TUportal
 
@@ -185,12 +194,13 @@ Each of these runs the real reader through the real guard and prints page shape 
 cd backend
 npm run check-canvas
 npm run check-tuportal
+npm run check-dars
 npm run check-tumail
 npm run check-tumail -- --further   # what a read does when it looks further back
 npm run check-navigate360
 ```
 
-Read what each prints, because `check-canvas` exits 0 even if a page had a problem. `check-tuportal` exits 6 if a page wasn't understood, `check-tumail` exits 6 if opening a message marked it read, and `check-tumail` and `check-navigate360` exit 7 if the reader missed something. Each script's first lines list the rest.
+Read what each prints, because `check-canvas` exits 0 even if a page had a problem. `check-tuportal` and `check-dars` exit 6 if a page wasn't understood, `check-tumail` exits 6 if opening a message marked it read, and `check-tumail` and `check-navigate360` exit 7 if the reader missed something. Each script's first lines list the rest.
 
 ### Known limits
 

@@ -1,0 +1,187 @@
+import type { PagePattern, Site } from "./browser-access.ts";
+
+/**
+ * Everything Buddy assumes about DARS, in one place, so that it can be put right once in one file. Nobody
+ * working on Buddy has seen a logged-in DARS. `npm run check-dars` shows where each of these lands against a
+ * real login, without showing the Student's records.
+ *
+ * What was seen, logged out, on 2026-11-03:
+ * - dars.temple.edu sends a browser to prd-dars.temple.edu/selfservice, and on to /selfservice/ and
+ *   /selfservice/general/loginroute.html, which sends it to Temple's sign-on, at
+ *   fim.temple.edu/idp/profile/SAML2/Unsolicited/SSO. No page of Banner's is on the way.
+ *
+ * What Temple's public pages say, as of November 2026 (sites.temple.edu/degreeaudit, and the Bulletin):
+ * - A Student reaches it at dars.temple.edu, or from TUportal by Student Tools, then Records, then Degree
+ *   Audit. Going through Self-Service Banner is the way for advisors, not Students.
+ * - The Student Documentation: the page of past audits is "Completed Audit Requests", with a "View Audit"
+ *   link on each, a "New Audit" button and a Delete box. A new one is made with "Run Audit", now called
+ *   "Run Declared Programs". The columns are in AUDIT_LIST_SHAPE.
+ * - The What-If guide: a What-If audit says WHAT-IF in the Audit Type column, its Catalog Year is all nines,
+ *   and it's about a major the Student doesn't have.
+ * - The Audit Interpretation guide: Unfulfilled, Complete, In Progress, Planned and None are what each
+ *   requirement can be, and In Progress only means satisfied if the courses under way count.
+ * - The FAQ: an audit is only "current as of the moment an audit is processed".
+ *
+ * What's a guess, from memory of u.achieve, the product DARS Self-Service looks to be, and nothing of Temple's:
+ * - DARS_PAGES.list and DARS_PAGES.audit. Logged out, the server sends any address to the sign-on, so that
+ *   says nothing about whether they're real.
+ * - All of AUDIT_SHAPE, and that the audit is in the page rather than built by script or in a frame.
+ * - The wording in AUDIT_LIST_SHAPE.saysNone, AUDIT_SHAPE.saysUnmet and AUDIT_SHAPE.saysAllMet.
+ * - That the Created column is on Philadelphia's clock.
+ *
+ * Whether a read has to run a new audit: it doesn't have to, and Buddy never does. It reads the newest one
+ * already on the list, and says how old it is. Running one is a click that makes a record, so it would need
+ * deciding by a person. Until then a Student with no audit on the list has nothing to read.
+ */
+
+/** The Connection's id. It's also the site's id, because the guard checks the Read Permission by it. */
+export const DARS_ID = "dars";
+export const DARS_ORIGIN = "https://prd-dars.temple.edu";
+const DARS_HOST = new URL(DARS_ORIGIN).hostname;
+/** The address Temple gives Students. It only ever redirects. */
+const DARS_SHORT_HOST = "dars.temple.edu";
+const SIGN_ON_HOST = "fim.temple.edu";
+const DUO_HOST = "duosecurity.com";
+
+/** The reader opens these and no others. */
+export const DARS_PAGES = {
+  list: "/selfservice/audit/list.html",
+  audit: "/selfservice/audit/read.html",
+};
+
+export type DarsPage = keyof typeof DARS_PAGES;
+
+/** Where the server sends someone to log in. Nothing is taken from it. */
+const WAY_TO_SIGN_ON = "/selfservice/general/loginroute.html";
+
+/** What a Roadmap card shows as its Source. The Student needs their own login to open it. */
+export const DARS_SOURCE = { url: `https://${DARS_SHORT_HOST}/`, title: "Your DARS audit" };
+
+/** How the page of past audits is read. Each is about a page nobody has seen: see above. */
+export const AUDIT_LIST_SHAPE = {
+  /** The headings of the columns the reader needs. A table without all of them isn't the list. */
+  columns: {
+    program: /^program$/i,
+    catalogYear: /^catalog/i,
+    created: /created/i,
+    type: /^(?:audit )?type$/i,
+    view: /^view$/i,
+  },
+  /** What the type column says on a What-If audit. From Temple's guide. */
+  whatIfType: /what-?if/i,
+  /** And its catalog year. From Temple's guide. */
+  whatIfCatalogYear: /^9+$/,
+  /**
+   * What the type column says on the Student's real audit. In Temple's guides it's only a mark with no
+   * words. Anything else stops the read, so that a new kind of audit isn't taken for the real one.
+   */
+  regularType: /^$/,
+  /** As 10/30/2026 3:52 PM, in Temple's guides. */
+  created: /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)$/i,
+  /** A whole line that says there are no audits. A sentence that only mentions them doesn't count. */
+  saysNone: /^(?:there are )?no (?:completed )?(?:degree )?audit(?: request)?s?(?: requests?)?(?: (?:found|available|to display|have been run))?[.!]?$/i,
+};
+
+export type RequirementStatus = "complete" | "missing" | "in_progress" | "planned" | "none";
+
+/** How an audit is read. A guess, all of it, apart from the five states being Temple's. See above. */
+export const AUDIT_SHAPE = {
+  requirementClass: "requirement",
+  requirementTitleClass: "reqTitle",
+  partClass: "subrequirement",
+  partTitleClass: "subreqTitle",
+  /**
+   * The class that says what state a requirement is in. It's the only thing that does. Any other class that
+   * starts with statusPrefix stops the read, because a wrong "complete" could mislead a Student about graduating.
+   */
+  statusClasses: {
+    Status_OK: "complete",
+    Status_NO: "missing",
+    Status_IP: "in_progress",
+    Status_PL: "planned",
+    Status_NONE: "none",
+  } as Record<string, RequirementStatus>,
+  statusPrefix: /^status/i,
+  /** What the page puts in front of a title, which isn't part of it. In Temple's guide's picture. */
+  titleLeader: /^~\s*/,
+  /** Course numbers, such as ANTH 0814 or MATH L006. */
+  course: /\b[A-Z]{2,5} [A-Z]?\d{3,4}\b/g,
+  /** The audit's own word on the whole of it. If what the reader found disagrees, it stops. */
+  saysUnmet: /at least one requirement has not been satisfied/i,
+  saysAllMet: /^\W*all requirements?(?: (?:are|have been))? (?:complete|completed|satisfied|met)\W*$/i,
+  /** A What-If audit, from what's on the audit itself. From Temple's guide. */
+  whatIfCatalog: /\bcatalog\s+(?:year|term)\W*9{4,}\b/i,
+};
+
+/** Whether this address is the page that was asked for. A page that ends up anywhere else isn't, however much it looks like it. */
+export function isDarsPage(page: DarsPage, address: string, host = DARS_HOST): boolean {
+  const url = URL.parse(address);
+  return url !== null && url.hostname === host && url.pathname === DARS_PAGES[page];
+}
+
+/** DARS sends a browser with no login off to the sign-on. Anywhere off DARS, or on its way there, isn't logged in. */
+export function isDarsLoginPage(address: string, host = DARS_HOST): boolean {
+  const url = URL.parse(address);
+  return url === null || url.hostname !== host || url.pathname === WAY_TO_SIGN_ON;
+}
+
+const exactly = (path: string) => new RegExp(`^${path.replaceAll(".", "\\.")}$`);
+
+/**
+ * The only pages Buddy opens on DARS, each tested by its path as it is. /selfservice/ and the way to the
+ * sign-on are only so that a login check can see where it ends up. A page they lead to that isn't here is
+ * refused, and `npm run check-dars` prints it.
+ */
+export function darsReadablePages(host = DARS_HOST): PagePattern[] {
+  return [
+    ...Object.values(DARS_PAGES).map((path) => ({ host, path: exactly(path) })),
+    { host, path: /^\/selfservice\/?$/ },
+    { host, path: exactly(WAY_TO_SIGN_ON) },
+    { host: DARS_SHORT_HOST, path: /^\/(?:selfservice\/?)?$/ },
+    { host: SIGN_ON_HOST, path: /^\// },
+  ];
+}
+
+/** Under /selfservice/audit/ only the list and an audit are opened: making, running and deleting are all somewhere under there. */
+const OTHER_AUDIT_PAGE = /^\/selfservice\/audit\/(?!list\.html$|read\.html$)/;
+/** What else DARS can do. It keeps plans and exceptions, and a Student's course list can be changed from it. */
+const NEVER_ANYWHERE = /create|delete|remove|whatif|what-if|planner|udirect|roadmap|exception|comment|transfer|submit|logout|logoff|signout|sign-out/;
+const NEVER_WHOLE_WORD = /(?:^|[/_.;-])(?:run|new|plans?|edit|update|save|batch|request)(?:$|[/_.;-])/;
+/** An address can ask a page to act by what follows the ?, by what a value is called or what it says. Not by its id, which is opaque. */
+const ASKS_FOR_AN_ACTION = /[?&](?:action|method|cmd|op|delete|remove|run|create|submit)=/;
+
+/**
+ * Pages Buddy never opens, reads or submits, even with an Action Permission. The guard refuses these first,
+ * for pages, frames, redirects and everything a page loads. Anything else that isn't a plain read is already
+ * refused, as this site has no readOnlyRequests: running an audit is a change, and so is coming back from the
+ * sign-on with a POST, which is why a login that's run out needs a Takeover. Letting that one request through
+ * would be a decision for a person, with what `npm run check-dars` shows of it in front of them.
+ */
+export function darsBlockedPages(host = DARS_HOST): PagePattern[] {
+  return [
+    { host, path: OTHER_AUDIT_PAGE },
+    { host, path: NEVER_ANYWHERE },
+    { host, path: NEVER_WHOLE_WORD },
+    { host, path: /^/, query: ASKS_FOR_AN_ACTION },
+    { host: SIGN_ON_HOST, path: /(?:^|[/_.-])(?:logout|slo)(?:$|[/_.-])/ },
+  ];
+}
+
+/** The addresses and hosts are only ever something else for made-up pages in the checks of the real browser. */
+export function darsSiteAt(origin: string = DARS_ORIGIN, otherHosts: string[] = [SIGN_ON_HOST, DUO_HOST]): Site {
+  const host = new URL(origin).hostname;
+  return {
+    name: "DARS",
+    // Opens the list itself, so that nothing has to pass through whatever page DARS lands on after a login.
+    homeUrl: new URL(DARS_PAGES.list, origin).href,
+    // Temple's single sign-on and Duo are shared with other Connections: see forgetLogin in browser-access.ts.
+    loginHosts: [host, DARS_SHORT_HOST, ...otherHosts],
+    isConnection: true,
+    signOnDomains: ["temple.edu"],
+    readablePages: darsReadablePages(host),
+    blockedPages: darsBlockedPages(host),
+    isLoginPage: (address) => isDarsLoginPage(address, host),
+  };
+}
+
+export const DARS_SITE = darsSiteAt();
