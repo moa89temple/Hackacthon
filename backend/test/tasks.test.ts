@@ -808,7 +808,8 @@ describe("the results", () => {
     await startTask(searchFinds("research at Temple", real), says(`Try ${real}, or ${madeUp}.`));
 
     const task = await theTask();
-    expect(task.sources).toEqual([{ title: "undergraduate.temple.edu", url: real }]);
+    // By the page's own title, because several from one site would otherwise read the same.
+    expect(task.sources).toEqual([{ title: "A page", url: real }]);
   });
 
   it("stay on the Today tab for three days", async () => {

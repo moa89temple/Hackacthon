@@ -336,6 +336,7 @@ export function createTasks(deps: TasksDeps): Tasks {
     const current: TaskWork = task.work ?? {
       messages: [{ role: "user", content: `Today is ${describeInPhiladelphia(clock.now())}.\n\nWhat the Student asked for: ${JSON.stringify(task.request)}` }],
       addressesFound: [],
+      pageTitles: {},
       sawPrivateRecords: false,
       read: null,
       record: { tools: [], sources: [], facts: [] },
@@ -369,8 +370,9 @@ export function createTasks(deps: TasksDeps): Tasks {
       const message = await finalMessage(claudeForThisTask, requestFor(model, current, actionCards.canAsk()), signal);
       if (signal.aborted) return;
 
-      const { addresses } = resultsIn(message.content);
+      const { addresses, titles } = resultsIn(message.content);
       current.addressesFound = [...new Set([...current.addressesFound, ...addresses])];
+      current.pageTitles = { ...current.pageTitles, ...titles };
       noteWhatTheSearchesDid(id, message.content, record);
 
       if (message.stop_reason === "refusal") throw new TaskProblem(AI_DECLINED);
@@ -409,7 +411,8 @@ export function createTasks(deps: TasksDeps): Tasks {
       if (result === "") throw new Error(`Claude's Task had no text (stop reason: ${message.stop_reason})`);
       // An address counts as a Source only if a search really gave it, so that Claude can't make one up.
       for (const url of addressesIn(result)) {
-        if (current.addressesFound.includes(url)) noteSourcesLookedAt(record, [{ title: hostOf(url), url }]);
+        // By its own title where there is one, because several from one site would otherwise read the same.
+        if (current.addressesFound.includes(url)) noteSourcesLookedAt(record, [{ title: maskSecrets(current.pageTitles[url] || hostOf(url)), url }]);
       }
       keepRecord();
       finish(id, result, record);

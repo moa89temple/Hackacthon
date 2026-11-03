@@ -213,6 +213,21 @@ void main() {
       expect(find.text('Send a form'), findsOneWidget);
     });
 
+    testWidgets('says so in a message that goes away by itself, so that it doesn\'t stay over the box to write in', (tester) async {
+      final backend = FakeBackend(history: [TaskCardItem(working())])..tasks = [working()];
+      await openUnlockedApp(tester, backend);
+
+      backend.taskChanged(done());
+      await settleApp(tester);
+      expect(find.text('A Task is done.'), findsOneWidget);
+
+      // Its time starts once it has finished sliding in.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(find.text('A Task is done.'), findsNothing);
+    });
+
     testWidgets('waits for a reply being written, then comes in', (tester) async {
       final backend = FakeBackend(history: [student('Find me programs'), TaskCardItem(working())])..tasks = [working()];
       await openUnlockedApp(tester, backend);

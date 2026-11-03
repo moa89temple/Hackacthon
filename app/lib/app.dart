@@ -310,6 +310,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     if (_selected == _todayTab) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        // With a button it would otherwise stay until tapped, over the box to write in.
+        persist: false,
         content: const Text('Your Briefing is ready.'),
         action: SnackBarAction(label: 'See it', onPressed: _openBriefing),
       ),
@@ -333,6 +335,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        // With a button it would otherwise stay until tapped, over the box to write in.
+        persist: false,
         content: Text(switch (task.state) {
           'done' => 'A Task is done.',
           'failed' => "A Task couldn't finish.",

@@ -49,15 +49,21 @@ function withoutFragment(address: string): string {
 }
 
 /** A failed search still answers 200, with an error in place of its list of results. */
-export function resultsIn(blocks: ContentBlock[]): { addresses: string[]; errors: string[] } {
+export function resultsIn(blocks: ContentBlock[]): { addresses: string[]; titles: Record<string, string>; errors: string[] } {
   const addresses: string[] = [];
+  const titles: Record<string, string> = {};
   const errors: string[] = [];
   for (const block of blocks) {
     if (block.type !== "web_search_tool_result") continue;
-    if (Array.isArray(block.content)) addresses.push(...block.content.map((result) => withoutFragment(result.url)));
-    else errors.push(block.content.error_code);
+    if (Array.isArray(block.content)) {
+      for (const result of block.content) {
+        const address = withoutFragment(result.url);
+        addresses.push(address);
+        titles[address] = result.title;
+      }
+    } else errors.push(block.content.error_code);
   }
-  return { addresses, errors };
+  return { addresses, titles, errors };
 }
 
 /** Whether Buddy may fetch this. It came from the web, so it could point anywhere, including at this laptop. */

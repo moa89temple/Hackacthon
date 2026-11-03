@@ -45,6 +45,8 @@ export interface TaskWork {
   messages: unknown[];
   /** The only pages this Task may read, because a search gave them. */
   addressesFound: string[];
+  /** Each of those pages' titles, as the search gave them. */
+  pageTitles: Record<string, string>;
   /** Past this point the Task has seen the Student's records, so what it asks a search engine could carry them. */
   sawPrivateRecords: boolean;
   /** What other people wrote that the Task has read, which stops anything that could outlast the Task. */
