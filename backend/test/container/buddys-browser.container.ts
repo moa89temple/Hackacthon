@@ -28,7 +28,8 @@ import { readBalancePage, readHoldsPage } from "../../src/tuportal-pages.ts";
 import { isTuportalLoginPage, tuportalBlockedPages, tuportalReadablePages } from "../../src/tuportal-rules.ts";
 import { tumailAt } from "../../src/tumail.ts";
 import { runTumailCheck } from "../../src/tumail-check.ts";
-import { TUMAIL_ID, tumailReadablePages, tumailReadOnlyRequests } from "../../src/tumail-rules.ts";
+import { readInboxPage } from "../../src/tumail-pages.ts";
+import { MESSAGE_ROW, TUMAIL_ID, tumailReadablePages, tumailReadOnlyRequests } from "../../src/tumail-rules.ts";
 
 const browserDirectory = fileURLToPath(new URL("../../../browser", import.meta.url));
 const CONTROL_PORT = 19222;
@@ -1184,6 +1185,31 @@ describe("the TUmail reader, against a made-up app in the real browser", () => {
   const HOST = "127.0.0.5";
   const SIGN_IN_HOST = "127.0.0.6";
   const HOME = `http://${HOST}:8000/mail/`;
+
+  it("goes down a list that only draws what's in view, and gets every step of it, without asking the site to change anything", async () => {
+    const site: Site = { name: "TUmail", homeUrl: HOME, loginHosts: [HOST], isConnection: true };
+    const guard = createGuardPolicy({ sites: { [TUMAIL_ID]: site }, publicHosts: [], hasReadPermission: () => true }).forReading();
+    clearLedger();
+
+    const reading = await browser.read(`http://${HOST}:8000/made-up-long-list`, guard, { until: MESSAGE_ROW, scrollList: { item: MESSAGE_ROW, times: 4 } });
+
+    expect(reading.scrolled).toHaveLength(4);
+    const seen = new Set([reading.html, ...reading.scrolled!].flatMap((html) => (readInboxPage(html) ?? []).map((row) => row.id)));
+    expect(seen.size).toBeGreaterThan(15);
+    expect(readInboxPage(reading.scrolled!.at(-1)!)!.map((row) => row.id)).not.toContain("row0");
+    expect(ledger().filter((entry) => entry.host.startsWith(HOST) && entry.method !== "GET")).toEqual([]);
+  });
+
+  it("stops at the end of a list rather than going on", async () => {
+    const site: Site = { name: "TUmail", homeUrl: HOME, loginHosts: [HOST], isConnection: true };
+    const guard = createGuardPolicy({ sites: { [TUMAIL_ID]: site }, publicHosts: [], hasReadPermission: () => true }).forReading();
+
+    const reading = await browser.read(`http://${HOST}:8000/made-up-long-list`, guard, { until: MESSAGE_ROW, scrollList: { item: MESSAGE_ROW, times: 40 } });
+
+    expect(reading.scrolled!.length).toBeLessThan(12);
+    expect((readInboxPage(reading.scrolled!.at(-1)!) ?? []).map((row) => row.id)).toContain("row49");
+  });
+
   const TUMAIL_SITE: Site = {
     name: "TUmail",
     homeUrl: HOME,

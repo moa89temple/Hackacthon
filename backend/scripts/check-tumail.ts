@@ -21,9 +21,12 @@ const fail = (error: unknown) => {
 process.on("uncaughtException", fail);
 process.on("unhandledRejection", fail);
 
+// npm run check-tumail -- --further does what a read does when the Student asks about older email.
+const further = process.argv.includes("--further");
+
 process.exitCode = await runTumailCheck({
   browser: containerBrowser(settings.browser),
-  connection: tumail,
+  connection: further ? { ...tumail, read: (context) => tumail.read({ ...context, lookFurther: true }) } : tumail,
   sites: settings.sites,
   student: () => readStudentState(settings.databasePath, tumail.id),
   print: (line) => console.log(line),

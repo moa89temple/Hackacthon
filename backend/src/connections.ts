@@ -46,6 +46,8 @@ export interface ReadContext {
   previous: FactFromConnection[];
   /** Part of this read didn't work. What it returns is still saved, and the Student is told this. */
   reportMissed(problem: string): void;
+  /** The Student's asking about something older, so look further back than a usual read does. */
+  lookFurther: boolean;
 }
 
 export interface ReadingForClaude {
@@ -141,7 +143,7 @@ export interface Connections {
    */
   revoke(id: string): Promise<ConnectionStatus>;
   /** Reads now. Throws NoReadPermission without one. A read that fails shows in the status. */
-  read(id: string, reason: ReadReason): Promise<ConnectionStatus>;
+  read(id: string, reason: ReadReason, options?: { lookFurther?: boolean }): Promise<ConnectionStatus>;
   /**
    * Deletes a revoked Connection's login if that's still to do, so that it can't carry on under a new
    * Read Permission. Throws BrowserUnreachable if it can't. Call it before a Takeover starts.
@@ -238,7 +240,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
     }
   }
 
-  async function runRead(type: ConnectionType, permission: StoredReadPermission, reason: ReadReason): Promise<void> {
+  async function runRead(type: ConnectionType, permission: StoredReadPermission, reason: ReadReason, lookFurther: boolean): Promise<void> {
     const now = clock.now();
     try {
       await failIfOldLoginRemains(type);
@@ -254,6 +256,7 @@ export function createConnections(deps: ConnectionsDeps): Connections {
         reportMissed: (problem) => {
           missed = problem;
         },
+        lookFurther,
       });
       // On the first read everything looks new, and none of it is news.
       const deleted = new Set(store.deletedFactKeys(THE_STUDENT, type.id));
@@ -282,21 +285,26 @@ export function createConnections(deps: ConnectionsDeps): Connections {
   }
 
   /** Two reads of one Read Permission at once share the first one's trip to the web. */
-  async function readThroughGate(type: ConnectionType, reason: ReadReason): Promise<void> {
+  async function readThroughGate(type: ConnectionType, reason: ReadReason, lookFurther = false): Promise<void> {
     const permission = store.readPermission(THE_STUDENT, type.id);
     if (!permission) throw new NoReadPermission(type.name);
 
     let read = readsUnderWay.get(permission.id);
+    // Someone else's usual read wouldn't go far enough for this one, so it goes after that.
+    if (read && lookFurther) {
+      await read;
+      read = readsUnderWay.get(permission.id);
+    }
     if (!read) {
-      read = runRead(type, permission, reason).finally(() => readsUnderWay.delete(permission.id));
+      read = runRead(type, permission, reason, lookFurther).finally(() => readsUnderWay.delete(permission.id));
       readsUnderWay.set(permission.id, read);
     }
     await read;
   }
 
-  async function read(id: string, reason: ReadReason): Promise<ConnectionStatus> {
+  async function read(id: string, reason: ReadReason, options: { lookFurther?: boolean } = {}): Promise<ConnectionStatus> {
     const type = typeWithId(id);
-    await readThroughGate(type, reason);
+    await readThroughGate(type, reason, options.lookFurther ?? false);
     return statusOf(type);
   }
 

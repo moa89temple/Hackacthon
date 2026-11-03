@@ -15,7 +15,32 @@ const APP_TIMEOUT_MS = 30_000;
 const APP_SETTLE_TIMEOUT_MS = 3_000;
 /** The page has already loaded, so a frame that isn't readable by now has failed. */
 const FRAME_TIMEOUT_MS = 3_000;
+/** How long a list gets to draw what's come into view. */
+const SCROLL_SETTLE_MS = 800;
 const BLOCKED_ERROR = "net::ERR_BLOCKED_BY_CLIENT";
+
+/** Moves the scrolling area around the first item down by what's in view, and says how far it went. */
+const scrollDownFrom = (item: string) => `(() => {
+  let list = document.querySelector(${JSON.stringify(item)});
+  while (list && !(list.scrollHeight > list.clientHeight + 10 && /auto|scroll/.test(getComputedStyle(list).overflowY))) list = list.parentElement;
+  if (!list) return 0;
+  const before = list.scrollTop;
+  list.scrollTop = before + list.clientHeight;
+  return list.scrollTop - before;
+})()`;
+
+/** The page after each step down its list. A list that has stopped moving has come to its end. */
+async function scrollThrough(page: Page, item: string, times: number): Promise<string[]> {
+  const pages: string[] = [];
+  for (let step = 0; step < times; step++) {
+    const moved = await page.evaluate<number>(scrollDownFrom(item));
+    if (moved <= 0) break;
+    await page.waitForTimeout(SCROLL_SETTLE_MS);
+    await page.waitForLoadState("networkidle", { timeout: APP_SETTLE_TIMEOUT_MS }).catch(() => {});
+    pages.push(await page.content());
+  }
+  return pages;
+}
 
 /** Every frame that loaded. One that can't be read, such as one the guard refused, simply isn't among them. */
 async function framesOn(page: Page): Promise<FrameReading[]> {
@@ -137,6 +162,7 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
             accessibilitySnapshot: await page.locator("body").ariaSnapshot({ timeout: PAGE_TIMEOUT_MS }),
             html: await page.content(),
             frames: await framesOn(page),
+            ...(options.scrollList ? { scrolled: await scrollThrough(page, options.scrollList.item, options.scrollList.times) } : {}),
           };
         } catch (error) {
           throw blockedByGuard(error, guarded);

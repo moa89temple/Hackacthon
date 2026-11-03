@@ -270,7 +270,7 @@ export const navigate360At = (origin: string): ConnectionType => ({
       "Your upcoming appointments: the time, what it's for, the place and who it's with.",
     ],
     notes: [
-      "Buddy opens only Navigate360's home page and the page listing your team. That page also lists others on your team, such as your instructors. Buddy doesn't keep them.",
+      "Buddy opens only Navigate360's home page, the page listing your team and the page listing your appointments. The team page also lists others on your team, such as your instructors. Buddy doesn't keep them.",
       "Buddy never books, cancels or changes an appointment, and never sends anything through Navigate360, including a raised hand. It doesn't open Study Buddies, which shows classmates, or your notes and progress reports. Buddy's code stops all of this, so nothing the AI reads can change it.",
       "You log in yourself through a Takeover, so Buddy never learns your password. After you give this Read Permission, Buddy asks you to log in if it needs you to, and asks again whenever the login expires.",
       "Buddy reads it at 7 a.m., 1 p.m. and 7 p.m., and when you ask. If your laptop was asleep at one of those times, it reads when the laptop wakes.",

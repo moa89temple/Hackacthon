@@ -48,6 +48,15 @@ describe("reading TUmail changes nothing in it", () => {
   const SERVICE = "https://outlook.office.com/owa/service.svc";
   const guard = () => guardFor([TUMAIL_ID]);
 
+  it("lets Outlook renew its own token, which it can't ask for any mail without, and nothing else on Microsoft's sign-in", () => {
+    const signIn = "https://login.microsoftonline.com";
+    expect(guard().check(posted(`${signIn}/organizations/oauth2/v2.0/token?client-request-id=made-up`)).allowed).toBe(true);
+    for (const path of ["/organizations/oauth2/v2.0/devicecode", "/organizations/oauth2/v2.0/token/more", "/organizations/login", "/common/oauth2/v2.0/token", "/organizations/oauth2/v2.0/TOKEN"]) {
+      expect(guard().check(posted(`${signIn}${path}`)).allowed).toBe(false);
+    }
+    expect(guard().check(posted("https://login.microsoft.com/organizations/oauth2/v2.0/token")).allowed).toBe(false);
+  });
+
   it("lets through the app's requests for mail", () => {
     expect(guard().check(posted(`${SERVICE}?action=FindConversation&app=Mail`, { action: "FindConversation" })).allowed).toBe(true);
     expect(guard().check(posted(`${SERVICE}?action=GetConversationItems&app=Mail`, { action: "GetConversationItems" })).allowed).toBe(true);

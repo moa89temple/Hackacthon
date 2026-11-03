@@ -15,6 +15,7 @@ import {
   outlookPage,
   rowHtml,
   saveTumailPages,
+  messageHtml,
 } from "./support/tumail-pages.ts";
 
 const SITES = settings.sites as Record<string, Site>;
@@ -277,6 +278,23 @@ describe("whether opening a message marks it read", () => {
     const { output } = await check(browser);
 
     expect(output).toMatch(/can't tell.*none of what it opened was unread/i);
+  });
+});
+
+describe("a read that went further back than looking again does", () => {
+  it("doesn't take a message it can't see any more for one that was marked read", async () => {
+    const browser = browserWithPages();
+    const older = rowHtml({ id: "AAQkMadeUpOlder=", address: "older.advisor@temple.edu", words: "Older", unread: true });
+    const inbox = browser.savedPages.get(INBOX_PAGE)!;
+    browser.savedPages.set(INBOX_PAGE, { ...inbox, scrolled: [inboxHtml(older)] });
+    browser.savedPages.set(messagePage("AAQkMadeUpOlder="), outlookPage(messageHtml({ from: "Older &lt;older.advisor@temple.edu&gt;", subject: "Older", body: "<p>Words.</p>" })));
+
+    const further = { ...tumail, read: (context: Parameters<typeof tumail.read>[0]) => tumail.read({ ...context, lookFurther: true }) };
+    const { exitCode, output } = await check(browser, { connection: further });
+
+    expect(output).toContain("messages in the list: 6");
+    expect(output).not.toContain("WARNING");
+    expect(exitCode).not.toBe(EXIT_MARKED_READ);
   });
 });
 

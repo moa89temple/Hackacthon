@@ -5,7 +5,8 @@
 //
 // npm run check-navigate360
 //
-// Exits 0 if it opened Navigate360, 2 with no Read Permission, 3 during a Takeover, 4 if the login has expired.
+// Exits 0 if it opened Navigate360, 2 with no Read Permission, 3 during a Takeover, 4 if the login has expired,
+// and 7 if the login works and the reader missed something.
 import { EXIT_FAILED, readStudentState } from "../src/canvas-check.ts";
 import { containerBrowser } from "../src/container-browser.ts";
 import { navigate360 } from "../src/navigate360.ts";

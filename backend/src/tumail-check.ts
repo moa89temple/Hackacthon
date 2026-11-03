@@ -9,6 +9,7 @@ import { createGuardPolicy, type RequestGuard, type RequestToCheck } from "./net
 import { createProfile } from "./profile.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { readInboxPage, readMessagePage, type MessageOnPage, type RowOnPage } from "./tumail-pages.ts";
+import { rowsFurtherDown } from "./tumail.ts";
 import { INBOX_IS_READY, INBOX_PATH, isTempleAddress, senderAddressIn, TUMAIL_APP_HOSTS } from "./tumail-rules.ts";
 
 /**
@@ -234,6 +235,8 @@ interface PageVisit {
   rawAsked: string;
   rawLanded: string | null;
   html: string | null;
+  /** The page after each step down its list, on a read that went further back. */
+  scrolled: string[];
   /** The kind of error, never its words, which often quote the address. */
   failed: string | null;
 }
@@ -275,10 +278,10 @@ function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: P
       };
       try {
         const page = await inner.read(url, watching, wait);
-        visits.push({ rawAsked: url, rawLanded: page.url, html: page.html, failed: null });
+        visits.push({ rawAsked: url, rawLanded: page.url, html: page.html, scrolled: page.scrolled ?? [], failed: null });
         return page;
       } catch (error) {
-        visits.push({ rawAsked: url, rawLanded: null, html: null, failed: kindOfError(error) });
+        visits.push({ rawAsked: url, rawLanded: null, html: null, scrolled: [], failed: kindOfError(error) });
         throw error;
       }
     },
@@ -392,7 +395,8 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
 
   const inboxVisits = visits.filter((visit) => !isMessagePage(visit.rawAsked));
   const firstInboxHtml = inboxVisits[0]?.html ?? null;
-  const rows = firstInboxHtml === null ? null : readInboxPage(firstInboxHtml);
+  const firstRows = firstInboxHtml === null ? null : readInboxPage(firstInboxHtml);
+  const rows = firstRows && rowsFurtherDown(firstRows, inboxVisits[0]?.scrolled ?? []);
   const messageVisits = visits.filter((visit) => isMessagePage(visit.rawAsked));
   const rowOf = (visit: PageVisit) => rows?.find((row) => row.id === idInAddress(visit.rawAsked));
   const outcomes = messageVisits.map((visit): MessageOnPage["outcome"] | "failed" => (visit.html === null ? "failed" : readMessagePage(visit.html, rowOf(visit)).outcome));
@@ -426,7 +430,9 @@ async function runChecked({ browser, connection, sites, student, print }: Canvas
   print("Opening a message and its unread mark:");
   const opened = new Set(messageVisits.map((visit) => idInAddress(visit.rawAsked)));
   let markedRead = false;
-  const before = rows ? unreadAmong(rows, opened) : 0;
+  // Looking again only reaches the newest, so a message further down says nothing either way.
+  const seenAfter = inboxAfter && new Set(inboxAfter.map((row) => row.id));
+  const before = rows ? unreadAmong(seenAfter ? rows.filter((row) => seenAfter.has(row.id)) : rows, opened) : 0;
   if (!rows || opened.size === 0) {
     print("  can't tell: nothing was opened");
   } else if (rows.every((row) => row.unread === null)) {

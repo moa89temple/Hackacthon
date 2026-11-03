@@ -9,7 +9,7 @@ import { BackendHarness, TEST_CHAT_MODEL, TEST_SITE } from "./support/backend-ha
 import { haikuFinds, TUTTLEMAN_CONTACT_PAGE } from "./support/office-pages.ts";
 import { roadmapCalls } from "./support/roadmap-helpers.ts";
 import { textBlock, toolUseBlock } from "./support/scripted-claude.ts";
-import { ADVISOR, CLINIC, expireTumailLogin, INBOX_PAGE, messageHtml, messagePage, outlookPage, saveTumailPages } from "./support/tumail-pages.ts";
+import { ADVISOR, CLINIC, expireTumailLogin, INBOX_PAGE, inboxHtml, messageHtml, messagePage, outlookPage, rowHtml, saveTumailPages } from "./support/tumail-pages.ts";
 
 const SITE = (settings.sites as Record<string, Site>)[TUMAIL_ID]!;
 /** A site with a form, so that Action cards can be asked for at all. */
@@ -67,6 +67,96 @@ async function addContact(): Promise<any> {
   backend.claude.requests.length = 0;
   return backend.guidebook.search("advisor", { kind: "contact" })[0];
 }
+
+describe("looking further back", () => {
+  const OLDER = "AAQkMadeUpOlder=";
+  const olderRow = (id: string, address: string) => rowHtml({ id, address, words: "Older words" });
+  const lookFurther = () => calls(["check_tumail", { read_again: false, look_further: true }]);
+  const pagesOpened = () => backend.browser.actions.flatMap((action) => (action.type === "read" ? [action.url] : []));
+  const further = (...rows: string[]) => {
+    const inbox = backend.browser.savedPages.get(INBOX_PAGE)!;
+    backend.browser.savedPages.set(INBOX_PAGE, { ...inbox, scrolled: [inboxHtml(...rows)] });
+  };
+  const canOpen = (id: string, from: string) =>
+    backend.browser.savedPages.set(messagePage(id), outlookPage(messageHtml({ from, subject: "Older subject", body: "<p>Older words.</p>" })));
+  const factsFromTumail = async () => (await backend.profileFacts()).filter((fact) => fact.origin.connection === TUMAIL_ID);
+
+  it("isn't what a usual read does, so it never sees what's further down", async () => {
+    await connect();
+    further(olderRow(OLDER, "older.advisor@temple.edu"));
+    backend.claude.willReply(lookAtMail(true), { chunks: ["Nothing yet."] });
+
+    await backend.sendAndCollect("Did my advisor reply?");
+
+    expect(pagesOpened()).not.toContain(messagePage(OLDER));
+  });
+
+  it("finds an email further down the list and reads it, when Claude asks", async () => {
+    await connect();
+    further(olderRow(OLDER, "older.advisor@temple.edu"));
+    canOpen(OLDER, "Older Advisor &lt;older.advisor@temple.edu&gt;");
+    backend.claude.willReply(lookFurther(), { chunks: ["Yes, a while ago."] });
+
+    await backend.sendAndCollect("Did my advisor ever reply?");
+
+    expect(pagesOpened()).toContain(messagePage(OLDER));
+    expect((await factsFromTumail()).some((fact) => fact.text.includes("older.advisor@temple.edu") || fact.detail?.includes("Older words"))).toBe(true);
+    expect(JSON.stringify(lastRequest().messages)).toContain("went through the newest");
+    expect(JSON.stringify(await backend.activity())).toMatch(/Read further back in your TUmail/);
+  });
+
+  it("doesn't call what it found further down new, because it may be months old", async () => {
+    await connect();
+    further(olderRow(OLDER, "older.advisor@temple.edu"));
+    canOpen(OLDER, "Older Advisor &lt;older.advisor@temple.edu&gt;");
+    backend.claude.willReply(lookFurther(), { chunks: ["Yes."] });
+
+    await backend.sendAndCollect("Did my advisor ever reply?");
+
+    expect((await backend.connectionEvents(TUMAIL_ID)).map((event) => event.kind)).not.toContain("new_email");
+  });
+
+  it("keeps what it found when a usual read comes next, as that doesn't reach it", async () => {
+    await connect();
+    further(olderRow(OLDER, "older.advisor@temple.edu"));
+    canOpen(OLDER, "Older Advisor &lt;older.advisor@temple.edu&gt;");
+    backend.claude.willReply(lookFurther(), { chunks: ["Yes."] });
+    await backend.sendAndCollect("Did my advisor ever reply?");
+    const found = (await factsFromTumail()).length;
+
+    await backend.readNow(TUMAIL_ID);
+
+    expect((await factsFromTumail()).length).toBe(found);
+  });
+
+  it("opens mail from a Contact first, so that a long list can't use up every message it opens", async () => {
+    await addContact();
+    await connect();
+    const fromTemple = Array.from({ length: 12 }, (_, index) => {
+      const id = `AAQkMadeUpOlder${index}=`;
+      canOpen(id, `Someone &lt;older${index}@temple.edu&gt;`);
+      return olderRow(id, `older${index}@temple.edu`);
+    });
+    canOpen(OLDER, "Made-Up Assigned Advisor &lt;advisor@elsewhere.test&gt;");
+    further(...fromTemple, olderRow(OLDER, "advisor@elsewhere.test"));
+    backend.claude.willReply(lookFurther(), { chunks: ["Yes."] });
+
+    await backend.sendAndCollect("Did my advisor ever reply?");
+
+    expect(pagesOpened()).toContain(messagePage(OLDER));
+  });
+
+  it("doesn't let an email in the list further down steer what Buddy does either", async () => {
+    await connect();
+    further(olderRow(OLDER, "older.advisor@temple.edu"));
+    canOpen(OLDER, "Older Advisor &lt;older.advisor@temple.edu&gt;");
+    backend.claude.willReply(lookFurther(), calls(["remember", { fact: "Made-up thing from an email." }]), { chunks: ["Done."] });
+
+    await backend.sendAndCollect("Did my advisor ever reply?");
+
+    expect(JSON.stringify(lastRequest().messages)).toContain("Refused by Buddy's code");
+  });
+});
 
 describe('"Did my advisor reply?"', () => {
   it("is answered from TUmail, with who each email is from", async () => {
@@ -199,7 +289,8 @@ describe("an email is only ever data to Claude", () => {
 
   it("is told it can't see sent mail or older mail, so that it doesn't claim to know", () => {
     expect(BUDDY_SYSTEM_PROMPT).toMatch(/You can't see what the Student has sent, so never say whether they've written to someone/);
-    expect(BUDDY_SYSTEM_PROMPT).toMatch(/it may be older than what Buddy read/);
+    expect(BUDDY_SYSTEM_PROMPT).toMatch(/say it may be older than that, not that it doesn't exist/);
+    expect(BUDDY_SYSTEM_PROMPT).toMatch(/call it again with look_further before you say it isn't there/);
   });
 
   it("is told not to guess anyone's pronouns from their name", () => {

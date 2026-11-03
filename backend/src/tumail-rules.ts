@@ -22,7 +22,9 @@ export const messagePath = (id: string) => `${INBOX_PATH}/id/${encodeURIComponen
 
 /** What the reader waits for, because the app builds its page after it has loaded: mail, or somewhere to log in. */
 const LOGIN_FORM = 'input[name="loginfmt"], input[type="password"]';
-export const INBOX_IS_READY = `[data-convid], ${LOGIN_FORM}`;
+/** One message in the inbox's list. */
+export const MESSAGE_ROW = "[data-convid]";
+export const INBOX_IS_READY = `${MESSAGE_ROW}, ${LOGIN_FORM}`;
 export const MESSAGE_IS_READY = `[aria-label="Message body"], ${LOGIN_FORM}`;
 
 /**
@@ -50,6 +52,10 @@ export const TUMAIL_READABLE_PAGES = tumailReadablePages(TUMAIL_APP_HOSTS);
  * action must be on this list by name. Marking something read is deliberately not on it, and neither
  * is anything else that changes mail. An address with a second action in it doesn't match. If a real
  * read shows the app needs another action that only reads, this is the one place to add it.
+ *
+ * Outlook also renews its own token by POST about every hour, and without that it never asks for any mail.
+ * That's what a real login showed. It's this one address on Microsoft's sign-in and nothing else there, so
+ * it can't sign anyone in or change anything, and what it gets back stays in the browser.
  */
 const READING_ACTIONS = ["FindConversation", "FindItem", "GetConversationItems", "GetItem", "FindFolder", "GetFolder"].join("|");
 const READING_ACTION_QUERY = new RegExp(`^\\?action=(?:${READING_ACTIONS})(?:&(?!action=)[a-z0-9_]+=[^&;]*)*$`, "i");
@@ -59,7 +65,7 @@ export function tumailReadOnlyRequests(appHosts: string[]): KnownRequest[] {
   return appHosts.flatMap((host) => [
     { method: "POST", host, path: /^\/owa(?:\/\d+)?\/service\.svc$/, query: READING_ACTION_QUERY, headers: { action: READING_ACTION_HEADER } },
     { method: "POST", host, path: /^\/owa(?:\/\d+)?\/startupdata\.ashx$/ },
-  ]);
+  ]).concat({ method: "POST", host: "login.microsoftonline.com", path: /^\/organizations\/oauth2\/v2\.0\/token$/ });
 }
 
 export const TUMAIL_READ_ONLY_REQUESTS = tumailReadOnlyRequests(TUMAIL_APP_HOSTS);

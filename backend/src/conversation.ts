@@ -243,12 +243,16 @@ export function createConversation(deps: ConversationDeps): Conversation {
   ) {
     try {
       let looked = `Looked at what Buddy has from your ${name}.`;
-      if ((call.input as { read_again?: unknown } | null)?.read_again === true) {
+      const input = call.input as { read_again?: unknown; look_further?: unknown } | null;
+      const lookFurther = input?.look_further === true;
+      if (input?.read_again === true || lookFurther) {
         // A read that fails shows in the description, which falls back on the last reading.
-        const { lastReadProblem } = await connections.read(id, "conversation");
+        const { lastReadProblem } = await connections.read(id, "conversation", { lookFurther });
         looked = lastReadProblem
           ? `Tried to read your ${name} again but couldn't, so looked at the last reading.`
-          : `Read your ${name} again and looked at it.`;
+          : lookFurther
+            ? `Read further back in your ${name} and looked at it.`
+            : `Read your ${name} again and looked at it.`;
       }
       const description = connections.describeForClaude(id);
       turn.tools.push(looked);

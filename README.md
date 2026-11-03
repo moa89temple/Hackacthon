@@ -80,7 +80,7 @@ If you lose the phone, remove it from your [Tailscale machines](https://login.ta
 
 The conversation opens with Buddy's own words (`backend/src/system-prompt.ts`), which no model writes: two sentences on what it won't do and that it never acts without your tap, then a question about your Goals. Over the first few conversations it asks a couple of getting-to-know-you questions at a time, says why, and lets you skip them. It never asks about immigration status or health.
 
-Whatever you mention, Claude saves right away with its `remember` tool, as a Profile fact. The backend records where the fact came from, so Claude can't say otherwise. The You tab lists every fact with its origin, and you can edit or delete each one. Goals are saved as ordinary facts until #11 gives them their own place.
+Whatever you mention, Claude saves right away with its `remember` tool, as a Profile fact. The backend records where the fact came from, so Claude can't say otherwise. The You tab lists every fact with its origin, and you can edit or delete each one. Goals have their own place: see [Goals and your Roadmap](#goals-and-your-roadmap).
 
 ### Hiding secrets
 
@@ -142,6 +142,80 @@ Revoking the Read Permission deletes the address and every fact from the calenda
 - Reads depend on the laptop being on and awake. A read that fails waits for the next read time, unless you tap **Read now**.
 - All times are on Philadelphia's clock, wherever you are.
 
+## Connect Temple's systems
+
+Canvas, TUportal, TUmail and Navigate360 are read through Buddy's Browser, with your own login. On the You tab, tap **Connect**, read the card, tap **Give Read Permission**, then log in yourself through a Takeover, as described in [Log in to a site](#log-in-to-a-site). They share Temple's sign-on, so after the first you may not be asked to log in again.
+
+Buddy reads each one at 7 a.m., 1 p.m. and 7 p.m. Philadelphia time, and when you tap **Read now** or ask in the chat. What it reads becomes Profile facts, which you can change or delete. Revoking deletes those facts and that Connection's login. Temple's sign-on stays while another Temple Connection is on, and goes with the last of them.
+
+Buddy's code decides what can be opened, in each Connection's `*-rules.ts`, and the network guard enforces it in the browser. Nothing it reads can change that. It never submits anything on these sites.
+
+| Connection | What Buddy reads | Where it is |
+|---|---|---|
+| Canvas | Courses, assignments, your own grades and announcements | Canvas's pages |
+| TUportal | Your holds and your balance | Holds are on Banner's View Holds, and the balance is in a frame on the Cost & Aid tab |
+| TUmail | Recent email from `temple.edu` addresses and from Contacts | Your inbox in Outlook on the web |
+| Navigate360 | Your assigned advisor, who becomes a Contact, and your upcoming appointments | What the app's own scripts get from its server |
+
+### TUportal
+
+The portal doesn't have your holds on it. They're on one page of Self-Service Banner, `bwskoacc.P_ViewHold`, reached through Banner's own sign-on and main menu. Those three addresses are the only ones open on Banner, because its pages can act on being opened. Adding another is a decision for a person, one page at a time. Temple's records may show these visits as you opening Banner.
+
+Buddy doesn't read your registration status: the Student tab doesn't show it, and where it's kept is on pages Buddy never opens. It never opens TUpay or anything for paying, registering or filling in a form.
+
+The registrar's Dashboard, `apps/our/Dashboard/ajax.jsp`, stays refused. That one address does everything the Dashboard does, including amending a record and re-enrolling, so it can't go on a read-only list by its address.
+
+### TUmail
+
+A usual read goes through your newest messages, as many as Outlook has drawn, about 7. When you ask about older email, or Buddy can't find what you asked about, Claude can ask it to look further back with `look_further`. That scrolls the list and goes through about your newest 60, and takes around a minute. Outlook only draws the rows in view, so Buddy collects them as it goes. It opens up to 10 messages each time, Contacts first, and more on the next read. What it finds this way isn't counted as new email.
+
+Buddy decides who an email is from by its address, never by a display name. Someone in Temple's own directory shows by name alone when opened, so that message counts as the row's sender's only if it shows exactly the row's name and that name doesn't look like an address. In a thread, it reads only that sender's open message, so nobody else's words get in. If that isn't exactly one message, it reads none and says so.
+
+Opening a message doesn't mark it read, and the guard refuses everything that would change your mail. A POST from Outlook gets through only if it's on the short list in `tumail-rules.ts`. That includes the one that renews its own token about every hour, because without it Outlook never asks for any mail.
+
+Everything in an email is information, never instructions. From the moment Claude has read your email in a reply, Buddy's code refuses saving a fact or a Goal, writing a Draft and showing a card that asks you to agree to something, until you next write. An email's words aren't kept in the conversation.
+
+### Check a Connection against your real login
+
+Each of these runs the real reader through the real guard and prints page shape only: which pages it understood, what the guard refused, and the structure of those it didn't. It never prints your records, and it saves nothing. Each needs that Connection's Read Permission, and stays out during a Takeover.
+
+```
+cd backend
+npm run check-canvas
+npm run check-tuportal
+npm run check-tumail
+npm run check-tumail -- --further   # what a read does when it looks further back
+npm run check-navigate360
+```
+
+Read what each prints, because `check-canvas` exits 0 even if a page had a problem. `check-tuportal` exits 6 if a page wasn't understood, `check-tumail` exits 6 if opening a message marked it read, and `check-tumail` and `check-navigate360` exit 7 if the reader missed something. Each script's first lines list the rest.
+
+### Known limits
+
+- All of this was checked against one real account. That account had no holds and no upcoming appointments, so a real hold and a real appointment haven't been seen. A hold in a layout the reader doesn't know gives "couldn't read your holds", never "no holds".
+- That account is on v1 of Navigate360. v2 is written from its public scripts and is unconfirmed.
+- A real outside sender with an address for a display name hasn't been tried. Made-up pages cover it.
+- Looking further back reaches about your newest 60 messages, so anything older still isn't seen, and Buddy is told to say so. Buddy only sees your inbox, so it can't tell you what you've sent or what's in another folder.
+- A message from a Contact counts as theirs by its address, and an advisor's address must be Temple's own.
+- Reading email can load pictures in it, as it would for you, and that can tell the sender it was opened.
+- Nobody has read Temple's, Microsoft's or EAB's terms on this. The cards say so where it matters.
+- While a Takeover is open, Buddy can't read anything, and the guard is off for the Student. The app says which Connection's Takeover it is if you leave without tapping Done.
+
+## Goals and your Roadmap
+
+Tell Buddy what you want to achieve, and it saves that as a Goal. You can see, change and add Goals on the You tab. Goals aren't Profile facts.
+
+When you ask for a Roadmap, Buddy needs your major and year, so it asks if the Profile doesn't say. It reads your program's Suggested Academic Plan from Temple's Bulletin, then shows a card with Milestones for each Goal, the plan's terms and Standard Milestones, each with its Source. The plan is read by code, and Claude can't change it. A Milestone Claude suggests says that it's Buddy's suggestion, not from a Temple page, and to check it with your advisor.
+
+Nothing changes until you tap **Accept**, and a typed yes doesn't count. On the Roadmap tab you can mark Milestones done, move them, remove them, add your own and add them to Google Calendar. Buddy can suggest a change later, with a card of its own, and only your tap makes it.
+
+### Known limits
+
+- If Buddy doesn't know your year, there's no Roadmap yet.
+- Dates for a plan's terms are Buddy's own targets, not Temple's.
+- Milestones are moved with arrows, not by dragging.
+- Claude could still suggest a poor Milestone. Anything specific to Temple needs a Guidebook item behind it, but that's an instruction, checked by `npm run smoke:roadmap`.
+
 ## The Guidebook
 
 Once a day, from 6 a.m. Philadelphia time, Discovery reads 40 pages from Temple's office websites: Tuttleman Counseling, the Student Success Center, the Career Center, Student Financial Services, the Wellness Resource Center, Disability Resources and the Dean of Students. The list is in `backend/src/office-pages.ts`. It reads with plain page fetches, not Buddy's Browser, and needs no Permission because the pages are public. If the laptop was asleep, it reads once when the laptop wakes.
@@ -175,10 +249,10 @@ An item leaves two weeks after it went missing from its page, unless another of 
 - A Report covers one item. A Resource and a Contact with the same name are two items, so the other can still show. A reported item that Haiku later names quite differently would come back as new, though it's told the reported names so as not to.
 - Search goes by words. Haiku adds everyday words for each item, and Claude picks the words to search for, but a question that shares no word with an item won't find it.
 - Only the pages on the list are read, so a new page isn't noticed. A page that moves stops answering, Activity lists it, and its address needs changing in the list. Its items leave after two weeks.
-- Opportunities aren't in the Guidebook yet (#12), and neither are the Bulletin or the academic calendar. Buddy will say it has no Source for those.
+- Opportunities aren't in the Guidebook yet (#12). The Bulletin and the academic calendar aren't in it either: Buddy reads those for Roadmaps and Standard Milestones.
 - Reads depend on the laptop being on and awake, and on the Claude budget that #27 will limit.
 
-After changing the page list, run `npm run save-office-pages` in `backend` to refresh the saved copies the tests use.
+After changing the page list, run `npm run save-office-pages` in `backend` to refresh the saved copies the tests use. `npm run save-bulletin-pages` does the same for the Bulletin's pages.
 
 ## See what Buddy did
 
@@ -190,7 +264,6 @@ The backend writes all of this itself, in words from Buddy's own code, and Claud
 
 - "Profile facts Buddy had" means the facts Claude was given for that reply: everything you told Buddy, plus the calendar if Buddy looked at it. Claude isn't asked which ones it used, because its answer couldn't be checked, so it may not have used every one. After a read that's out of date, the list can include an event that's already over, which Claude wasn't shown.
 - Claude can also see the conversation so far, including what it looked at in earlier turns, so a reply can rest on those without any of it being listed. The screen says so.
-- There are no Sources yet, so that part always says none. #9 gives Buddy pages to look at, and needs to add them to the turn's record.
 - Each reply's record keeps its facts as they were at the time. A fact you later edit or delete, or a calendar event you later revoke, keeps its old words in the records of replies that had it, until the record is deleted (#30). Reads themselves keep no calendar details.
 - `npm run check-login` is a tool for this laptop, so its read isn't recorded.
 - If a Read now joins a read already under way, the entry gives the first one's reason.
@@ -198,9 +271,9 @@ The backend writes all of this itself, in words from Buddy's own code, and Claud
 
 ## Log in to a site
 
-On the You tab, tap **Log in to Canvas**. The live view opens on the site's sign-in page. Tap the field you want, tap **Keyboard** to type, approve Duo on your phone, then tap **Done**. The app then tells you whether Buddy could open the site.
+On the You tab, tap **Log in** under the Connection, such as **Log in to Canvas**, once you've given its Read Permission. The live view opens on the site's sign-in page. Tap the field you want, tap **Keyboard** to type, approve Duo on your phone, then tap **Done**. The app then tells you whether Buddy could open the site.
 
-Until you tap Done, Buddy can't read the browser and nothing is recorded. If you leave the live view without tapping Done, Buddy stays locked out until you go back and tap it.
+Until you tap Done, Buddy can't read the browser and nothing is recorded. If you leave the live view without tapping Done, Buddy can't read anything, for any Connection, until you go back and tap it. The app tells you, and the button under that Connection becomes **Continue logging in**.
 
 Logins are kept in the `profile` Docker volume, so they survive restarts of the backend and the container. `docker compose down` keeps them. `docker compose down --volumes` deletes them all. To forget one site's login:
 
@@ -209,7 +282,7 @@ cd backend
 npm run forget-login canvas
 ```
 
-Forgetting Canvas also forgets Temple's single sign-on and Duo, because otherwise the login would quietly come back. Other Temple sites may need you to log in again sooner.
+This forgets Temple's single sign-on and Duo only if no other Temple Connection is on. While one is, they stay, so logging in to the forgotten site may not ask you again. Temple's cookies are shared across its sites, so others may need you to log in again sooner.
 
 To check that a login still works, including after a restart, run this with Buddy's Browser running. It prints the page's title and how much text Buddy read, not the text itself. It's refused while a Takeover is under way.
 
@@ -244,6 +317,10 @@ npm test
 npm run typecheck
 npm run test:browser   # checks against the real container, on local test pages. Needs Docker Desktop.
 npm run smoke          # makes real Claude calls, including Profile, masking, Crisis and calendar tests, which cost real money
+npm run smoke:handoff     # real Claude calls for Handoffs
+npm run smoke:guidebook   # real Temple pages and real Claude calls for the Guidebook
+npm run smoke:milestones  # real Temple pages and real Claude calls for Standard Milestones
+npm run smoke:roadmap     # real Bulletin pages and real Claude calls for a Roadmap
 
 cd app
 flutter test
@@ -251,5 +328,7 @@ flutter analyze
 ```
 
 `npm run test:browser` uses its own profile, so it can't touch your real logins.
+
+Run `npm run smoke` after adding or changing a tool. The real API refuses every reply once the tools' schemas together get too big, and scripted tests can't see that: `test/tool-limits.test.ts` only holds the published limits. To check a Connection against your real login, see [Check a Connection against your real login](#check-a-connection-against-your-real-login).
 
 Tests replace everything outside Buddy with test versions. To add another outside service, add it to `backend/src/adapters.ts` and give it a test version in `backend/test/support/`.

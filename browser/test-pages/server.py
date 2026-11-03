@@ -252,6 +252,24 @@ TUPORTAL_PAGES = {
     "/html/TEMPLE/apps/tup/Channels/index.jsp": TUPORTAL_BALANCE,
 }
 
+# A list that draws only what's in view and drops what's scrolled past, as a real inbox does. Nothing here came from a real account.
+LONG_LIST = """
+<title>A long list</title>
+<div id="list" style="height: 200px; overflow-y: auto"><div id="all" style="height: 2000px; position: relative"></div></div>
+<script>
+  const list = document.getElementById('list');
+  const all = document.getElementById('all');
+  const draw = () => {
+    const first = Math.floor(list.scrollTop / 40);
+    all.innerHTML = Array.from({length: 6}, (_, step) => first + step).filter((row) => row < 50).map((row) =>
+      '<div role="option" data-convid="row' + row + '" aria-label="Made-up" style="position: absolute; height: 40px; top: ' + row * 40 + 'px">' +
+      '<span title="row' + row + '@temple.edu">Made-up</span></div>').join('');
+  };
+  list.addEventListener('scroll', draw);
+  draw();
+</script>
+"""
+
 # A made-up Outlook on the web. The server sends an empty page, and its script asks for the mail by POST
 # and builds what the reader wants late, as the real app does. Nothing here came from a real account.
 OUTLOOK_MESSAGES = [
@@ -442,6 +460,9 @@ class Pages(BaseHTTPRequestHandler):
         elif self.path in TUPORTAL_PAGES:
             self.send_response(200)
             self.page_with_type("text/html", f"<!doctype html>{TUPORTAL_PAGES[self.path]}".encode())
+        elif self.path == "/made-up-long-list":
+            self.send_response(200)
+            self.page_with_type("text/html", f"<!doctype html>{LONG_LIST}".encode())
         elif self.path == "/made-up-outlook-login":
             self.send_response(200)
             self.send_header("set-cookie", "outlook_session=signed-in; Path=/; HttpOnly")

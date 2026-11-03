@@ -14,6 +14,8 @@ export interface PageReading {
   answers?: PageAnswer[];
   /** The frames inside the page, because `text` and `html` stop at a frame's edge. A portal may keep everything in them. */
   frames?: FrameReading[];
+  /** The page after each step down its list, if the read asked for that. See ReadOptions. */
+  scrolled?: string[];
 }
 
 /** One frame inside a page, read the same way. Each stands alone: nothing says a frame's words are the page's. */
@@ -44,6 +46,12 @@ export interface ReadOptions {
    * answers to keep. The read waits for one of each path, for a little while, before it finishes.
    */
   answersFrom?: AnswersToKeep;
+  /**
+   * For a list that only draws what's in view, and drops what's scrolled past: moves it down this many
+   * times and gives the page after each. Scrolling is all it does, and anything the page asks for as a
+   * result goes through the guard like everything else.
+   */
+  scrollList?: { item: string; times: number };
 }
 
 /**

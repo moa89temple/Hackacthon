@@ -23,6 +23,8 @@ export interface SavedPage {
   answers?: PageAnswer[];
   /** The frames inside it. */
   frames?: FrameReading[];
+  /** The page after each step down its list. A read gets them only if it asks. */
+  scrolled?: string[];
 }
 
 /**
@@ -104,6 +106,7 @@ export class RecordingBrowser implements BuddysBrowser {
       accessibilitySnapshot: page.accessibilitySnapshot,
       html: page.html ?? "",
       ...(page.frames ? { frames: page.frames } : {}),
+      ...(options.scrollList ? { scrolled: (page.scrolled ?? []).slice(0, options.scrollList.times) } : {}),
       ...(options.answersFrom
         ? { answers: (page.answers ?? []).filter(({ url: address }) => isAnswerToKeep(address, options.answersFrom!)) }
         : {}),
