@@ -313,7 +313,7 @@ The backend's timer checks each minute. If the laptop was asleep or off, it make
 **What's in it.** Buddy's own records, chosen by Buddy's own code, with no model involved, so nothing in it is written for the occasion:
 
 - **Milestones**, from your Roadmap and the Standard Milestones, each with its Source. A weekday's looks 3 days ahead and holds at most 3. A week-ahead's looks 7 days ahead and holds at most 6.
-- **Opportunities**, each with its Source and cost. What you saved comes first, then what's for your Goals, with the same limits. Temple's other events come only in the week-ahead Briefing.
+- **Opportunities**, each with its Source and cost. What you saved comes first, then what's for your Goals, with the same limits. Other Opportunities from now.temple.edu come only in the week-ahead Briefing.
 - **News from Connections**, since the last Briefing. Today shows the newest 3 from each Connection and says how many others there are.
 
 A Briefing is stored as ids, and each one's words are looked up when you open Today. So a Report, a revoked Read Permission or a deleted fact takes it out of the Briefing too, and what's read from a Connection doesn't stay behind there.
@@ -343,7 +343,9 @@ To see one soon, add a Milestone due in the next 3 days to your Roadmap, then se
 ### Known limits
 
 - The phone has to be reachable by Firebase, and the laptop has to be on and awake for a Briefing to be made. A Briefing that couldn't be sent is tried each minute until the next one replaces it.
-- Tapping a notification while Buddy is locked opens the lock screen first, then Today.
+- Tapping a notification while Buddy is locked opens the lock screen first, then Today. It closes any other screen that's open, but a Takeover, a Draft you're editing and a Milestone you're adding stay on top, with Today behind them.
+- Something that started before today and ends after the Briefing's window, such as a long program, comes up around its first and last days, not in between.
+- Today shows only the latest Briefing, so news in one you didn't open goes from Today when the next is made. It's still in the conversation's reach, through its Connection.
 - Buddy can't tell whether the phone showed a notification. If notifications are turned off in the phone's settings, the backend still counts it as sent until the You tab next finds out, and even then it only tells you.
 - There's no way to turn Briefings off, only to change their times.
 - The iPhone build isn't set up for this. It needs its own `GoogleService-Info.plist`, push setup on your Mac, and the Installation ID setting in `Info.plist`.

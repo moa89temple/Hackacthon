@@ -26,6 +26,7 @@ import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
 import 'takeover/takeover_screen.dart';
 import 'widgets/buddy_avatar.dart';
+import 'widgets/work_in_progress.dart';
 
 const templeCherry = Color(0xFF9D2235);
 
@@ -232,7 +233,7 @@ class _Tabs extends StatefulWidget {
   State<_Tabs> createState() => _TabsState();
 }
 
-class _TabsState extends State<_Tabs> {
+class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   static const _titles = ['Buddy', 'Today', 'Roadmap', 'You'];
   static const _buddyTab = 0;
   static const _todayTab = 1;
@@ -267,7 +268,14 @@ class _TabsState extends State<_Tabs> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _phoneNotifications.start();
+  }
+
+  /// The laptop may have been asleep when the app last tried to give its token.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _phoneNotifications.check();
   }
 
   /// A tapped notification opens Today, with the newest Briefing at the top.
@@ -275,6 +283,8 @@ class _TabsState extends State<_Tabs> {
     if (!mounted) return;
     _selectTab(_todayTab);
     _briefings.askToShow();
+    // Today sits under any other screen that's open. What the Student is in the middle of stays on top, with Today behind it.
+    Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == workInProgress.name);
   }
 
   /// The phone shows nothing of its own while Buddy is open.
@@ -316,6 +326,7 @@ class _TabsState extends State<_Tabs> {
   Future<FinishedTakeover?> _openTakeover(Takeover takeover) {
     return Navigator.of(context).push<FinishedTakeover>(
       MaterialPageRoute(
+        settings: workInProgress,
         builder: (context) => TakeoverScreen(
           backend: widget.backend,
           takeover: takeover,
@@ -350,6 +361,7 @@ class _TabsState extends State<_Tabs> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _chat.dispose();
     _profile.dispose();
     _connections.dispose();

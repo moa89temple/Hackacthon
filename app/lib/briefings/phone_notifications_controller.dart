@@ -54,7 +54,7 @@ class PhoneNotificationsController extends ChangeNotifier {
     _listening
       ..add(_phone.briefingOpened.listen((_) => onOpened()))
       ..add(_phone.briefingArrived.listen((_) => onArrived()))
-      ..add(_phone.tokenChanges.listen(_register));
+      ..add(_phone.tokenChanges.listen(_registerIfAllowed));
     // Before the permission prompt, so that opening on Today doesn't wait for the Student's answer.
     if (await _phone.takeOpenedBriefing() && !_disposed) onOpened();
     await _registerIf(await _phone.askPermission());
@@ -83,6 +83,11 @@ class PhoneNotificationsController extends ChangeNotifier {
       return;
     }
     await _register(token);
+  }
+
+  /// Firebase registers by itself, even with the permission prompt up or after a no. The backend hears nothing until it's allowed.
+  Future<void> _registerIfAllowed(String token) async {
+    if (await _phone.isAllowed()) await _register(token);
   }
 
   /// Firebase says the same token often, so that the backend is told once.

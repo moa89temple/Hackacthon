@@ -79,7 +79,7 @@ class _TodayTabState extends State<TodayTab> {
   }
 
   /// There whatever has become of the dates, because what the Student saved doesn't depend on them.
-  List<Widget> _opportunitiesPart(BuildContext context) {
+  List<Widget> _topParts(BuildContext context) {
     final saved = widget.opportunities.saved;
     return [
       if (saved.isNotEmpty) ...[
@@ -119,22 +119,22 @@ class _TodayTabState extends State<TodayTab> {
       listenable: Listenable.merge([widget.briefings, widget.milestones, widget.opportunities]),
       builder: (context, _) {
         final upcoming = widget.milestones.upcoming;
-        final opportunitiesPart = [
+        final topParts = [
           ...briefingPart(context, briefings: widget.briefings, opportunities: widget.opportunities, openPhone: widget.openPhone),
-          ..._opportunitiesPart(context),
+          ..._topParts(context),
         ];
-        Widget withOpportunities(Widget below) => ListView(controller: _scroll, padding: const EdgeInsets.all(12), children: [...opportunitiesPart, below]);
+        Widget withTopParts(Widget below) => ListView(controller: _scroll, padding: const EdgeInsets.all(12), children: [...topParts, below]);
         if (widget.milestones.couldNotLoad) {
-          return withOpportunities(_message(
+          return withTopParts(_message(
             context,
             "Buddy couldn't load what's coming up. Check that the backend is running.",
             isProblem: true,
             action: TextButton(onPressed: widget.milestones.load, child: const Text('Try again')),
           ));
         }
-        if (upcoming == null) return withOpportunities(const Center(child: CircularProgressIndicator()));
+        if (upcoming == null) return withTopParts(const Center(child: CircularProgressIndicator()));
         if (upcoming.isEmpty) {
-          return withOpportunities(_message(
+          return withTopParts(_message(
             context,
             "No dates to show yet. Buddy reads Temple's calendar and deadline pages each day, and what's coming up will show here.",
           ));
@@ -147,7 +147,7 @@ class _TodayTabState extends State<TodayTab> {
           controller: _scroll,
           padding: const EdgeInsets.all(12),
           children: [
-            ...opportunitiesPart,
+            ...topParts,
             Semantics(
               header: true,
               child: Text('Coming up', style: Theme.of(context).textTheme.titleLarge),

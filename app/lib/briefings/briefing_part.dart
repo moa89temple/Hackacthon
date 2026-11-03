@@ -80,7 +80,7 @@ List<Widget> briefingPart(
   ];
 }
 
-/// Something new in a Connection, which is its own Source: it says which.
+/// Something new in a Connection. It came from the Student's own record there, not from a web page, so it says which Connection in place of a Source.
 class _NewsCard extends StatelessWidget {
   const _NewsCard({super.key, required this.news});
 

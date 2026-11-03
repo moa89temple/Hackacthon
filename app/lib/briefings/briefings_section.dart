@@ -15,10 +15,10 @@ class BriefingsSection extends StatelessWidget {
   Future<void> _change(
     BuildContext context, {
     required String current,
-    required String helpText,
+    required String title,
     required BriefingTimes Function(String chosen) timesWith,
   }) async {
-    final chosen = await askForBriefingTime(context, title: helpText, current: current);
+    final chosen = await askForBriefingTime(context, title: title, current: current);
     if (chosen != null) await briefings.saveTimes(timesWith(chosen));
   }
 
@@ -42,7 +42,7 @@ class BriefingsSection extends StatelessWidget {
           canAsk: false,
         ),
       PhoneNotificationStatus.notRegistered => (
-          "The app couldn't tell the backend where to reach this phone. It tries again each time you open this tab.",
+          "The app couldn't tell the backend where to reach this phone. It tries again each time you come back to Buddy or open this tab.",
           canAsk: false,
         ),
       PhoneNotificationStatus.registered => ('Phone notifications are on. Tap one to see your Briefing on the Today tab.', canAsk: false),
@@ -79,7 +79,7 @@ class BriefingsSection extends StatelessWidget {
                     : () => _change(
                           context,
                           current: times.weekdays,
-                          helpText: 'Weekday Briefing time',
+                          title: 'Weekday Briefing time',
                           timesWith: (chosen) => BriefingTimes(weekdays: chosen, sunday: times.sunday),
                         ),
                 child: Text(
@@ -94,7 +94,7 @@ class BriefingsSection extends StatelessWidget {
                     : () => _change(
                           context,
                           current: times.sunday,
-                          helpText: 'Sunday week-ahead Briefing time',
+                          title: 'Sunday week-ahead Briefing time',
                           timesWith: (chosen) => BriefingTimes(weekdays: times.weekdays, sunday: chosen),
                         ),
                 child: Text(

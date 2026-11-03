@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/briefings/briefing_backend.dart';
 import 'package:buddy/device/app_lock.dart';
+import 'package:buddy/roadmap/add_milestone_screen.dart';
+import 'package:buddy/roadmap/roadmap_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -294,6 +296,62 @@ void main() {
       expect(find.text('Your Briefing').hitTestable(), findsOneWidget);
     });
 
+    testWidgets('closes a screen that was open over the tabs, so that Today shows', (tester) async {
+      final phone = FakePhoneNotifications();
+      await openUnlockedApp(tester, FakeBackend()..latestBriefing = aBriefing(), phoneNotifications: phone);
+      await openTab(tester, 'Today');
+      await tester.tap(find.text('See Opportunities'));
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationBar).hitTestable(), findsNothing);
+
+      phone.tapNotification();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your Briefing').hitTestable(), findsOneWidget);
+    });
+
+    testWidgets('closes the dialog for choosing a time, without saving anything', (tester) async {
+      final phone = FakePhoneNotifications();
+      final backend = FakeBackend()..latestBriefing = aBriefing();
+      await openUnlockedApp(tester, backend, phoneNotifications: phone);
+      await openTab(tester, 'You');
+      await tester.scrollUntilVisible(find.text('Weekdays at 8:00 AM'), 200);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Weekdays at 8:00 AM'));
+      await tester.pumpAndSettle();
+
+      phone.tapNotification();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your Briefing').hitTestable(), findsOneWidget);
+      expect(backend.timesSaved, isEmpty);
+    });
+
+    testWidgets('leaves words the Student is typing on top, with Today behind them', (tester) async {
+      final phone = FakePhoneNotifications();
+      final backend = FakeBackend()
+        ..latestBriefing = aBriefing()
+        ..milestones = [RoadmapMilestone(id: 1, done: false, goal: null, name: 'Made up', when: 'Soon', sources: const [], calendarUrl: 'https://calendar.test/')];
+      await openUnlockedApp(tester, backend, phoneNotifications: phone);
+      await openTab(tester, 'Roadmap');
+      await tester.ensureVisible(find.text('Add a Milestone'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add a Milestone'));
+      await tester.pumpAndSettle();
+      final typing = find.byType(AddMilestoneScreen);
+      expect(typing, findsOneWidget);
+
+      phone.tapNotification();
+      await tester.pumpAndSettle();
+      expect(typing, findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(selectedTab(tester), 1);
+      expect(find.text('Your Briefing').hitTestable(), findsOneWidget);
+    });
+
     testWidgets('brings a Briefing back to the top when the Student had scrolled away', (tester) async {
       final phone = FakePhoneNotifications();
       await openUnlockedApp(
@@ -387,6 +445,36 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(backend.pushTokensSaved, ['made-up-push-token', 'a-newer-token']);
+    });
+
+    testWidgets('gives the backend nothing when Firebase registers by itself after a no, and says they are not allowed', (tester) async {
+      final phone = FakePhoneNotifications(allowed: false);
+      final backend = FakeBackend();
+      await openUnlockedApp(tester, backend, phoneNotifications: phone);
+      await tester.pumpAndSettle();
+
+      phone.tokenChangesTo('made-up-push-token');
+      await tester.pumpAndSettle();
+
+      expect(backend.pushTokensSaved, isEmpty);
+      await openTab(tester, 'You');
+      await tester.scrollUntilVisible(find.textContaining("You haven't allowed notifications"), 200);
+      expect(find.textContaining("You haven't allowed notifications"), findsOneWidget);
+    });
+
+    testWidgets('tries the token again on coming back to Buddy, if the laptop was asleep before', (tester) async {
+      final phone = FakePhoneNotifications();
+      final backend = FakeBackend()..pushTokenError = Exception('off');
+      await openUnlockedApp(tester, backend, phoneNotifications: phone);
+      await tester.pumpAndSettle();
+      expect(backend.pushTokensSaved, isEmpty);
+
+      backend.pushTokenError = null;
+      await goToBackground(tester);
+      await comeBack(tester);
+      await tester.pumpAndSettle();
+
+      expect(backend.pushTokensSaved, ['made-up-push-token']);
     });
 
     testWidgets('tells the backend once when Firebase says the same token again', (tester) async {

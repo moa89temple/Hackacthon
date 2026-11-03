@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../chat/crisis_card.dart';
+import '../widgets/work_in_progress.dart';
 import 'add_milestone_screen.dart';
 import 'roadmap_backend.dart';
 import 'roadmap_controller.dart';
@@ -54,7 +55,7 @@ class _RoadmapTabState extends State<RoadmapTab> {
   }
 
   void _openAddScreen(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (context) => AddMilestoneScreen(roadmap: widget.roadmap)));
+    Navigator.of(context).push(MaterialPageRoute<void>(settings: workInProgress, builder: (context) => AddMilestoneScreen(roadmap: widget.roadmap)));
   }
 
   @override
