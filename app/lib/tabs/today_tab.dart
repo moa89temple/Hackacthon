@@ -10,16 +10,19 @@ import '../milestones/milestones_controller.dart';
 import '../opportunities/opportunities_controller.dart';
 import '../opportunities/opportunities_screen.dart';
 import '../opportunities/opportunity_card.dart';
+import '../tasks/task_card.dart';
+import '../tasks/tasks_controller.dart';
 
 const _shownAtATime = 10;
 
-/// The latest Briefing, what the Student saved, then the Standard Milestones coming up, soonest first, each from its Source.
+/// The latest Briefing, the Student's Tasks, what they saved, then the Standard Milestones coming up, soonest first, each from its Source.
 class TodayTab extends StatefulWidget {
-  const TodayTab({super.key, required this.briefings, required this.milestones, required this.opportunities, required this.connections, required this.openPhone});
+  const TodayTab({super.key, required this.briefings, required this.milestones, required this.opportunities, required this.tasks, required this.connections, required this.openPhone});
 
   final BriefingsController briefings;
   final MilestonesController milestones;
   final OpportunitiesController opportunities;
+  final TasksController tasks;
 
   /// Buddy asks here for any login it needs, because this is the tab the Student looks at each day.
   final ConnectionsController connections;
@@ -81,7 +84,23 @@ class _TodayTabState extends State<TodayTab> {
   /// There whatever has become of the dates, because what the Student saved doesn't depend on them.
   List<Widget> _topParts(BuildContext context) {
     final saved = widget.opportunities.saved;
+    final tasks = widget.tasks.onToday;
     return [
+      if (tasks.isNotEmpty) ...[
+        Semantics(
+          header: true,
+          child: Text('Tasks', style: Theme.of(context).textTheme.titleLarge),
+        ),
+        const SizedBox(height: 6),
+        for (final task in tasks)
+          TaskCard(
+            // Keeps each card's state with its own Task as the list changes around it.
+            key: ValueKey('task ${task.id}'),
+            task: task,
+            tasks: widget.tasks,
+            openPhone: widget.openPhone,
+          ),
+      ],
       if (saved.isNotEmpty) ...[
         Semantics(
           header: true,
@@ -116,7 +135,7 @@ class _TodayTabState extends State<TodayTab> {
 
   Widget _comingUp(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([widget.briefings, widget.milestones, widget.opportunities]),
+      listenable: Listenable.merge([widget.briefings, widget.milestones, widget.opportunities, widget.tasks]),
       builder: (context, _) {
         final upcoming = widget.milestones.upcoming;
         final topParts = [

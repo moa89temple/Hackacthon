@@ -14,7 +14,7 @@ import 'support/test_app.dart';
 
 const cent = 10000000;
 const twoDollars = 200 * cent;
-const stoppedWords = 'Background work has stopped for today, because it reached its limit of \$2.00. It resumes tomorrow. Chat keeps working, and so do Briefings.';
+const stoppedWords = 'Background work has stopped for today, because it reached its limit of \$2.00. It resumes tomorrow. Chat, Tasks and Briefings keep working.';
 
 SpendingSummary spent({int today = 0, int month = 0, bool stopped = false}) => SpendingSummary(
       todayNanodollars: today,
@@ -185,7 +185,7 @@ void main() {
       await openYou(tester, FakeBackend()..spendingSummary = spent(today: twoDollars, month: twoDollars, stopped: true));
 
       final node = tester.getSemantics(find.bySemanticsLabel(RegExp('^Background work has stopped for today')));
-      expect(node.label, 'Background work has stopped for today, because it reached its limit of 2 dollars. It resumes tomorrow. Chat keeps working, and so do Briefings.');
+      expect(node.label, 'Background work has stopped for today, because it reached its limit of 2 dollars. It resumes tomorrow. Chat, Tasks and Briefings keep working.');
       expect(node.flagsCollection.isLiveRegion, isTrue);
       handle.dispose();
     });

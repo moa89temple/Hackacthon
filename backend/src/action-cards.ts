@@ -169,6 +169,8 @@ export interface ActionCards {
   endInterrupted(): void;
   /** What became of the latest cards, for Claude's note with each turn. */
   noteForTurn(): string;
+  /** What became of this card, in words for Claude. Null while it's still waiting or running. */
+  whatBecameOf(id: number): string | null;
 }
 
 export interface ActionCardsDeps {
@@ -385,6 +387,13 @@ export function createActionCards({ store, clock, routines, logError }: ActionCa
           actionFinished(result, describe(stored), clock.now()),
         ]);
       }
+    },
+
+    whatBecameOf(id) {
+      const stored = current(id);
+      if (!stored) return "That card is gone, so nothing happened.";
+      if (stored.status === "waiting" || stored.status === "running") return null;
+      return `Card ${stored.id}, "${describe(stored).title}": ${STATUS_FOR_CLAUDE[stored.status]}.`;
     },
 
     noteForTurn() {

@@ -49,7 +49,7 @@ function withoutFragment(address: string): string {
 }
 
 /** A failed search still answers 200, with an error in place of its list of results. */
-function resultsIn(blocks: ContentBlock[]): { addresses: string[]; errors: string[] } {
+export function resultsIn(blocks: ContentBlock[]): { addresses: string[]; errors: string[] } {
   const addresses: string[] = [];
   const errors: string[] = [];
   for (const block of blocks) {
@@ -61,7 +61,7 @@ function resultsIn(blocks: ContentBlock[]): { addresses: string[]; errors: strin
 }
 
 /** Whether Buddy may fetch this. It came from the web, so it could point anywhere, including at this laptop. */
-function isWorthReading(address: string): boolean {
+export function isWorthReading(address: string): boolean {
   const url = URL.parse(address);
   if (!url || url.protocol !== "https:" || !isPublicAddress(url.hostname)) return false;
   // Discovery reads each of these every day anyway, for every Student rather than for this Goal.

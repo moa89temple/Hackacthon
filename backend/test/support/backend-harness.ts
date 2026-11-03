@@ -152,6 +152,27 @@ export class BackendHarness {
     return this.#backend.briefings;
   }
 
+  /** The background worker's Tasks. */
+  get tasks(): RunningBackend["tasks"] {
+    return this.#backend.tasks;
+  }
+
+  /** What the Today tab and the Task cards ask for. */
+  async listTasks(): Promise<any[]> {
+    const response = await fetch(`${this.url}/tasks`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { tasks: any[] }).tasks;
+  }
+
+  /** The Student tapping Cancel on a Task card. */
+  cancelTask(id: unknown, key: Record<string, string> = this.deviceHeaders): Promise<Response> {
+    return fetch(`${this.url}/tasks/${id}/cancel`, { method: "POST", headers: key });
+  }
+
+  /** The Student tapping Keep going on a Task card that paused over its cost. */
+  keepTaskGoing(id: unknown, key: Record<string, string> = this.deviceHeaders): Promise<Response> {
+    return fetch(`${this.url}/tasks/${id}/keep-going`, { method: "POST", headers: key });
+  }
+
   /** What the Today tab asks for. */
   async latestBriefing(): Promise<any> {
     const response = await fetch(`${this.url}/briefings/latest`, { headers: this.deviceHeaders });
@@ -229,6 +250,15 @@ export class BackendHarness {
       .some((name) => readFileSync(join(this.#directory, name)).includes(text));
   }
 
+  /** What's saved of a Task's exchange with Claude. The app never sees this, and a Task that's over shouldn't keep it. */
+  storedTaskWork(id: number): string | null {
+    let work: string | null = null;
+    this.#withDatabase((database) => {
+      work = (database.prepare("SELECT work FROM tasks WHERE id = ?").get(id) as { work: string | null }).work;
+    });
+    return work;
+  }
+
   /** A second connection to the database, for standing in for something going wrong from outside. */
   #withDatabase(work: (database: DatabaseSync) => void): void {
     const database = new DatabaseSync(join(this.#directory, "buddy.sqlite"));
@@ -262,7 +292,10 @@ export class BackendHarness {
   async restart(options: { asCommand?: boolean } = {}): Promise<void> {
     await this.#backend.close();
     await this.#boot();
-    if (!options.asCommand) this.#backend.actionCards.endInterrupted();
+    if (!options.asCommand) {
+      this.#backend.actionCards.endInterrupted();
+      this.#backend.tasks.endInterrupted();
+    }
   }
 
   async stop(): Promise<void> {

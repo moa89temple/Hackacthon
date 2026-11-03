@@ -20,10 +20,12 @@ const backend = await startBackend({
 });
 
 backend.actionCards.endInterrupted();
+backend.tasks.endInterrupted();
 backend.connections.startSchedule();
 backend.discovery.startSchedule();
 backend.opportunityDiscovery.startSchedule();
 backend.briefings.startSchedule();
+backend.tasks.startSchedule();
 
 console.log(adapters.notifier.offBecause ?? "Phone notifications are on, through Firebase Cloud Messaging.");
 

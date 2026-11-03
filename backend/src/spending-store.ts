@@ -19,7 +19,7 @@ export const SPENDING_MIGRATION = `CREATE TABLE claude_calls (
    );
    CREATE INDEX claude_calls_by_day ON claude_calls (day);`;
 
-export type ClaudeWork = "chat" | "background";
+export type ClaudeWork = "chat" | "background" | "task";
 
 export interface ClaudeCallToStore {
   at: Date;
@@ -33,11 +33,21 @@ export interface ClaudeCallToStore {
   cacheWriteTokens: number;
   webSearches: number;
   costNanodollars: number;
+  /** The Task this was for, when it was for one. */
+  taskId?: number;
 }
 
 export interface SpentByWork {
   chat: number;
   background: number;
+  task: number;
+}
+
+/** In nanodollars. */
+export interface SpentOnTask {
+  total: number;
+  /** The most that one of its calls cost. */
+  dearestCall: number;
 }
 
 export interface SpendingStore {
@@ -46,21 +56,23 @@ export interface SpendingStore {
   spentOn(day: string): SpentByWork;
   /** In nanodollars, for this YYYY-MM. */
   spentInMonth(month: string): SpentByWork;
+  spentOnTask(taskId: number): SpentOnTask;
 }
 
 function byWork(rows: unknown[]): SpentByWork {
-  const spent: SpentByWork = { chat: 0, background: 0 };
+  const spent: SpentByWork = { chat: 0, background: 0, task: 0 };
   for (const row of rows as { work: ClaudeWork; cost: number }[]) spent[row.work] = row.cost;
   return spent;
 }
 
 export function createSpendingStore(db: DatabaseSync): SpendingStore {
   const insert = db.prepare(
-    `INSERT INTO claude_calls (at, day, work, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, web_searches, cost_nanodollars)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO claude_calls (at, day, work, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, web_searches, cost_nanodollars, task_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const selectDay = db.prepare(`SELECT work, SUM(cost_nanodollars) AS cost FROM claude_calls WHERE day = ? GROUP BY work`);
   const selectMonth = db.prepare(`SELECT work, SUM(cost_nanodollars) AS cost FROM claude_calls WHERE day LIKE ? GROUP BY work`);
+  const selectTask = db.prepare(`SELECT COALESCE(SUM(cost_nanodollars), 0) AS total, COALESCE(MAX(cost_nanodollars), 0) AS dearest FROM claude_calls WHERE task_id = ?`);
 
   return {
     record(call) {
@@ -75,10 +87,16 @@ export function createSpendingStore(db: DatabaseSync): SpendingStore {
         call.cacheWriteTokens,
         call.webSearches,
         call.costNanodollars,
+        call.taskId ?? null,
       );
     },
 
     spentOn: (day) => byWork(selectDay.all(day)),
     spentInMonth: (month) => byWork(selectMonth.all(`${month}-%`)),
+
+    spentOnTask(taskId) {
+      const { total, dearest } = selectTask.get(taskId) as { total: number; dearest: number };
+      return { total, dearestCall: dearest };
+    },
   };
 }

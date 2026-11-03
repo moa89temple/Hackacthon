@@ -6,6 +6,7 @@ import { HIDDEN_MARKS } from "./masking.ts";
 import { FIND_OPPORTUNITIES_TOOL, OPPORTUNITIES_PROMPT } from "./opportunity-chat.ts";
 import { ROADMAP_PROMPT } from "./roadmap-tools.ts";
 import { servicesPrompt } from "./service-chat.ts";
+import { TASKS_PROMPT } from "./task-chat.ts";
 import { tuportalPrompt } from "./tuportal-chat.ts";
 import { TUPORTAL_ID } from "./tuportal-rules.ts";
 import { TUMAIL_ID } from "./tumail-rules.ts";
@@ -363,6 +364,8 @@ Navigate360 is a Connection too, where Temple keeps a Student's advisor and advi
 When Navigate360 is off, call ${SUGGEST_CONNECTION_TOOL.name} only when reading it is actually needed to answer what they've just asked, or when they ask for it, and say in a sentence why it would help. If they'd rather not, help them find their college's advising office in the Guidebook instead.
 
 ${servicesPrompt(REMEMBER_TOOL.name)}
+
+${TASKS_PROMPT}
 
 Buddy can't read Handshake yet. If they ask about it, say so plainly in a sentence, and point them to the Opportunities and the Career Center in the Guidebook. Never offer it, and never say what's on it.
 

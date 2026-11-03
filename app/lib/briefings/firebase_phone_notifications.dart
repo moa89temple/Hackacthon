@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'phone_notifications.dart';
 
 const _briefingType = 'briefing';
+const _taskType = 'task';
 const _registerTimeout = Duration(seconds: 30);
 
 /// Notifications through Firebase Cloud Messaging. It reads its project from google-services.json, which is
@@ -14,6 +15,7 @@ const _registerTimeout = Duration(seconds: 30);
 class FirebasePhoneNotifications implements PhoneNotifications {
   final _opened = StreamController<void>.broadcast();
   final _arrived = StreamController<void>.broadcast();
+  final _taskOpened = StreamController<int>.broadcast();
   final _registered = StreamController<String>.broadcast();
   String? _lastRegistered;
   Future<bool>? _setUp;
@@ -21,8 +23,17 @@ class FirebasePhoneNotifications implements PhoneNotifications {
   /// A tap can come while the app is still locked, before anything is listening.
   bool _tappedWithNoOneListening = false;
   bool _initialMessageTaken = false;
+  int? _taskTappedWithNoOneListening;
+  bool _initialTaskTaken = false;
+
+  /// What opened the app, which Firebase says once and both kinds of notification ask about.
+  Future<RemoteMessage?>? _initialMessage;
+  Future<RemoteMessage?> _askForInitialMessage() => _initialMessage ??= FirebaseMessaging.instance.getInitialMessage();
 
   bool _isBriefing(RemoteMessage? message) => message?.data['type'] == _briefingType;
+
+  /// The Task's number, on a notification about one.
+  int? _taskIn(RemoteMessage? message) => message?.data['type'] == _taskType ? int.tryParse(message?.data['task'] as String? ?? '') : null;
 
   @override
   Future<bool> setUp() => _setUp ??= _start();
@@ -36,6 +47,14 @@ class FirebasePhoneNotifications implements PhoneNotifications {
         _registered.add(id);
       });
       FirebaseMessaging.onMessageOpenedApp.listen((message) {
+        if (_taskIn(message) case final task?) {
+          if (_taskOpened.hasListener) {
+            _taskOpened.add(task);
+          } else {
+            _taskTappedWithNoOneListening = task;
+          }
+          return;
+        }
         if (!_isBriefing(message)) return;
         if (_opened.hasListener) {
           _opened.add(null);
@@ -61,7 +80,21 @@ class FirebasePhoneNotifications implements PhoneNotifications {
     if (_initialMessageTaken) return tapped;
     _initialMessageTaken = true;
     try {
-      return tapped || _isBriefing(await FirebaseMessaging.instance.getInitialMessage());
+      return tapped || _isBriefing(await _askForInitialMessage());
+    } on Object {
+      return tapped;
+    }
+  }
+
+  @override
+  Future<int?> takeOpenedTask() async {
+    if (!await setUp()) return null;
+    final tapped = _taskTappedWithNoOneListening;
+    _taskTappedWithNoOneListening = null;
+    if (_initialTaskTaken) return tapped;
+    _initialTaskTaken = true;
+    try {
+      return tapped ?? _taskIn(await _askForInitialMessage());
     } on Object {
       return tapped;
     }
@@ -108,4 +141,7 @@ class FirebasePhoneNotifications implements PhoneNotifications {
 
   @override
   Stream<void> get briefingArrived => _arrived.stream;
+
+  @override
+  Stream<int> get taskOpened => _taskOpened.stream;
 }

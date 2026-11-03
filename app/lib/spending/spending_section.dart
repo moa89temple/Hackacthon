@@ -80,7 +80,7 @@ class SpendingSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text("This is what Claude cost, for chat and background work together. A day and a month go by Philadelphia's clock."),
+              const Text("This is what Claude cost, for chat, Tasks and background work together. A day and a month go by Philadelphia's clock."),
               const SizedBox(height: 8),
               if (summary.backgroundStoppedForToday)
                 Semantics(
@@ -88,9 +88,9 @@ class SpendingSection extends StatelessWidget {
                   liveRegion: true,
                   child: Text(
                     'Background work has stopped for today, because it reached its limit of ${moneyOnScreen(summary.backgroundLimitNanodollars)}. '
-                    'It resumes tomorrow. Chat keeps working, and so do Briefings.',
+                    'It resumes tomorrow. Chat, Tasks and Briefings keep working.',
                     semanticsLabel: 'Background work has stopped for today, because it reached its limit of ${moneyAloud(summary.backgroundLimitNanodollars)}. '
-                        'It resumes tomorrow. Chat keeps working, and so do Briefings.',
+                        'It resumes tomorrow. Chat, Tasks and Briefings keep working.',
                   ),
                 )
               else

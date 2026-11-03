@@ -236,7 +236,7 @@ export function discoveryFailed(at: Date): NewActivityEntry {
 }
 
 /** Why Buddy read a Connection. */
-export type ReadReason = "given" | "asked" | "schedule" | "conversation" | "logged_in";
+export type ReadReason = "given" | "asked" | "schedule" | "conversation" | "logged_in" | "task";
 
 const READ_REASONS: Record<ReadReason, string> = {
   given: "You had just given its Read Permission.",
@@ -244,6 +244,7 @@ const READ_REASONS: Record<ReadReason, string> = {
   schedule: "It was one of Buddy's regular read times.",
   conversation: "Buddy looked again during your conversation.",
   logged_in: "You had just logged in.",
+  task: "A Task you asked for needed it.",
 };
 
 /**

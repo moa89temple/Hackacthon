@@ -54,6 +54,8 @@ import { createSending } from "./sending.ts";
 import { addSendingRoutes } from "./sending-routes.ts";
 import { createSpending, DAILY_BACKGROUND_LIMIT, type Spending } from "./spending.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
+import { addTaskRoutes } from "./task-routes.ts";
+import { createTasks, type Tasks } from "./tasks.ts";
 import { BUDDY_OPENING } from "./system-prompt.ts";
 
 const PAIR_ROUTE = "/devices/pair";
@@ -89,6 +91,7 @@ export interface RunningBackend {
   opportunityDiscovery: OpportunityDiscovery;
   briefings: Briefings;
   spending: Spending;
+  tasks: Tasks;
   close(): Promise<void>;
 }
 
@@ -224,6 +227,29 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     roadmap,
     opportunities,
     services,
+    tasks: () => tasks,
+    logError: (error) => app.log.error(error),
+  });
+  const tasks = createTasks({
+    // Given the plain one, because spending.forTask wraps it for each Task, to count what that Task costs.
+    claude: options.adapters.claude,
+    model: options.chatModel,
+    store,
+    clock: options.adapters.clock,
+    spending,
+    notifier: options.adapters.notifier,
+    web: options.adapters.web,
+    browserAccess,
+    connections,
+    services,
+    actionCards,
+    drafts,
+    guidebook,
+    milestones,
+    opportunities,
+    profile,
+    roadmap,
+    lastMessageShown: conversation.lastMessageShown,
     logError: (error) => app.log.error(error),
   });
   const briefings = createBriefings({
@@ -252,6 +278,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     discovery.stopSchedule();
     opportunityDiscovery.stopSchedule();
     briefings.stopSchedule();
+    await tasks.stop();
     store.close();
   });
 
@@ -306,11 +333,12 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
 
   addProfileRoutes(app, profile);
-  addBrowserRoutes(app, browserAccess, connections, services);
+  addBrowserRoutes(app, browserAccess, connections, services, tasks);
   addConnectionRoutes(app, connections);
 
   addGuidebookRoutes(app, guidebook);
-  addActionCardRoutes(app, actionCards, isStoredId);
+  addActionCardRoutes(app, actionCards, isStoredId, () => void tasks.runDue());
+  addTaskRoutes(app, tasks, isStoredId);
   addDraftRoutes(app, drafts, () => actionCards.expireDue());
   addSendingRoutes(app, { sending, actionCards, drafts, lastMessageShown: conversation.lastMessageShown, isStoredId });
   addCrisisEmailRoutes(app, { sites, store, sending, actionCards, lastMessageShown: conversation.lastMessageShown, isStoredId });
@@ -326,7 +354,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   }));
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, opportunities, opportunityDiscovery, briefings, spending, close: () => app.close() };
+  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, opportunities, opportunityDiscovery, briefings, spending, tasks, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {
@@ -395,7 +423,7 @@ function addConnectionRoutes(app: FastifyInstance, connections: Connections): vo
   }));
 }
 
-function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess, connections: Connections, services: ServiceConnections): void {
+function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess, connections: Connections, services: ServiceConnections, tasks: Tasks): void {
   app.get("/takeover", async () => ({ takeover: browserAccess.currentTakeover() }));
 
   app.post<{ Body: { site?: unknown } }>("/takeover", async (request, reply) => {
@@ -409,6 +437,8 @@ function addBrowserRoutes(app: FastifyInstance, browserAccess: BrowserAccess, co
     const finished = await browserAccess.finishTakeover();
     services.afterLogin(finished.site, finished.signedIn);
     await connections.afterLogin(finished.site, finished.signedIn);
+    // After the read that login sets off, which is what says the login worked.
+    void connections.readsFinished(finished.site).catch(() => {}).then(() => tasks.runDue());
     return finished;
   });
 

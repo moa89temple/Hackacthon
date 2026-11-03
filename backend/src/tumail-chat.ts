@@ -4,6 +4,7 @@ import type { ProfileFact } from "./profile.ts";
 import { PROPOSE_ROADMAP_TOOL, SAVE_GOAL_TOOL, SUGGEST_CHANGE_TOOL } from "./roadmap-tools.ts";
 import type { NewMessage } from "./store.ts";
 import { CONNECT_SERVICE_TOOL } from "./service-chat.ts";
+import { START_TASK_TOOL } from "./task-chat.ts";
 import { MAKE_HANDOFF_TOOL, REMEMBER_TOOL, REQUEST_ACTION_TOOL, SUGGEST_CONNECTION_TOOL } from "./system-prompt.ts";
 
 type ContentBlock = ClaudeMessage["content"][number];
@@ -22,6 +23,7 @@ const STOPPED_AFTER_READING_EMAIL = new Map([
   [REQUEST_ACTION_TOOL.name, "asking for an Action Permission"],
   [SUGGEST_CONNECTION_TOOL.name, "showing a Read Permission card"],
   [CONNECT_SERVICE_TOOL.name, "connecting to something new"],
+  [START_TASK_TOOL.name, "starting a Task"],
   [SAVE_GOAL_TOOL.name, "saving a Goal"],
   [PROPOSE_ROADMAP_TOOL.name, "showing a Roadmap card"],
   [SUGGEST_CHANGE_TOOL.name, "showing a card that changes your Roadmap"],
@@ -38,9 +40,15 @@ export const MAIL_NOT_KEPT =
 export const SERVICE_NOT_KEPT =
   "[Buddy showed you what it read from a service here, for that reply only, and doesn't keep the words in the conversation. To see it again, call the check again.]";
 
+/** The same, for what a Task found, which came from web pages and could have come from their mail. */
+export const TASK_NOT_KEPT =
+  "[Buddy showed you what a Task found here, for that reply only, and doesn't keep the words in the conversation. To see it again, call the tool again.]";
+
 export function newMailTurn(turn: TurnRecord) {
   const readingCalls = new Set<string>();
   const serviceCalls = new Set<string>();
+  const taskCalls = new Set<string>();
+  const anyRead = () => readingCalls.size + serviceCalls.size + taskCalls.size > 0;
 
   return {
     /** The call that showed Claude the Student's email. */
@@ -53,13 +61,19 @@ export function newMailTurn(turn: TurnRecord) {
       serviceCalls.add(callId);
     },
 
+    /** The call that showed Claude what a Task found. */
+    noteTaskRead(callId: string): void {
+      taskCalls.add(callId);
+    },
+
     /** What to answer instead of doing this tool's work, or null if it may go ahead. */
     refusal(toolName: string): string | null {
-      const stopped = readingCalls.size + serviceCalls.size > 0 ? STOPPED_AFTER_READING_EMAIL.get(toolName) : undefined;
+      const stopped = anyRead() ? STOPPED_AFTER_READING_EMAIL.get(toolName) : undefined;
       if (!stopped) return null;
-      const email = readingCalls.size > 0;
-      turn.tools.push(`Buddy's code stopped the AI ${stopped}, because it had just read ${email ? "your email" : "a service you connected"}.`);
-      return refusedAfter(email ? "the Student's email" : "a service they connected");
+      const [toStudent, toClaude] =
+        readingCalls.size > 0 ? ["your email", "the Student's email"] : serviceCalls.size > 0 ? ["a service you connected", "a service they connected"] : ["what a Task found", "what a Task found"];
+      turn.tools.push(`Buddy's code stopped the AI ${stopped}, because it had just read ${toStudent}.`);
+      return refusedAfter(toClaude!);
     },
 
     /**
@@ -67,7 +81,7 @@ export function newMailTurn(turn: TurnRecord) {
      * could quote them. A later request sends these again without thinking, as the API allows for a past turn.
      */
     forHistory<T extends NewMessage>(messages: T[]): T[] {
-      if (readingCalls.size + serviceCalls.size === 0) return messages;
+      if (!anyRead()) return messages;
       return messages.map((message) => {
         if (!Array.isArray(message.content)) return message;
         const content = (message.content as ContentBlock[])
@@ -76,6 +90,7 @@ export function newMailTurn(turn: TurnRecord) {
             const answer = block as unknown as { type: string; tool_use_id?: string };
             if (answer.type !== "tool_result") return block;
             if (readingCalls.has(answer.tool_use_id ?? "")) return { ...answer, content: MAIL_NOT_KEPT };
+            if (taskCalls.has(answer.tool_use_id ?? "")) return { ...answer, content: TASK_NOT_KEPT };
             return serviceCalls.has(answer.tool_use_id ?? "") ? { ...answer, content: SERVICE_NOT_KEPT } : block;
           });
         return { ...message, content };

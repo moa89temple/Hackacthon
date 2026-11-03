@@ -46,6 +46,7 @@ function send(text: string, storeInUse: Store): Promise<any[]> {
     crisisCheck: createCrisisCheck({ claude, model: "crisis", timeoutMs: 50, logError }),
     profile: createProfile({ connectionName: (id) => id, store: storeInUse, clock }),
     connections: { describeForTurn: () => "" } as unknown as Connections,
+    tasks: () => ({ noteForTurn: () => "", runDue: async () => {}, listStored: () => [] }) as never,
     guidebook,
     actionCards: createActionCards({ store: storeInUse, clock, routines: [], logError }),
     drafts: createDrafts({ store: storeInUse, clock, guidebook }),

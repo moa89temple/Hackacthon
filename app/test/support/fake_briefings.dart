@@ -67,6 +67,13 @@ class FakePhoneNotifications implements PhoneNotifications {
 
   final _opened = StreamController<void>.broadcast();
   final _arrived = StreamController<void>.broadcast();
+  final _taskOpened = StreamController<int>.broadcast();
+
+  /// The Task whose notification opened the app.
+  int? taskOpenedAtStart;
+
+  /// The Student tapping a Task's notification, with Buddy already running.
+  void tapTaskNotification(int task) => _taskOpened.add(task);
   final _tokens = StreamController<String>.broadcast();
 
   /// The Student tapping a Briefing notification, with Buddy already running.
@@ -89,6 +96,16 @@ class FakePhoneNotifications implements PhoneNotifications {
     openedAtStart = false;
     return opened;
   }
+
+  @override
+  Future<int?> takeOpenedTask() async {
+    final opened = taskOpenedAtStart;
+    taskOpenedAtStart = null;
+    return opened;
+  }
+
+  @override
+  Stream<int> get taskOpened => _taskOpened.stream;
 
   @override
   Future<bool> askPermission() async {

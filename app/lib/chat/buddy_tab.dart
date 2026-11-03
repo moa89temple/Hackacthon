@@ -14,15 +14,18 @@ import '../opportunities/opportunities_controller.dart';
 import '../opportunities/opportunity_card.dart';
 import '../roadmap/roadmap_card.dart';
 import '../roadmap/roadmap_controller.dart';
+import '../tasks/task_card.dart';
+import '../tasks/tasks_controller.dart';
 import 'outlook.dart';
 
 class BuddyTab extends StatelessWidget {
-  const BuddyTab({super.key, required this.chat, required this.connections, required this.roadmap, required this.opportunities, required this.openPhone, required this.openDraft});
+  const BuddyTab({super.key, required this.chat, required this.connections, required this.roadmap, required this.opportunities, required this.tasks, required this.openPhone, required this.openDraft});
 
   final ChatController chat;
   final ConnectionsController connections;
   final RoadmapController roadmap;
   final OpportunitiesController opportunities;
+  final TasksController tasks;
   final PhoneOpener openPhone;
   final DraftOpener openDraft;
 
@@ -44,17 +47,18 @@ class BuddyTab extends StatelessWidget {
       return const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading your conversation'));
     }
     if (chat.couldNotLoad) return _CouldNotLoad(onRetry: chat.loadHistory);
-    return _MessageList(chat: chat, connections: connections, roadmap: roadmap, opportunities: opportunities, openPhone: openPhone, openDraft: openDraft);
+    return _MessageList(chat: chat, connections: connections, roadmap: roadmap, opportunities: opportunities, tasks: tasks, openPhone: openPhone, openDraft: openDraft);
   }
 }
 
 class _MessageList extends StatefulWidget {
-  const _MessageList({required this.chat, required this.connections, required this.roadmap, required this.opportunities, required this.openPhone, required this.openDraft});
+  const _MessageList({required this.chat, required this.connections, required this.roadmap, required this.opportunities, required this.tasks, required this.openPhone, required this.openDraft});
 
   final ChatController chat;
   final ConnectionsController connections;
   final RoadmapController roadmap;
   final OpportunitiesController opportunities;
+  final TasksController tasks;
   final PhoneOpener openPhone;
   final DraftOpener openDraft;
 
@@ -182,6 +186,14 @@ class _MessageListState extends State<_MessageList> {
               roadmap: widget.roadmap,
               openPhone: widget.openPhone,
               announce: chat.newestRoadmapCards.any((newest) => identical(newest, item)),
+            ),
+          TaskCardItem() => TaskCard(
+              // By the Task's number, because a card comes back as a new item when the conversation is loaded again.
+              key: ValueKey('task-card-${item.task.id}'),
+              task: item.task,
+              tasks: widget.tasks,
+              openPhone: widget.openPhone,
+              announce: chat.newestTaskCards.any((newest) => identical(newest, item)),
             ),
         },
     ];

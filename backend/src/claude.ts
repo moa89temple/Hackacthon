@@ -18,6 +18,18 @@ export function textOf(blocks: ClaudeMessage["content"]): string {
   return blocks.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
 }
 
+/**
+ * After a fallback model takes over mid-reply, the API wants thinking and tool calls from
+ * before the final fallback block left out. Buddy's tools run on its own side, so only text
+ * and the fallback marker itself survive from before that point.
+ */
+export function blocksToResend(blocks: ClaudeMessage["content"]): ClaudeMessage["content"] {
+  const lastFallback = blocks.findLastIndex((block) => block.type === "fallback");
+  return blocks.filter(
+    (block, index) => index > lastFallback || block.type === "text" || block.type === "fallback",
+  );
+}
+
 export function anthropicClaude(apiKey: string): Claude {
   const client = new Anthropic({ apiKey });
   return {

@@ -518,6 +518,6 @@ describe("reading what Buddy spent", () => {
     );
     await backend.discovery.runDue();
 
-    expect(backend.spending.today()).toEqual({ chat: 100_000_000, background: 150_000_000, total: 250_000_000 });
+    expect(backend.spending.today()).toEqual({ chat: 100_000_000, background: 150_000_000, task: 0, total: 250_000_000 });
   });
 });

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'backend/buddy_backend.dart';
@@ -23,6 +25,9 @@ import 'roadmap/roadmap_tab.dart';
 import 'sending/sending_controller.dart';
 import 'spending/spending_controller.dart';
 import 'tabs/today_tab.dart';
+import 'tasks/task_backend.dart';
+import 'tasks/task_card.dart';
+import 'tasks/tasks_controller.dart';
 import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
 import 'takeover/takeover_screen.dart';
@@ -259,6 +264,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _chat.checkWaitingCards();
     _chat.checkCrisisOffers();
   })..load();
+  late final TasksController _tasks = TasksController(widget.backend, onWantsTheStudent: _taskWantsTheStudent)..start();
   late final SpendingController _spending = SpendingController(widget.backend)..load();
   late final BriefingsController _briefings = BriefingsController(widget.backend)..load();
   late final PhoneNotificationsController _phoneNotifications = PhoneNotificationsController(
@@ -266,6 +272,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     widget.phoneNotifications,
     onOpened: _openBriefing,
     onArrived: _briefingArrived,
+    onTaskOpened: _openTask,
   );
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
@@ -281,7 +288,10 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   /// The laptop may have been asleep when the app last tried to give its token.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _phoneNotifications.check();
+    if (state == AppLifecycleState.resumed) {
+      _phoneNotifications.check();
+      _tasks.listenAgain();
+    }
   }
 
   /// A tapped notification opens Today, with the newest Briefing at the top.
@@ -306,6 +316,33 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     );
   }
 
+  /// A tapped notification opens the Task's card, over the conversation, where anything it's waiting on is.
+  void _openTask(int task) {
+    if (!mounted) return;
+    _selectTab(_buddyTab);
+    Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == workInProgress.name);
+    unawaited(_tasks.load());
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => TaskScreen(id: task, tasks: _tasks, openPhone: widget.openPhone)),
+    );
+  }
+
+  /// Cards the Task left go into the conversation. The phone shows nothing of its own while Buddy is open.
+  void _taskWantsTheStudent(Task task) {
+    unawaited(_chat.pickUpWhatTasksLeft());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(switch (task.state) {
+          'done' => 'A Task is done.',
+          'failed' => "A Task couldn't finish.",
+          _ => 'A Task needs you.',
+        }),
+        action: SnackBarAction(label: 'See it', onPressed: () => _openTask(task.id)),
+      ),
+    );
+  }
+
   /// Buddy saves facts and reads Connections during a turn, and the You tab may be open when it finishes.
   void _refreshProfileAfterTurn() {
     final replying = _chat.replyInProgress != null;
@@ -326,6 +363,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       _briefings.load();
       _milestones.load();
       _opportunities.load();
+      _tasks.load();
       // A read since the last look may have found that a login expired.
       _connections.load();
     }
@@ -381,6 +419,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _sending.dispose();
     _spending.dispose();
     _briefings.dispose();
+    _tasks.dispose();
     _phoneNotifications.dispose();
     super.dispose();
   }
@@ -396,8 +435,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
       body: IndexedStack(
         index: _selected,
         children: [
-          BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, opportunities: _opportunities, openPhone: widget.openPhone, openDraft: widget.openDraft),
-          TodayTab(briefings: _briefings, milestones: _milestones, opportunities: _opportunities, connections: _connections, openPhone: widget.openPhone),
+          BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, opportunities: _opportunities, tasks: _tasks, openPhone: widget.openPhone, openDraft: widget.openDraft),
+          TodayTab(briefings: _briefings, milestones: _milestones, opportunities: _opportunities, tasks: _tasks, connections: _connections, openPhone: widget.openPhone),
           RoadmapTab(roadmap: _roadmap, openPhone: widget.openPhone, askBuddy: _askBuddy),
           YouTab(
             backend: widget.backend,

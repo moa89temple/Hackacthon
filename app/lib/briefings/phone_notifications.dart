@@ -7,6 +7,9 @@ abstract interface class PhoneNotifications {
   /// Whether a tap on a Briefing notification opened the app, or came before anything was listening. Says so once.
   Future<bool> takeOpenedBriefing();
 
+  /// Which Task a tap on its notification opened the app for, or came before anything was listening. Says so once.
+  Future<int?> takeOpenedTask();
+
   /// Android 13 and later show their own prompt the first time. Returns whether notifications are allowed.
   Future<bool> askPermission();
 
@@ -23,6 +26,9 @@ abstract interface class PhoneNotifications {
 
   /// A Briefing arrived while the app was open, which the phone doesn't show by itself.
   Stream<void> get briefingArrived;
+
+  /// The Student tapped a Task's notification while the app was running. This is the Task's number.
+  Stream<int> get taskOpened;
 }
 
 /// A build with no way to send notifications.
@@ -34,6 +40,9 @@ class NoPhoneNotifications implements PhoneNotifications {
 
   @override
   Future<bool> takeOpenedBriefing() async => false;
+
+  @override
+  Future<int?> takeOpenedTask() async => null;
 
   @override
   Future<bool> askPermission() async => false;
@@ -52,4 +61,7 @@ class NoPhoneNotifications implements PhoneNotifications {
 
   @override
   Stream<void> get briefingArrived => const Stream.empty();
+
+  @override
+  Stream<int> get taskOpened => const Stream.empty();
 }

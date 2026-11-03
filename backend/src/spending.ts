@@ -1,6 +1,6 @@
 import type { Claude, ClaudeMessage } from "./claude.ts";
 import { todayInPhiladelphia, type Clock } from "./clock.ts";
-import type { ClaudeWork, SpentByWork } from "./spending-store.ts";
+import type { ClaudeWork, SpentByWork, SpentOnTask } from "./spending-store.ts";
 import type { Store } from "./store.ts";
 
 /** All money here is in whole nanodollars, billionths of a dollar, because every published price comes out whole in them. */
@@ -110,6 +110,7 @@ export class BackgroundLimitReached extends Error {
 export interface SpendingTotals {
   chat: number;
   background: number;
+  task: number;
   total: number;
 }
 
@@ -122,7 +123,7 @@ export interface SpendingTotals {
  * - forBackground: Discovery, Opportunity discovery and Connection reading. Alert classification (#24 to #26)
  *   must use this too when it comes, because it's named as background work and nothing else would stop it.
  *
- * Tasks, when they come, aren't this kind of background work: the spec has them carry on with their own $1 pause.
+ * - forTask: a Task, which the limit doesn't stop either, because the spec gives a Task its own pause at $1. See tasks.ts.
  *
  * Briefings use no model, so they have nothing to stop, and neither does anything else that doesn't call
  * Claude: the limit lives only in forBackground, so that free work goes on after it.
@@ -134,12 +135,15 @@ export interface SpendingTotals {
 export interface Spending {
   forChat(claude: Claude): Claude;
   forBackground(claude: Claude): Claude;
+  forTask(claude: Claude, taskId: number): Claude;
+  /** What this Task's own Claude calls have cost. Anything it sets off that's background work, such as reading a Connection, counts there. */
+  spentOnTask(taskId: number): SpentOnTask;
   today(): SpendingTotals;
   thisMonth(): SpendingTotals;
   backgroundStoppedForToday(): boolean;
 }
 
-const totalled = ({ chat, background }: SpentByWork): SpendingTotals => ({ chat, background, total: chat + background });
+const totalled = ({ chat, background, task }: SpentByWork): SpendingTotals => ({ chat, background, task, total: chat + background + task });
 
 export function createSpending(deps: { store: Store; clock: Clock; logError: (error: unknown) => void }): Spending {
   const { store, clock, logError } = deps;
@@ -148,7 +152,7 @@ export function createSpending(deps: { store: Store; clock: Clock; logError: (er
   const today = () => todayInPhiladelphia(clock.now());
   const stopped = () => store.spending.spentOn(today()).background >= DAILY_BACKGROUND_LIMIT;
 
-  function record(work: ClaudeWork, message: ClaudeMessage): void {
+  function record(work: ClaudeWork, message: ClaudeMessage, taskId?: number): void {
     const { model, usage } = message;
     if (!knowsPriceOf(model) && !modelsWithNoPriceLogged.has(model)) {
       modelsWithNoPriceLogged.add(model);
@@ -166,17 +170,18 @@ export function createSpending(deps: { store: Store; clock: Clock; logError: (er
       cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
       webSearches: usage.server_tool_use?.web_search_requests ?? 0,
       costNanodollars: costOf(model, usage),
+      ...(taskId === undefined ? {} : { taskId }),
     });
   }
 
-  function recording(work: ClaudeWork, claude: Claude): Claude {
+  function recording(work: ClaudeWork, claude: Claude, taskId?: number): Claude {
     return {
       async *stream(request, options) {
         for await (const event of claude.stream(request, options)) {
           // Before handing it on, because most callers stop listening once they have the message.
           if (event.type === "message") {
             try {
-              record(work, event.message);
+              record(work, event.message, taskId);
             } catch (error) {
               // The reply has been paid for either way, and the Student shouldn't lose it over this.
               logError(error);
@@ -200,6 +205,9 @@ export function createSpending(deps: { store: Store; clock: Clock; logError: (er
         },
       };
     },
+
+    forTask: (claude, taskId) => recording("task", claude, taskId),
+    spentOnTask: (taskId) => store.spending.spentOnTask(taskId),
 
     today: () => totalled(store.spending.spentOn(today())),
     thisMonth: () => totalled(store.spending.spentInMonth(today().slice(0, 7))),

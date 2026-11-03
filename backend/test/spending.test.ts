@@ -261,8 +261,8 @@ describe("the background limit", () => {
     await chatCallCosting({ usage: { input_tokens: 1000 } });
     await backgroundCall({ usage: { input_tokens: 2000 } });
 
-    expect(spending.today()).toEqual({ chat: 100_000, background: 200_000, total: 300_000 });
-    expect(spending.thisMonth()).toEqual({ chat: 100_000, background: 200_000, total: 300_000 });
+    expect(spending.today()).toEqual({ chat: 100_000, background: 200_000, task: 0, total: 300_000 });
+    expect(spending.thisMonth()).toEqual({ chat: 100_000, background: 200_000, task: 0, total: 300_000 });
   });
 
   it("holds through a restart", async () => {

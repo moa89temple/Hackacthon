@@ -1,6 +1,6 @@
 import { ActionRefused, type ActionCard, type ActionCards } from "./action-cards.ts";
 import { newTurnRecord, noteFactsGiven, noteSourcesLookedAt, replyDecided, replyFailed, type TurnRecord } from "./activity.ts";
-import { textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./claude.ts";
+import { blocksToResend, textOf, type Claude, type ClaudeMessage, type ClaudeRequest } from "./claude.ts";
 import { describeInPhiladelphia, type Clock } from "./clock.ts";
 import { NoReadPermission, type Connections } from "./connections.ts";
 import type { CrisisCheck, CrisisOutcome } from "./crisis-check.ts";
@@ -22,6 +22,8 @@ import type { Roadmap, RoadmapCard } from "./roadmap.ts";
 import { CHECK_SERVICE_TOOL, checkServiceInput, CONNECT_SERVICE_TOOL, connectServiceInput } from "./service-chat.ts";
 import type { ServiceConnections } from "./service-connections.ts";
 import type { StandardMilestone, StandardMilestones } from "./standard-milestones.ts";
+import { LOOK_AT_TASK_TOOL, START_TASK_TOOL } from "./task-chat.ts";
+import { TooManyTasks, type Task, type Tasks } from "./tasks.ts";
 import {
   BUDDY_SYSTEM_PROMPT,
   CHECK_CALENDAR_TOOL,
@@ -165,6 +167,13 @@ export interface RoadmapCardEntry {
   sentAt: string;
 }
 
+/** A Task's card as it stands now. The app keeps it up to date from the backend's stream of Task changes. */
+export interface TaskCardEntry {
+  type: "task_card";
+  task: Task;
+  sentAt: string;
+}
+
 export type ConversationEvent =
   /** The Student's message had something hidden. This is the message as Buddy kept it. */
   | { type: "hidden"; text: string; note: string }
@@ -177,6 +186,7 @@ export type ConversationEvent =
   | { type: "milestone_card"; milestone: StandardMilestone }
   | { type: "opportunity_card"; opportunity: Opportunity }
   | { type: "roadmap_card"; card: RoadmapCard }
+  | { type: "task_card"; task: Task }
   | { type: "done"; reply: ChatMessage }
   | { type: "error"; message: string };
 
@@ -187,7 +197,7 @@ export interface Conversation {
    * Drain it to the end even if the app has gone away, so that the reply is still saved.
    */
   send(text: string): AsyncGenerator<ConversationEvent>;
-  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry | MilestoneCardEntry | OpportunityCardEntry | RoadmapCardEntry)[];
+  history(): (ChatMessage | CrisisCardEntry | ReadPermissionCardEntry | GuidebookCardEntry | ActionCardEntry | DraftCardEntry | MilestoneCardEntry | OpportunityCardEntry | RoadmapCardEntry | TaskCardEntry)[];
   /** The newest message on the Student's screen, for a card that a tap makes rather than a turn. */
   lastMessageShown(): number | null;
 }
@@ -207,11 +217,12 @@ export interface ConversationDeps {
   roadmap: Roadmap;
   opportunities: Opportunities;
   services: ServiceConnections;
+  tasks: () => Tasks;
   logError: (error: unknown) => void;
 }
 
 export function createConversation(deps: ConversationDeps): Conversation {
-  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, roadmap, opportunities, services, logError } = deps;
+  const { claude, clock, store, chatModel, crisisCheck, profile, connections, guidebook, actionCards, drafts, milestones, roadmap, opportunities, services, tasks, logError } = deps;
   const waitForTurn = oneTurnAtATime();
 
   /** The Student has seen this message, and the turn's tools may have done things before it failed. */
@@ -461,6 +472,28 @@ export function createConversation(deps: ConversationDeps): Conversation {
     }
   }
 
+  /** It only saves the Task. It starts once this turn is over, so that the Student has the reply first. */
+  function startTask(call: ToolCall, afterMessageId: number, turn: TurnRecord) {
+    const { title, request } = (call.input ?? {}) as Record<string, unknown>;
+    if (typeof title !== "string" || title.trim() === "" || typeof request !== "string" || request.trim() === "") {
+      turn.tools.push("Tried to start a Task, but without saying what it was.");
+      return { answer: toolFailure(call, "title and request must each say something.") };
+    }
+    try {
+      const task = tasks().start({ title, request, afterMessageId });
+      turn.tools.push(`Started a Task: ${task.title}`);
+      return { task, answer: toolAnswer(call, "The Task's card is on the Student's screen, and it starts once you've replied. Now reply to them in a sentence.") };
+    } catch (error) {
+      if (error instanceof TooManyTasks) {
+        turn.tools.push("Tried to start a Task, but too many were unfinished.");
+        return { answer: toolFailure(call, error.message) };
+      }
+      logError(error);
+      turn.tools.push("Tried to start a Task, but something went wrong.");
+      return { answer: toolFailure(call, "The Task couldn't be started. No card was shown, so tell the Student.") };
+    }
+  }
+
   /** The Contact's card goes first, so that the Draft comes with who it's to and their Source. */
   function makeHandoff(call: ToolCall, shownThisTurn: Map<number, string>, afterMessageId: number, now: Date, turn: TurnRecord) {
     const { contact_id: contactId, why, subject, body } = (call.input ?? {}) as Record<string, unknown>;
@@ -583,6 +616,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const cardsThisTurn = new Map<number, string>();
       const actionsAskedThisTurn = new Map<string, number>();
       let handoffMade = false;
+      let taskStarted = false;
       const turn = newTurnRecord();
       const mailTurn = newMailTurn(turn);
       const noteIfClaudeCant = () => (cardShown ? CRISIS_NOTE : checkingIn ? CHECK_IN_NOTE : null);
@@ -626,7 +660,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
         const lastReply = store.listMessages(THE_STUDENT).findLast((message) => message.role === "assistant");
         const turnContext = {
           role: "system" as const,
-          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${roadmap.describeForTurn()}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${reportedOpportunitiesNote(opportunities.reportedIds())}${drafts.newestEditNote(lastReply?.createdAt)}\n\n${QUESTIONS_REMINDER}${actionCards.noteForTurn()}`,
+          content: `${describeCurrentTime(now)}${TURN_INSTRUCTIONS[outcome]}\n\n${describeProfile(factsGiven)}\n\n${roadmap.describeForTurn()}\n\n${connections.describeForTurn()}\n\n${SOURCE_REMINDER}${reportedItemsNote(guidebook.reportedItemIds())}${reportedOpportunitiesNote(opportunities.reportedIds())}${drafts.newestEditNote(lastReply?.createdAt)}\n\n${QUESTIONS_REMINDER}${actionCards.noteForTurn()}${tasks().noteForTurn()}`,
         };
         const milestoneTurn = newMilestoneTurn({ milestones, store, logError, afterMessageId: studentMessageId!, now, turn });
         const opportunityTurn = newOpportunityTurn({ opportunities, store, logError, afterMessageId: studentMessageId!, now, turn });
@@ -697,6 +731,21 @@ export function createConversation(deps: ConversationDeps): Conversation {
                   const { answer, card } = requestAction(call, actionsAskedThisTurn, studentMessageId!, turn);
                   if (card) yield { type: "action_card", card };
                   answers.push(answer);
+                } else if (call.name === START_TASK_TOOL.name) {
+                  if (taskStarted) {
+                    answers.push(toolFailure(call, "You've started this reply's one Task, so don't start another. Now reply to the Student."));
+                    continue;
+                  }
+                  const { answer, task } = startTask(call, studentMessageId!, turn);
+                  if (task) yield { type: "task_card", task };
+                  taskStarted = task !== undefined;
+                  answers.push(answer);
+                } else if (call.name === LOOK_AT_TASK_TOOL.name) {
+                  const number = (call.input as { task?: unknown } | null)?.task;
+                  const found = typeof number === "number" ? tasks().describeForClaude(number) : null;
+                  turn.tools.push(found ? `Looked at what Task ${number} found.` : "Tried to look at a Task Buddy doesn't have.");
+                  if (found) mailTurn.noteTaskRead(call.id);
+                  answers.push(found ? toolAnswer(call, found) : toolFailure(call, "There's no such Task."));
                 } else if (call.name === MAKE_HANDOFF_TOOL.name) {
                   if (handoffMade) {
                     answers.push(toolFailure(call, "You've made this reply's one Handoff, so don't make another. Now reply to the Student."));
@@ -799,6 +848,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
         yield endTurnWithoutClaude(noteIfClaudeCant(), now, turn);
       } finally {
         endTurn();
+        void tasks().runDue();
       }
     },
 
@@ -816,6 +866,7 @@ export function createConversation(deps: ConversationDeps): Conversation {
       const roadmapCards = roadmap.cards();
       const opportunityCards = store.opportunities.listCards(THE_STUDENT);
       const opportunitiesOnCards = opportunities.withIds(opportunityCards.map((card) => card.opportunityId));
+      const taskCards = tasks().listStored();
       return store
         .listMessages(THE_STUDENT)
         .filter(isShownToStudent)
@@ -862,6 +913,9 @@ export function createConversation(deps: ConversationDeps): Conversation {
           ...roadmapCards
             .filter((card) => card.afterMessageId === message.id)
             .map(({ afterMessageId: _, ...card }) => ({ type: "roadmap_card" as const, card, sentAt: card.createdAt })),
+          ...taskCards
+            .filter((card) => card.afterMessageId === message.id)
+            .map(({ task }) => ({ type: "task_card" as const, task, sentAt: task.createdAt })),
           // Last, so that a Draft follows its Contact's card, as it did when it first appeared.
           ...draftCards
             .filter((card) => card.afterMessageId === message.id)
@@ -908,6 +962,8 @@ function chatRequest(model: string, messages: ClaudeMessageParam[], canAskForAct
       SHOW_MILESTONE_CARDS_TOOL,
       FIND_OPPORTUNITIES_TOOL,
       ...ROADMAP_TOOLS,
+      START_TASK_TOOL,
+      LOOK_AT_TASK_TOOL,
     ],
     messages,
   };
@@ -971,18 +1027,6 @@ function toClaudeMessages(stored: NewMessage[]): ClaudeMessageParam[] {
     }
   }
   return [...messages, ...currentTurn];
-}
-
-/**
- * After a fallback model takes over mid-reply, the API wants thinking and tool calls from
- * before the final fallback block left out. Buddy's tools run on its own side, so only text
- * and the fallback marker itself survive from before that point.
- */
-function blocksToResend(blocks: ContentBlock[]): ContentBlock[] {
-  const lastFallback = blocks.findLastIndex((block) => block.type === "fallback");
-  return blocks.filter(
-    (block, index) => index > lastFallback || block.type === "text" || block.type === "fallback",
-  );
 }
 
 function describeCurrentTime(now: Date): string {

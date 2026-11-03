@@ -10,6 +10,8 @@ export function addActionCardRoutes(
   app: FastifyInstance,
   actionCards: ActionCards,
   isStoredId: (id: string) => boolean,
+  /** Called once a tap has done whatever it does, since something may be waiting on this card. */
+  afterTap: () => void,
 ): void {
   const noSuchCard = { error: "There's no such card" };
 
@@ -17,6 +19,7 @@ export function addActionCardRoutes(
   async function answerTap(reply: FastifyReply, tap: () => ActionCard | null | Promise<ActionCard | null>) {
     try {
       const card = await tap();
+      afterTap();
       return card ? { card } : reply.code(404).send(noSuchCard);
     } catch (error) {
       if (error instanceof CardRefused) return reply.code(409).send({ error: error.message, card: error.card });

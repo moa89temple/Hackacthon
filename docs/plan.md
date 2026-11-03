@@ -146,6 +146,7 @@ It never acts without the Student's tap, and it doesn't replace advisors.
   - Background work, with a progress card.
   - You get a notification when a Task is done or needs you.
   - Each Task runs once.
+  - It pauses and asks you before it spends more than $1, and each Keep going tap lets it spend $1 more.
 
 ## Trust and control
 
@@ -160,7 +161,7 @@ It never acts without the Student's tap, and it doesn't replace advisors.
 - **Delete everything:** this button wipes your Profile, Goals, Roadmap, conversations, Permissions, Activity and Buddy's Browser logins.
 - **Spending:**
   - Background work stops for the day after $2 of Claude usage.
-  - Chat has no cap.
+  - Chat has no cap, and the $2 doesn't stop Tasks, which have their own $1 pause.
   - The You tab shows what Buddy spent today and this month.
   - As a backstop, you set a $50 monthly limit in the Anthropic Console.
 

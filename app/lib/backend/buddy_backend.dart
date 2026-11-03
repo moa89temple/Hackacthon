@@ -9,6 +9,7 @@ import '../device/pairing_details.dart';
 import '../roadmap/roadmap_backend.dart';
 import '../sending/sending_backend.dart';
 import '../spending/spending_backend.dart';
+import '../tasks/task_backend.dart';
 
 /// A pairing request gets this long. Without Tailscale on, the phone would otherwise wait minutes.
 const _pairingTimeout = Duration(seconds: 20);
@@ -362,6 +363,14 @@ class RoadmapCardItem extends ConversationItem {
   final RoadmapCard card;
 }
 
+/// A Task's card in the conversation. Not const, so that each is its own object and the newest can be told from
+/// earlier ones. The card follows the Task from here, through the TasksController.
+class TaskCardItem extends ConversationItem {
+  TaskCardItem(this.task);
+
+  final Task task;
+}
+
 class ChatMessage extends ConversationItem {
   const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote});
 
@@ -668,6 +677,12 @@ class ReplyDraftCard extends ReplyEvent {
   final Draft draft;
 }
 
+/// Buddy has started a Task, with its card.
+class ReplyTaskCard extends ReplyEvent {
+  const ReplyTaskCard(this.task);
+  final Task task;
+}
+
 /// The turn ended. This is the reply as saved, and it replaces whatever streamed in.
 class ReplyDone extends ReplyEvent {
   const ReplyDone(this.reply);
@@ -736,7 +751,7 @@ class FinishedTakeover {
 }
 
 /// What the app needs from the backend.
-abstract interface class BuddyBackend implements RoadmapBackend, SendingBackend, BriefingBackend, SpendingBackend {
+abstract interface class BuddyBackend implements RoadmapBackend, SendingBackend, BriefingBackend, SpendingBackend, TaskBackend {
   Future<List<ConversationItem>> loadHistory();
 
   /// Sends the Student's message. The stream carries Buddy's turn.
@@ -844,7 +859,7 @@ class HttpBackendAccess implements BackendAccess {
       );
 }
 
-class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls, HttpBriefingCalls implements BuddyBackend {
+class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls, HttpBriefingCalls, HttpTaskCalls implements BuddyBackend {
   HttpBuddyBackend(
     Uri baseUrl, {
     required String deviceKey,
@@ -1125,6 +1140,22 @@ class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls, HttpBriefingCall
   }
 
   @override
+  Future<Map<String, dynamic>> taskCall(String method, String path) async {
+    final request = http.Request(method, _baseUrl.resolve(path))..headers.addAll(_keyHeader);
+    final response = await http.Response.fromStream(await _client.send(request));
+    _check(response.statusCode, 'Reaching a Task');
+    return _decode(response);
+  }
+
+  @override
+  Future<http.StreamedResponse> taskStream(String path) async {
+    final request = http.Request('GET', _baseUrl.resolve(path))..headers.addAll(_keyHeader);
+    final response = await _client.send(request);
+    _check(response.statusCode, 'Listening for Tasks');
+    return response;
+  }
+
+  @override
   Future<SpendingSummary> loadSpending() async {
     final response = await _client.get(_baseUrl.resolve('/spending'), headers: _keyHeader);
     _check(response.statusCode, 'Loading what Buddy spent');
@@ -1187,6 +1218,7 @@ class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls, HttpBriefingCall
             _ => null,
           }),
         'roadmap_card' => RoadmapCardItem(RoadmapCard.fromJson(json['card'] as Map<String, dynamic>)),
+        'task_card' => TaskCardItem(Task.fromJson(json['task'] as Map<String, dynamic>)),
         _ => ChatMessage.fromJson(json),
       };
 
@@ -1202,6 +1234,7 @@ class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls, HttpBriefingCall
         'milestone_card' => ReplyMilestoneCard(StandardMilestone.fromJson(json['milestone'] as Map<String, dynamic>)),
         'opportunity_card' => ReplyOpportunityCard(Opportunity.fromJson(json['opportunity'] as Map<String, dynamic>)),
         'roadmap_card' => ReplyRoadmapCard(RoadmapCard.fromJson(json['card'] as Map<String, dynamic>)),
+        'task_card' => ReplyTaskCard(Task.fromJson(json['task'] as Map<String, dynamic>)),
         'done' => ReplyDone(ChatMessage.fromJson(json['reply'] as Map<String, dynamic>)),
         'error' => ReplyFailed(json['message'] as String),
         _ => null,

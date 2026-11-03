@@ -78,6 +78,13 @@ class ChatController extends ChangeNotifier {
   /// Cards loaded from history are never announced.
   List<RoadmapCardItem> newestRoadmapCards = const [];
 
+  /// The Task cards from the latest turn, which should be read out.
+  /// Cards loaded from history are never announced.
+  List<TaskCardItem> newestTaskCards = const [];
+
+  /// A Task reached the Student while a reply was being written, so its cards are still to pick up.
+  bool _taskCardsToPickUp = false;
+
   bool get canSend => !isLoading && !couldNotLoad && replyInProgress == null;
 
   Future<void> loadHistory() async {
@@ -110,6 +117,7 @@ class ChatController extends ChangeNotifier {
     newestMilestoneCards = const [];
     newestOpportunityCards = const [];
     newestRoadmapCards = const [];
+    newestTaskCards = const [];
     _changed();
 
     ChatMessage? reply;
@@ -173,6 +181,11 @@ class ChatController extends ChangeNotifier {
             ];
             newestRoadmapCards = [...newestRoadmapCards, card];
             _changed();
+          case ReplyTaskCard():
+            final card = TaskCardItem(event.task);
+            items = [...items, card];
+            newestTaskCards = [...newestTaskCards, card];
+            _changed();
           case ReplyDone():
             reply = event.reply;
           case ReplyFailed():
@@ -191,6 +204,7 @@ class ChatController extends ChangeNotifier {
     }
     replyInProgress = null;
     _changed();
+    if (_taskCardsToPickUp) unawaited(pickUpWhatTasksLeft());
   }
 
   /// Throws if the backend can't be reached, and then nothing changes. Every card of the item goes,
@@ -371,6 +385,43 @@ class ChatController extends ChangeNotifier {
     newestRoadmapCards = [
       for (final item in cards)
         if (!known.containsKey(item.card.id)) item,
+    ];
+    _changed();
+  }
+
+  /// A Task leaves cards in the conversation with no turn to bring them: an Action card, a card asking for a login, or
+  /// its own card moving to the end. A reply being written comes first, and this runs when it's over.
+  Future<void> pickUpWhatTasksLeft() async {
+    if (isLoading || replyInProgress != null) {
+      _taskCardsToPickUp = true;
+      return;
+    }
+    _taskCardsToPickUp = false;
+    final List<ConversationItem> loaded;
+    try {
+      loaded = await _backend.loadHistory();
+    } on Exception {
+      return;
+    }
+    if (_disposed) return;
+    // A reply may have started while this was on its way, and this would take its place.
+    if (replyInProgress != null) {
+      _taskCardsToPickUp = true;
+      return;
+    }
+    final knownCards = {
+      for (final item in items)
+        if (item is ActionCardItem) item.card.id,
+    };
+    // What the Student has written on a Crisis card lives in its item, and this mustn't lose that.
+    final crisisCards = items.whereType<CrisisCardItem>().iterator;
+    items = [
+      for (final item in loaded)
+        if (item is CrisisCardItem && crisisCards.moveNext()) crisisCards.current else item,
+    ];
+    newestActionCards = [
+      for (final item in items)
+        if (item is ActionCardItem && !knownCards.contains(item.card.id)) item,
     ];
     _changed();
   }

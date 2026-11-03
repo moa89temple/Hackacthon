@@ -7,6 +7,7 @@ import { createRoadmapStore, ROADMAP_MIGRATION, type RoadmapStore } from "./road
 import { createSendingStore, SENDING_MIGRATION, type SendingStore } from "./sending-store.ts";
 import { createSpendingStore, SPENDING_MIGRATION, type SpendingStore } from "./spending-store.ts";
 import { createServiceStore, SERVICE_MIGRATION, type ServiceStore } from "./service-store.ts";
+import { createTaskStore, TASK_MIGRATION, type TaskStore } from "./task-store.ts";
 
 /** This version has one Student, but all data is keyed by Student so more can come later. */
 export const THE_STUDENT = "the-student";
@@ -296,6 +297,8 @@ export interface Store {
   briefings: BriefingStore;
   /** What Claude calls cost, kept in spending-store.ts. */
   spending: SpendingStore;
+  /** Tasks, kept in task-store.ts. */
+  tasks: TaskStore;
   /**
    * Appends the messages, and any Activity entry for them, together: either all of them are saved
    * or none are. Messages never change once saved.
@@ -666,6 +669,7 @@ const MIGRATIONS = [
   BRIEFING_MIGRATION,
   SPENDING_MIGRATION,
   SERVICE_MIGRATION,
+  TASK_MIGRATION,
 ];
 
 export function openStore(databasePath: string): Store {
@@ -1480,6 +1484,7 @@ export function openStore(databasePath: string): Store {
     sending: createSendingStore(db, (work) => inTransaction(db, work), addActivity),
     briefings: createBriefingStore(db, (work) => inTransaction(db, work), addActivity),
     spending: createSpendingStore(db),
+    tasks: createTaskStore(db, (work) => inTransaction(db, work), addActivity),
 
     close() {
       db.close();

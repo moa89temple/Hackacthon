@@ -28,7 +28,7 @@ enum PhoneNotificationStatus {
 /// Connects the phone's notifications to the backend. It's made after the first unlock, so that a locked
 /// app asks nothing of anyone.
 class PhoneNotificationsController extends ChangeNotifier {
-  PhoneNotificationsController(this._backend, this._phone, {required this.onOpened, required this.onArrived});
+  PhoneNotificationsController(this._backend, this._phone, {required this.onOpened, required this.onArrived, required this.onTaskOpened});
 
   final BriefingBackend _backend;
   final PhoneNotifications _phone;
@@ -38,6 +38,9 @@ class PhoneNotificationsController extends ChangeNotifier {
 
   /// A Briefing arrived while the app was open.
   final VoidCallback onArrived;
+
+  /// The Student tapped a Task's notification. This is the Task's number.
+  final void Function(int task) onTaskOpened;
 
   final List<StreamSubscription<Object?>> _listening = [];
   bool _disposed = false;
@@ -54,9 +57,12 @@ class PhoneNotificationsController extends ChangeNotifier {
     _listening
       ..add(_phone.briefingOpened.listen((_) => onOpened()))
       ..add(_phone.briefingArrived.listen((_) => onArrived()))
+      ..add(_phone.taskOpened.listen(onTaskOpened))
       ..add(_phone.tokenChanges.listen(_registerIfAllowed));
     // Before the permission prompt, so that opening on Today doesn't wait for the Student's answer.
     if (await _phone.takeOpenedBriefing() && !_disposed) onOpened();
+    final openedTask = await _phone.takeOpenedTask();
+    if (openedTask != null && !_disposed) onTaskOpened(openedTask);
     await _registerIf(await _phone.askPermission());
   }
 
