@@ -65,6 +65,10 @@ describe("the guard for reading one public page", () => {
     expect(guard("file:///etc/passwd").check(opening("file:///etc/passwd")).allowed).toBe(false);
   });
 
+  it("doesn't let a page move on to a listed public host either, because what's read would count as its own Source", () => {
+    expect(guard().check(opening("https://now.temple.test/events")).allowed).toBe(false);
+  });
+
   it("opens a listed public page, and still can't go past it onto its sign-on domain", () => {
     const onNow = guard("https://now.temple.test/events");
 

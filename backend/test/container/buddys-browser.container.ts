@@ -449,7 +449,7 @@ describe("reading one public page", () => {
     expect(paths).not.toContain("/connection-from-public-page");
   });
 
-  it("doesn't let it go on to another host", async () => {
+  it("doesn't let it open a Connection", async () => {
     await expect(readPublic(page("/public"))).rejects.toThrow(PageBlocked);
 
     expect(ledger()).toEqual([]);

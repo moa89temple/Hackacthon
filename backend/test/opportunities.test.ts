@@ -252,12 +252,28 @@ describe("pages that need a full browser", () => {
   it("carries on without a page Buddy's Browser can't read either, and Activity says which", async () => {
     hasEvents();
     await goals.addGoal(GOAL);
+    backend.web.save(TEMPLE_PROGRAM_PAGE, outsidePageHtml("Internship Program", "Applications close December 15, 2026."));
+    backend.claude.willReply(
+      claudeSearches([SCHOLARSHIP_PAGE, TEMPLE_PROGRAM_PAGE]),
+      haikuFindsOpportunities({ name: "Internship Program", date: "2026-12-15", date_quote: "December 15, 2026" }),
+    );
+
+    await backend.opportunityDiscovery.runDue();
+
+    expect((await calls.list()).map((opportunity) => opportunity.name)).toEqual(["Internship Program"]);
+    const entry = (await backend.activity()).find((candidate) => candidate.kind === "opportunity_search");
+    expect(entry.detail).toContain("Read 1 of the 2 pages");
+    expect(entry.detail).toContain(SCHOLARSHIP_PAGE);
+  });
+
+  it("says which pages it couldn't read when it couldn't read any of them", async () => {
+    hasEvents();
+    await goals.addGoal(GOAL);
     backend.claude.willReply(claudeSearches([SCHOLARSHIP_PAGE]));
 
     await backend.opportunityDiscovery.runDue();
 
-    expect(await calls.list()).toEqual([]);
-    const entry = (await backend.activity()).find((candidate) => candidate.kind === "opportunity_search");
+    const entry = (await backend.activity()).find((candidate) => candidate.kind === "opportunity_search_failed");
     expect(entry.detail).toContain(SCHOLARSHIP_PAGE);
   });
 
@@ -486,17 +502,43 @@ describe("searching the web for the Student's Goals", () => {
     expect((await calls.list()).map((opportunity) => opportunity.name)).toEqual(["Nursing Fellowship"]);
   });
 
-  it("links a page Buddy has already read to a second Goal, without asking Haiku again", async () => {
+  it("reads a page again for a second Goal, which sees what only it could use", async () => {
+    await goalFinds(SCHOLARSHIP_PAGE, "Nursing Scholarship", SCHOLARSHIP_WORDS, scholarship);
+    await backend.opportunityDiscovery.runDue();
+
+    await goals.addGoal("Pay for school");
+    backend.claude.willReply(
+      claudeSearches([SCHOLARSHIP_PAGE]),
+      haikuFindsOpportunities({ ...scholarship, for_goals: [1, 2] }, { ...scholarship, name: "Tuition Grant", for_goals: [2] }),
+    );
+    await backend.opportunityDiscovery.runDue();
+
+    const prompt = JSON.stringify(backend.claude.requests.at(-1)!.messages);
+    expect(prompt).toContain(GOAL);
+    expect(prompt).toContain("Pay for school");
+    const found = await calls.list();
+    expect(found.find((opportunity) => opportunity.name === "Tuition Grant").forGoals).toEqual(["Pay for school"]);
+    expect(found.find((opportunity) => opportunity.name === "Nursing Scholarship").forGoals.sort()).toEqual([GOAL, "Pay for school"].sort());
+  });
+
+  it("doesn't read a page again when the same Goal finds it again", async () => {
     await goalFinds(SCHOLARSHIP_PAGE, "Nursing Scholarship", SCHOLARSHIP_WORDS, scholarship);
     await backend.opportunityDiscovery.runDue();
     const asked = backend.claude.requests.length;
 
-    await goals.addGoal("Pay for school");
     backend.claude.willReply(claudeSearches([SCHOLARSHIP_PAGE]));
+    backend.clock.moveForward(7 * DAY);
     await backend.opportunityDiscovery.runDue();
 
     expect(backend.claude.requests).toHaveLength(asked + 1);
-    expect((await calls.list())[0].forGoals.sort()).toEqual([GOAL, "Pay for school"].sort());
+  });
+
+  it("keeps nothing Haiku doesn't say could help with a Goal", async () => {
+    await goalFinds(SCHOLARSHIP_PAGE, "Nursing Scholarship", SCHOLARSHIP_WORDS, { ...scholarship, for_goals: [] }, { ...scholarship, name: "Made-up number", for_goals: [9] });
+
+    await backend.opportunityDiscovery.runDue();
+
+    expect(await calls.list()).toEqual([]);
   });
 });
 
@@ -803,18 +845,210 @@ describe("what's gone from its Source", () => {
   });
 });
 
+describe("when a page's words change", () => {
+  const SECOND = { ...scholarship, name: "Nursing Fellowship" };
+  const CHANGED = "The Nursing Scholarship application closes December 1, 2026. There is no fee, and the page has new words.";
+  /** On the list every day, with no page of its own, so that this laptop counts as being on the web. */
+  const later = { slug: "later", date: "2027-02-20", time: "Sat., Feb. 20, 2027 7:30 pm", name: "Winter Concert" };
+
+  async function readAgainAWeekLater(...found: Record<string, unknown>[]): Promise<void> {
+    backend.web.save(SCHOLARSHIP_PAGE, outsidePageHtml("Nursing Scholarship", CHANGED));
+    backend.claude.willReply(claudeSearches([SCHOLARSHIP_PAGE]), haikuFindsOpportunities(...found));
+    backend.clock.moveForward(7 * DAY);
+    await backend.opportunityDiscovery.runDue();
+  }
+
+  beforeEach(async () => {
+    hasEvents(later);
+    await goalFinds(SCHOLARSHIP_PAGE, "Nursing Scholarship", SCHOLARSHIP_WORDS, scholarship, SECOND);
+    await backend.opportunityDiscovery.runDue();
+  });
+
+  it("keeps what the new reading doesn't list for two weeks, with its save, however Haiku words it now", async () => {
+    const saved = (await calls.list()).find((opportunity) => opportunity.name === SECOND.name);
+    await calls.save(saved.id);
+
+    await readAgainAWeekLater(scholarship);
+    expect((await calls.list()).find((opportunity) => opportunity.id === saved.id)).toMatchObject({ saved: true });
+
+    // Two weeks from when it was last seen, on the one day that's read a week after that.
+    backend.claude.whenScriptRunsOut = claudeSearches([SCHOLARSHIP_PAGE]);
+    backend.clock.moveForward(7 * DAY);
+    await backend.opportunityDiscovery.runDue();
+    expect((await calls.list()).map((opportunity) => opportunity.name)).toEqual(["Nursing Scholarship"]);
+  });
+
+  it("brings back what a later reading lists again", async () => {
+    await readAgainAWeekLater(scholarship);
+
+    backend.web.save(SCHOLARSHIP_PAGE, outsidePageHtml("Nursing Scholarship", `${CHANGED} And more new words.`));
+    backend.claude.willReply(claudeSearches([SCHOLARSHIP_PAGE]), haikuFindsOpportunities(scholarship, SECOND));
+    backend.clock.moveForward(7 * DAY);
+    await backend.opportunityDiscovery.runDue();
+
+    backend.claude.whenScriptRunsOut = claudeSearches([SCHOLARSHIP_PAGE]);
+    backend.clock.moveForward(7 * DAY);
+    await backend.opportunityDiscovery.runDue();
+
+    expect((await calls.list()).map((opportunity) => opportunity.name)).toContain(SECOND.name);
+  });
+
+  it("hides at once what now has a fee it can't state, without waiting two weeks", async () => {
+    await readAgainAWeekLater(scholarship, { ...SECOND, cost: "paid", cost_amount: "$50", cost_quote: "There is no fee", worth_it_because: "It's good." });
+
+    expect((await calls.list()).map((opportunity) => opportunity.name)).toEqual(["Nursing Scholarship"]);
+  });
+});
+
+describe("an event that's changed since Buddy read it", () => {
+  it("goes as soon as the list says it's cancelled, even under an address that now says so", async () => {
+    hasFluClinic();
+    backend.claude.willReply(fluClinicFound());
+    await backend.opportunityDiscovery.runDue();
+    const [{ id }] = await calls.list();
+    await calls.save(id);
+
+    hasEvents({ ...FLU_CLINIC, slug: `cancelled-${FLU_CLINIC.slug}`, name: `CANCELLED: ${FLU_CLINIC.name}` });
+    backend.clock.moveForward(DAY);
+    await backend.opportunityDiscovery.runDue();
+
+    expect(await calls.list()).toEqual([]);
+  });
+
+  it("isn't asked about each day when there's nothing on its page for Students", async () => {
+    hasFluClinic();
+    backend.claude.willReply(fluClinicFound({ open_to_students: false }));
+    await backend.opportunityDiscovery.runDue();
+    const asked = backend.claude.requests.length;
+
+    backend.clock.moveForward(DAY);
+    await backend.opportunityDiscovery.runDue();
+
+    expect(backend.claude.requests).toHaveLength(asked);
+  });
+});
+
+describe("what Haiku calls free, or doesn't price, on an event's own page", () => {
+  const gala = { slug: "gala", date: "2026-11-20", time: "Fri., Nov. 20, 2026 7:30 pm", name: "Gala" };
+  const galaPage = `https://now.temple.edu/events/${gala.date}/${gala.slug}`;
+
+  it("isn't called free when the words quoted also give a price", async () => {
+    await goalFinds(SCHOLARSHIP_PAGE, "A fair", "The fair is on December 1, 2026. Free parking, tickets $25 at the door.", {
+      ...scholarship,
+      cost: "free",
+      cost_quote: "Free parking, tickets $25 at the door.",
+    });
+    hasEvents();
+
+    await backend.opportunityDiscovery.runDue();
+
+    expect((await calls.list())[0].cost).toBe("Its Source doesn't say what this costs.");
+  });
+
+  it("is dropped when the event's page gives a price for it and Haiku missed that", async () => {
+    hasEvents(gala);
+    backend.web.save(galaPage, eventPageHtml("Gala", "Free parking. Tickets cost $40 at the door."));
+    backend.claude.willReply(haikuFindsOpportunities({ summary: "A gala.", cost: "free", cost_quote: "Free parking." }));
+
+    await backend.opportunityDiscovery.runDue();
+
+    expect(await calls.list()).toEqual([]);
+  });
+
+  it("isn't dropped for a sum of money that isn't its price", async () => {
+    hasEvents(gala);
+    backend.web.save(galaPage, eventPageHtml("Gala", "The winner takes home $500. This event is free."));
+    backend.claude.willReply(haikuFindsOpportunities({ summary: "A gala.", cost: "free", cost_quote: "This event is free." }));
+
+    await backend.opportunityDiscovery.runDue();
+
+    expect((await calls.list())[0].cost).toBe("Free");
+  });
+});
+
+describe("the same Opportunity on Temple's page and on one from elsewhere", () => {
+  it("counts as Temple's, and shows Temple's words", async () => {
+    await goals.addGoal(GOAL);
+    hasEvents();
+    const elsewhere = "https://a.example/fair";
+    const temple = "https://careercenter.temple.edu/fair";
+    backend.claude.willReply(claudeSearches([elsewhere, temple]));
+    backend.web.save(elsewhere, outsidePageHtml("A fair", "The Health Fair is on December 1, 2026."));
+    backend.web.save(temple, outsidePageHtml("Temple's fair", "The Health Fair is on December 1, 2026."));
+    const fair = { name: "Health Fair", date: "2026-12-01", date_quote: "December 1, 2026", date_kind: "event" };
+    backend.claude.willReply(haikuFindsOpportunities({ ...fair, summary: "Words from elsewhere." }), haikuFindsOpportunities({ ...fair, summary: "Temple's words." }));
+
+    await backend.opportunityDiscovery.runDue();
+
+    expect(await calls.list()).toEqual([expect.objectContaining({ outsideTemple: false, summary: "Temple's words." })]);
+  });
+});
+
+describe("the order within each part of the list", () => {
+  it("puts free first, then what doesn't say, then what has a fee, and the soonest first within each", async () => {
+    await goals.addGoal(GOAL);
+    hasEvents();
+    const page = "https://a.example/list";
+    const words = "Soonest is on December 1, 2026. Later is on January 5, 2027. A paid one is on December 2, 2026. There is no fee. The fee is $5 today.";
+    backend.claude.willReply(claudeSearches([page]));
+    backend.web.save(page, outsidePageHtml("A list", words));
+    backend.claude.willReply(
+      haikuFindsOpportunities(
+        { name: "Doesn't say", date: "2026-12-01", date_quote: "December 1, 2026" },
+        { name: "Free but later", date: "2027-01-05", date_quote: "January 5, 2027", cost: "free", cost_quote: "There is no fee." },
+        { name: "Paid", date: "2026-12-02", date_quote: "December 2, 2026", cost: "paid", cost_amount: "$5", cost_quote: "The fee is $5 today.", worth_it_because: "It's useful." },
+      ),
+    );
+
+    await backend.opportunityDiscovery.runDue();
+
+    expect((await calls.list()).map((opportunity) => opportunity.name)).toEqual(["Free but later", "Doesn't say", "Paid"]);
+  });
+});
+
+describe("when a Goal changes during a long read of the events", () => {
+  it("searches without waiting for that read to finish", async () => {
+    let finishRead!: () => void;
+    hasFluClinic();
+    backend.web.hold = new Promise((resolve) => (finishRead = resolve));
+    await goals.addGoal(GOAL);
+    backend.claude.willReply(claudeSearches([]), fluClinicFound());
+
+    const running = backend.opportunityDiscovery.runDue();
+    await expect.poll(() => backend.claude.requests.length).toBe(1);
+    expect(JSON.stringify(backend.claude.requests[0]!.messages)).toContain(GOAL);
+
+    finishRead();
+    await running;
+  });
+});
+
+describe("a search whose every page failed", () => {
+  it("counts as failed, and tries again in an hour rather than in a week", async () => {
+    hasEvents();
+    await goals.addGoal(GOAL);
+    backend.web.save(SCHOLARSHIP_PAGE, outsidePageHtml("Nursing Scholarship", SCHOLARSHIP_WORDS));
+    backend.claude.willReply(claudeSearches([SCHOLARSHIP_PAGE]), { failWith: new Error("Overloaded") });
+    await backend.opportunityDiscovery.runDue();
+    expect((await backend.activity()).map((entry) => entry.kind)).toContain("opportunity_search_failed");
+
+    backend.clock.moveForward(3_600_000);
+    backend.claude.willReply(claudeSearches([SCHOLARSHIP_PAGE]), haikuFindsOpportunities(scholarship));
+    await backend.opportunityDiscovery.runDue();
+
+    expect((await calls.list()).map((opportunity) => opportunity.name)).toEqual(["Nursing Scholarship"]);
+  });
+});
+
 describe("what a search found, once later searches stop picking it", () => {
-  /** On the list every day, so that this laptop counts as being on the web. */
+  /** On the list every day, with no page of its own, so that this laptop counts as being on the web. */
   const later = { slug: "later", date: "2027-02-20", time: "Sat., Feb. 20, 2027 7:30 pm", name: "Winter Concert" };
 
   beforeEach(async () => {
     hasEvents(later);
-    backend.web.save(`https://now.temple.edu/events/${later.date}/${later.slug}`, eventPageHtml("Winter Concert", "Songs for winter."));
     backend.web.save(SCHOLARSHIP_PAGE, outsidePageHtml("Nursing Scholarship", "The Nursing Scholarship application closes March 1, 2027. There is no fee."));
     await goals.addGoal(GOAL);
-    // The list is read before the search, so the event comes first. After that, searches find nothing.
     backend.claude.willReply(
-      haikuFindsOpportunities({ summary: "Songs." }),
       claudeSearches([SCHOLARSHIP_PAGE]),
       haikuFindsOpportunities({ ...scholarship, date: "2027-03-01", date_quote: "March 1, 2027" }),
     );
@@ -842,7 +1076,7 @@ describe("what a search found, once later searches stop picking it", () => {
     expect((await calls.list()).map((opportunity) => opportunity.name)).toContain("Nursing Scholarship");
   });
 
-  it("gets read again only about once a week", async () => {
+  it("gets read again only about once a week, and Activity says so", async () => {
     await firstRun();
     const reads = () => backend.web.requests.filter((address) => address === SCHOLARSHIP_PAGE).length;
     expect(reads()).toBe(1);
@@ -852,6 +1086,19 @@ describe("what a search found, once later searches stop picking it", () => {
 
     await runForDays(1);
     expect(reads()).toBe(2);
+    expect((await backend.activity()).map((entry) => entry.kind)).toContain("opportunity_pages_read_again");
+  });
+
+  it("is read again for its Goal, so that a changed page can't fill up with what doesn't fit", async () => {
+    await firstRun();
+    const before = backend.claude.requests.length;
+    backend.web.save(SCHOLARSHIP_PAGE, outsidePageHtml("Nursing Scholarship", "The Nursing Scholarship application closes March 1, 2027. There is no fee, with new words."));
+    backend.claude.willReply(haikuFindsOpportunities({ ...scholarship, date: "2027-03-01", date_quote: "March 1, 2027" }));
+
+    await runForDays(7);
+
+    const reread = backend.claude.requests.slice(before).find((request) => JSON.stringify(request.messages).includes("new words"))!;
+    expect(JSON.stringify(reread.messages)).toContain(GOAL);
   });
 
   it("leaves two weeks after its page stops answering, saved or not", async () => {

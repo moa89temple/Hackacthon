@@ -15,7 +15,7 @@
  * test/fixtures/now-temple-pages holds real copies of these pages.
  */
 
-/** Already on settings.publicHosts, so this ticket adds nothing to the guard for it. */
+/** On settings.publicHosts, so the guard needs nothing added for it. */
 export const NOW_TEMPLE_HOST = "now.temple.edu";
 const EVENTS_LIST = `https://${NOW_TEMPLE_HOST}/events`;
 
@@ -41,6 +41,10 @@ export const EVENT_TITLE_CLASS = "title";
 export const EVENT_PAGE_CLASS = "page__calendar-event";
 
 export const CANCELLED_EVENT = /\bcancel+ed\b/i;
+/** A real one's address was /events/2026-11-04/cancelled-electronic-music-ensemble, so its address may once have had no such word. */
+export function withoutCancelledInAddress(address: string): string {
+  return address.replace(/\/cancel+ed-/, "/");
+}
 /** A day as the list writes it, such as "Tue., Nov. 3, 2026". */
 export const LISTED_DAY = /[A-Z][a-z]{2}\., ([A-Z][a-z]{2})\.? (\d{1,2}), (\d{4})/g;
 /** The times on the list, such as "12:00 pm to 1:00 pm". */

@@ -53,6 +53,12 @@ describe("the list of events on now.temple.edu", () => {
     expect(events).toEqual([]);
   });
 
+  it("says which addresses a cancelled event has or had, because Temple's can gain the word", () => {
+    const { cancelled } = readEventsPage(teaser("/events/2026-11-04/cancelled-ensemble", "Wed., Nov. 4, 2026 5:30 pm", "CANCELLED: Electronic Music Ensemble"));
+
+    expect(cancelled).toEqual(["https://now.temple.edu/events/2026-11-04/cancelled-ensemble", "https://now.temple.edu/events/2026-11-04/ensemble"]);
+  });
+
   it("leaves out an event whose address and date disagree, because neither can be trusted", () => {
     const { events } = readEventsPage(teaser("/events/2026-11-05/session", "Wed., Nov. 4, 2026 5:30 pm", "Session"));
 
@@ -66,7 +72,7 @@ describe("the list of events on now.temple.edu", () => {
   });
 
   it("says it doesn't recognize a page with no events on it, such as one a script hasn't built yet", () => {
-    expect(readEventsPage("<html><body><div id='app'>Please wait</div></body></html>")).toEqual({ events: [], understood: false });
+    expect(readEventsPage("<html><body><div id='app'>Please wait</div></body></html>")).toEqual({ events: [], cancelled: [], understood: false });
   });
 });
 
@@ -78,6 +84,14 @@ describe("one event's page on now.temple.edu", () => {
     expect(page.text).toContain("This event is free and open to the public.");
     expect(page.text).toContain("OPEN TO:");
     expect(page.text).not.toContain("Temple Now");
+  });
+
+  it("reads a real event that sends Students elsewhere to register, and says nothing about its cost", () => {
+    const page = readEventPage(saved("education-expo-prep-all-students.html"))!;
+
+    expect(page.text).toContain("Gain the tools you need to navigate the Ed Expo.");
+    expect(page.text).toContain("Register via");
+    expect(page.text).not.toMatch(/\$|\bfree\b/i);
   });
 
   it("says it doesn't recognize a page with no event on it", () => {

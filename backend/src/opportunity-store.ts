@@ -14,13 +14,22 @@ export const OPPORTUNITY_MIGRATION = `CREATE TABLE opportunities (
    CREATE TABLE opportunity_pages (
      url TEXT PRIMARY KEY,
      title TEXT NOT NULL,
-     text_hash TEXT NOT NULL
+     text_hash TEXT NOT NULL,
+     last_read_at TEXT NOT NULL
+   );
+   CREATE TABLE opportunity_page_goals (
+     student_id TEXT NOT NULL,
+     url TEXT NOT NULL REFERENCES opportunity_pages (url),
+     goal_key TEXT NOT NULL,
+     goal_text TEXT NOT NULL,
+     PRIMARY KEY (student_id, url, goal_key)
    );
    CREATE TABLE opportunity_mentions (
      opportunity_id INTEGER NOT NULL REFERENCES opportunities (id),
      url TEXT NOT NULL REFERENCES opportunity_pages (url),
      fields TEXT NOT NULL,
      last_seen_at TEXT NOT NULL,
+     missing_since TEXT,
      PRIMARY KEY (opportunity_id, url)
    );
    CREATE TABLE opportunity_goals (
@@ -55,6 +64,8 @@ export interface OpportunityToStore {
   key: string;
   name: string;
   fields: unknown;
+  /** The Goals it could help with. */
+  goals: GoalMatch[];
 }
 
 export interface StoredOpportunity {
@@ -77,11 +88,20 @@ export interface StoredOpportunityCard {
 
 export interface OpportunityStore {
   pageHash(url: string): string | null;
-  /** What this reading of the page says replaces what the last one said. */
-  savePage(page: { url: string; title: string; textHash: string }, items: OpportunityToStore[], readAt: Date, goal: GoalMatch | null): void;
+  /** The Goals this page has been read for, oldest first. */
+  goalsOfPage(studentId: string, url: string): GoalMatch[];
+  /**
+   * What this reading says is there. Anything on the page that it doesn't list stops counting as seen,
+   * and leaves when removeMissing comes round to it, unless a later reading lists it again.
+   */
+  savePage(page: { url: string; title: string; textHash: string }, items: OpportunityToStore[], readAt: Date, goals: GoalMatch[]): void;
   /** The page's words haven't changed, so what it says is still there. */
-  confirmPage(url: string, title: string, readAt: Date, goal: GoalMatch | null): void;
-  /** Pages with something on them that hasn't been seen there since then. */
+  confirmPage(url: string, title: string, readAt: Date): void;
+  /** Its Source still has it, as far as can be told without reading the page itself. */
+  confirmSeen(url: string, at: Date): void;
+  /** Its Source says it's off, so it leaves now, saved or not. */
+  removePage(url: string): void;
+  /** Pages with something on them, still listed by their last reading, that hasn't been seen there since then. */
   pagesLastSeenBefore(before: Date): string[];
   /** Takes out what hasn't been seen on its page since then. What's left with no page leaves, unless it was reported. */
   removeMissing(before: Date): void;
@@ -96,7 +116,7 @@ export interface OpportunityStore {
   addCard(studentId: string, card: StoredOpportunityCard): void;
   listCards(studentId: string): StoredOpportunityCard[];
   /** When this was last done and when it last failed. See opportunity-discovery.ts. */
-  run(what: string): { doneAt: Date | null; failedAt: Date | null };
+  lastRun(what: string): { doneAt: Date | null; failedAt: Date | null };
   recordRunDone(studentId: string, what: string, at: Date, entry: NewActivityEntry): void;
   recordRunFailed(studentId: string, what: string, at: Date, entry: NewActivityEntry | null): void;
 }
@@ -110,25 +130,33 @@ export function createOpportunityStore(
 ): OpportunityStore {
   const selectPage = db.prepare(`SELECT text_hash FROM opportunity_pages WHERE url = ?`);
   const upsertPage = db.prepare(
-    `INSERT INTO opportunity_pages (url, title, text_hash) VALUES (?, ?, ?)
-     ON CONFLICT (url) DO UPDATE SET title = excluded.title, text_hash = excluded.text_hash`,
+    `INSERT INTO opportunity_pages (url, title, text_hash, last_read_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (url) DO UPDATE SET title = excluded.title, text_hash = excluded.text_hash, last_read_at = excluded.last_read_at`,
   );
-  const updateTitle = db.prepare(`UPDATE opportunity_pages SET title = ? WHERE url = ?`);
+  const updatePage = db.prepare(`UPDATE opportunity_pages SET title = ?, last_read_at = ? WHERE url = ?`);
+  const insertPageGoal = db.prepare(`INSERT OR IGNORE INTO opportunity_page_goals (student_id, url, goal_key, goal_text) VALUES (?, ?, ?, ?)`);
+  const selectPageGoals = db.prepare(`SELECT goal_key, goal_text FROM opportunity_page_goals WHERE student_id = ? AND url = ? ORDER BY rowid`);
+  const deletePageGoals = db.prepare(`DELETE FROM opportunity_page_goals WHERE url = ?`);
+  const deleteGoalsOfOldPages = db.prepare(
+    `DELETE FROM opportunity_page_goals WHERE url IN (SELECT url FROM opportunity_pages WHERE last_read_at <= ?1 AND url NOT IN (SELECT url FROM opportunity_mentions))`,
+  );
+  const deletePage = db.prepare(`DELETE FROM opportunity_pages WHERE url = ?`);
   const upsertOpportunity = db.prepare(
     `INSERT INTO opportunities (item_key, name) VALUES (?, ?) ON CONFLICT (item_key) DO UPDATE SET name = excluded.name`,
   );
   const selectId = db.prepare(`SELECT id FROM opportunities WHERE item_key = ?`);
   const deletePageMentions = db.prepare(`DELETE FROM opportunity_mentions WHERE url = ?`);
-  const insertMention = db.prepare(`INSERT INTO opportunity_mentions (opportunity_id, url, fields, last_seen_at) VALUES (?, ?, ?, ?)`);
-  const confirmMentions = db.prepare(`UPDATE opportunity_mentions SET last_seen_at = ? WHERE url = ?`);
-  const insertGoalsOfPage = db.prepare(
-    `INSERT OR IGNORE INTO opportunity_goals (student_id, opportunity_id, goal_key, goal_text)
-     SELECT ?, opportunity_id, ?, ? FROM opportunity_mentions WHERE url = ?`,
+  const markPageMissing = db.prepare(`UPDATE opportunity_mentions SET missing_since = COALESCE(missing_since, ?) WHERE url = ?`);
+  const upsertMention = db.prepare(
+    `INSERT INTO opportunity_mentions (opportunity_id, url, fields, last_seen_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (opportunity_id, url) DO UPDATE SET fields = excluded.fields, last_seen_at = excluded.last_seen_at, missing_since = NULL`,
   );
-  const selectPagesLastSeenBefore = db.prepare(`SELECT DISTINCT url FROM opportunity_mentions WHERE last_seen_at <= ?`);
+  const confirmMentions = db.prepare(`UPDATE opportunity_mentions SET last_seen_at = ? WHERE url = ? AND missing_since IS NULL`);
+  const insertGoal = db.prepare(`INSERT OR IGNORE INTO opportunity_goals (student_id, opportunity_id, goal_key, goal_text) VALUES (?, ?, ?, ?)`);
+  const selectPagesLastSeenBefore = db.prepare(`SELECT DISTINCT url FROM opportunity_mentions WHERE last_seen_at <= ? AND missing_since IS NULL`);
   const deleteMissingMentions = db.prepare(`DELETE FROM opportunity_mentions WHERE last_seen_at <= ?`);
-  const deletePagesLeftEmpty = db.prepare(`DELETE FROM opportunity_pages WHERE url NOT IN (SELECT url FROM opportunity_mentions)`);
-  // The two below only ever follow a page's mentions going, because a page can stop listing something at any reading.
+  // A page with nothing on it stays until it hasn't been read for as long, so that its hash saves asking about it every day.
+  const deletePagesLeftEmpty = db.prepare(`DELETE FROM opportunity_pages WHERE last_read_at <= ? AND url NOT IN (SELECT url FROM opportunity_mentions)`);
   const notOnAnyPage = `opportunity_id NOT IN (SELECT opportunity_id FROM opportunity_mentions)`;
   const deleteOrphanSaves = db.prepare(`DELETE FROM saved_opportunities WHERE ${notOnAnyPage}`);
   const deleteOrphanGoals = db.prepare(`DELETE FROM opportunity_goals WHERE ${notOnAnyPage}`);
@@ -166,32 +194,44 @@ export function createOpportunityStore(
     deleteOrphans.run();
   }
 
-  function linkGoal(url: string, goal: GoalMatch | null): void {
-    if (goal) insertGoalsOfPage.run(goal.studentId, goal.key, goal.text, url);
-  }
-
   return {
     pageHash: (url) => (selectPage.get(url) as any)?.text_hash ?? null,
 
-    savePage(page, items, readAt, goal) {
+    goalsOfPage: (studentId, url) =>
+      (selectPageGoals.all(studentId, url) as any[]).map((row) => ({ studentId, key: row.goal_key, text: row.goal_text })),
+
+    savePage(page, items, readAt, goals) {
       inTransaction(() => {
-        upsertPage.run(page.url, page.title, page.textHash);
-        deletePageMentions.run(page.url);
+        const at = readAt.toISOString();
+        upsertPage.run(page.url, page.title, page.textHash, at);
+        for (const goal of goals) insertPageGoal.run(goal.studentId, page.url, goal.key, goal.text);
+        markPageMissing.run(at, page.url);
         for (const item of items) {
           upsertOpportunity.run(item.key, item.name);
           const { id } = selectId.get(item.key) as any;
-          insertMention.run(id, page.url, JSON.stringify(item.fields), readAt.toISOString());
+          upsertMention.run(id, page.url, JSON.stringify(item.fields), at);
+          for (const goal of item.goals) insertGoal.run(goal.studentId, id, goal.key, goal.text);
         }
-        linkGoal(page.url, goal);
-        clearOrphans();
       });
     },
 
-    confirmPage(url, title, readAt, goal) {
+    confirmPage(url, title, readAt) {
       inTransaction(() => {
-        updateTitle.run(title, url);
+        updatePage.run(title, readAt.toISOString(), url);
         confirmMentions.run(readAt.toISOString(), url);
-        linkGoal(url, goal);
+      });
+    },
+
+    confirmSeen(url, at) {
+      confirmMentions.run(at.toISOString(), url);
+    },
+
+    removePage(url) {
+      inTransaction(() => {
+        deletePageMentions.run(url);
+        deletePageGoals.run(url);
+        deletePage.run(url);
+        clearOrphans();
       });
     },
 
@@ -200,7 +240,8 @@ export function createOpportunityStore(
     removeMissing(before) {
       inTransaction(() => {
         deleteMissingMentions.run(before.toISOString());
-        deletePagesLeftEmpty.run();
+        deleteGoalsOfOldPages.run(before.toISOString());
+        deletePagesLeftEmpty.run(before.toISOString());
         clearOrphans();
       });
     },
@@ -251,7 +292,7 @@ export function createOpportunityStore(
         createdAt: new Date(row.created_at),
       })),
 
-    run(what) {
+    lastRun(what) {
       const row = selectRun.get(what) as any;
       return { doneAt: dateOrNull(row?.done_at), failedAt: dateOrNull(row?.failed_at) };
     },

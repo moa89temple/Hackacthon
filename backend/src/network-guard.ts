@@ -191,10 +191,11 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
           if (!WEB_SCHEMES.has(url.protocol)) return refuse(`Buddy's Browser only goes on the web, not to ${url.protocol}`);
           if (!READING_METHODS.has(request.method.toUpperCase())) return refuse(`A public page only gets read, so a ${request.method} request is refused: ${url.host}`);
           if (siteEntries.some(([, site]) => isOnSite(url.hostname, site))) return refuse(`A public page stays out of the Student's Connections: ${url.host}`);
+          // Before the list below, because what the tab ends up on gets kept as having come from the address asked for.
+          if (request.opensPage && withoutFinalDot(url.hostname) !== openedHost) return refuse(`This page may only open its own host: ${url.host}`);
           if (publicHostSet.has(url.hostname)) return allow;
           if (isOnSignOnDomain(url.hostname)) return refuse(`A public page stays out of a single sign-on's domain: ${url.host}`);
           if (!isPublicAddress(url.hostname)) return refuse(`This isn't a public address: ${url.host}`);
-          if (request.opensPage && withoutFinalDot(url.hostname) !== openedHost) return refuse(`This page may only open its own host: ${url.host}`);
           return allow;
         },
       };

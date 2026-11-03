@@ -44,6 +44,7 @@ export function haikuFindsOpportunities(...items: Record<string, unknown>[]): Sc
     worth_it_because: null,
     place: null,
     search_terms: [],
+    for_goals: [1],
     ...item,
   }));
   return { content: [textBlock(JSON.stringify({ items: complete }))] };

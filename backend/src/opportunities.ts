@@ -19,7 +19,7 @@ export interface OpportunityFields {
   time: string | null;
   cost: "free" | "paid" | "not_stated";
   costAmount: string | null;
-  /** Claude's one line on why it's worth the fee. There's no paid item without it. */
+  /** Claude's one line on why it's worth the fee. A paid item shows only with this and its amount. */
   worthItBecause: string | null;
   place: string | null;
   searchTerms: string[];
@@ -74,10 +74,14 @@ export function isAtTemple(address: string): boolean {
   return host === TEMPLE_DOMAIN || (host?.endsWith(`.${TEMPLE_DOMAIN}`) ?? false);
 }
 
-const fieldsOf = (stored: StoredOpportunity) => stored.mentions.map((mention) => mention.fields as OpportunityFields);
+/** Temple's page first, so that a card with no "Outside Temple" on it never has someone else's words. */
+const fieldsOf = (stored: StoredOpportunity) =>
+  stored.mentions.toSorted((a, b) => Number(isAtTemple(b.url)) - Number(isAtTemple(a.url))).map((mention) => mention.fields as OpportunityFields);
+
+/** A fee is always stated and always has its reason. Any page saying otherwise hides it, whatever another page says. */
+const feeCanBeStated = ({ cost, costAmount, worthItBecause }: OpportunityFields) => cost !== "paid" || (costAmount !== null && worthItBecause !== null);
 
 function costInWords(paid: OpportunityFields | undefined, all: OpportunityFields[]): string {
-  // Discovery keeps no paid item without an amount and a reason, so one is always here.
   if (paid) return `Costs ${paid.costAmount}`;
   return all.some((fields) => fields.cost === "free") ? FREE : COST_NOT_STATED;
 }
@@ -110,12 +114,16 @@ function asOpportunity(stored: StoredOpportunity, savedIds: Set<number>): Opport
   };
 }
 
-/** Temple's first. In each, what costs money comes after what doesn't, and then the soonest. */
+function costRank({ cost }: Opportunity): number {
+  if (cost === FREE) return 0;
+  return cost === COST_NOT_STATED ? 1 : 2;
+}
+
+/** Temple's first. In each, free ones come first and what has a fee comes last, and then the soonest. */
 function inOrder(a: Opportunity, b: Opportunity): number {
-  const paid = (opportunity: Opportunity) => opportunity.worthItBecause !== null;
   return (
     Number(a.outsideTemple) - Number(b.outsideTemple) ||
-    Number(paid(a)) - Number(paid(b)) ||
+    costRank(a) - costRank(b) ||
     a.date.localeCompare(b.date) ||
     a.name.localeCompare(b.name)
   );
@@ -150,8 +158,9 @@ export function createOpportunities(deps: { store: Store; clock: Clock }): Oppor
     const goalKeys = new Set(store.roadmap.listGoals(THE_STUDENT).map((goal) => goalKey(goal.text)));
     const saved = new Set(data.savedIds(THE_STUDENT));
     return data.list(THE_STUDENT).filter((stored) => {
-      const hasPassed = fieldsOf(stored).every((fields) => (fields.endDate ?? fields.date) < today);
-      if (hasPassed) return false;
+      const fields = fieldsOf(stored);
+      const hasPassed = fields.every(({ endDate, date }) => (endDate ?? date) < today);
+      if (hasPassed || !fields.every(feeCanBeStated)) return false;
       return (
         saved.has(stored.id) ||
         stored.mentions.some((mention) => isNowTempleEvent(mention.url)) ||

@@ -5,7 +5,7 @@ import { isNowTempleEvent } from "./now-temple-rules.ts";
 /** Searches for one Goal, at $10 per thousand on top of the tokens their results take up. */
 const MOST_SEARCHES_PER_GOAL = 5;
 /** Pages to read for one Goal. Each is a fetch, and a Haiku call if its words have changed. */
-export const MOST_PAGES_PER_GOAL = 8;
+const MOST_PAGES_PER_GOAL = 8;
 const SEARCH_TIMEOUT_MS = 180_000;
 /** The API can pause a long turn of searching. This is how many times Buddy lets it carry on. */
 const MOST_RESUMES = 3;

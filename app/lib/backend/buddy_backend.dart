@@ -580,12 +580,13 @@ class ReplyMilestoneCard extends ReplyEvent {
   final StandardMilestone milestone;
 }
 
-/// Buddy is showing a Roadmap card.
+/// Buddy is showing an Opportunity's card.
 class ReplyOpportunityCard extends ReplyEvent {
   const ReplyOpportunityCard(this.opportunity);
   final Opportunity opportunity;
 }
 
+/// Buddy is showing a Roadmap card.
 class ReplyRoadmapCard extends ReplyEvent {
   const ReplyRoadmapCard(this.card);
   final RoadmapCard card;

@@ -13,6 +13,7 @@ import {
   LISTED_DAY,
   LISTED_TIMES,
   NOW_TEMPLE_HOST,
+  withoutCancelledInAddress,
 } from "./now-temple-rules.ts";
 
 /** One event as the list gives it. All of this is the site's own, so none of it goes through a model. */
@@ -29,6 +30,8 @@ export interface ListedEvent {
 
 export interface EventsPage {
   events: ListedEvent[];
+  /** The addresses of what the list says is cancelled, so that what Buddy already has of them can go. */
+  cancelled: string[];
   /** False when the page has no events on it at all, which means it isn't the list as Buddy knows it. */
   understood: boolean;
 }
@@ -69,7 +72,8 @@ function daysIn(words: string): string[] {
   });
 }
 
-function readTeaser(teaser: Html.Element): ListedEvent | null {
+/** Null for one that's no use to the reader. A cancelled one still has its address, which is what it's named by here. */
+function readTeaser(teaser: Html.Element): ListedEvent | { cancelledAt: string } | null {
   const href = firstLink(teaser)?.attrs.find((attr) => attr.name === "href")?.value;
   const url = href ? URL.parse(href, `https://${NOW_TEMPLE_HOST}/`) : null;
   const addressDay = url?.hostname === NOW_TEMPLE_HOST ? EVENT_PATH.exec(url.pathname)?.[1] : undefined;
@@ -80,8 +84,9 @@ function readTeaser(teaser: Html.Element): ListedEvent | null {
   const name = wordsOf(title);
   const when = wordsOf(dateWords);
   const [first, last] = daysIn(when);
+  if (CANCELLED_EVENT.test(name)) return { cancelledAt: url!.href };
   // The address and the words are two statements of one date. If they disagree, neither can be trusted.
-  if (!name || first !== addressDay || CANCELLED_EVENT.test(name)) return null;
+  if (!name || first !== addressDay) return null;
 
   const times = last ? null : (LISTED_TIMES.exec(when)?.[0] ?? null);
   return {
@@ -96,11 +101,13 @@ function readTeaser(teaser: Html.Element): ListedEvent | null {
 export function readEventsPage(html: string): EventsPage {
   const teasers = allWithClass(parse(html), EVENT_TEASER_CLASS);
   const byAddress = new Map<string, ListedEvent>();
+  const cancelled: string[] = [];
   for (const teaser of teasers) {
     const event = readTeaser(teaser);
-    if (event) byAddress.set(event.url, event);
+    if (event && "cancelledAt" in event) cancelled.push(event.cancelledAt, withoutCancelledInAddress(event.cancelledAt));
+    else if (event) byAddress.set(event.url, event);
   }
-  return { events: [...byAddress.values()], understood: teasers.length > 0 };
+  return { events: [...byAddress.values()], cancelled: [...new Set(cancelled)], understood: teasers.length > 0 };
 }
 
 /** The event's own words, without the site's menus and footer, or null if there's no event on the page. */
