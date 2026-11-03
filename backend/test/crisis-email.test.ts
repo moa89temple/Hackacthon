@@ -210,7 +210,7 @@ describe("when the email can't go out", () => {
   it("with TUmail not connected, says so plainly, makes no card and sends nothing, and the Crisis card still shows first", async () => {
     await backend.revokeReadPermission(TUMAIL_ID);
 
-    expect((await offer()).whyNotYet).toBe("TUmail isn't connected, so this email can't go out yet. You can connect it on the You tab.");
+    expect((await offer()).whyNotYet).toBe("TUmail isn't connected, so an email can't go out yet. You can connect it on the You tab.");
 
     const response = await askForCard();
     expect(response.status).toBe(409);
@@ -224,7 +224,7 @@ describe("when the email can't go out", () => {
   it("with the login expired, says so plainly, makes no card and sends nothing, and the Crisis card still shows first", async () => {
     await expireLogin();
 
-    expect((await offer()).whyNotYet).toBe("Buddy's Browser isn't logged in to TUmail, so this email can't go out yet. Tap Log in to TUmail on the You tab.");
+    expect((await offer()).whyNotYet).toBe("Buddy's Browser isn't logged in to TUmail, so an email can't go out yet. Tap Log in to TUmail on the You tab.");
 
     const response = await askForCard();
     expect(response.status).toBe(409);
@@ -361,6 +361,24 @@ describe("switching to Live from the card", () => {
   it("doesn't switch for a card that isn't there", async () => {
     expect((await call("POST", "/crisis-email/cards/999/live")).status).toBe(404);
     expect((await call("POST", "/crisis-email/cards/nope/live")).status).toBe(404);
+    expect((await sendingNow()).mode).toBe("practice");
+  });
+
+  it("doesn't switch for an ordinary Draft's card, which keeps to the You tab", async () => {
+    backend.web.save(TUTTLEMAN_CONTACT_PAGE, `<html><head><title>Contact Us</title></head><body><p>${"Words. ".repeat(50)} Write to advising.madeup@temple.edu.</p></body></html>`);
+    backend.claude.willReply(haikuFinds(), haikuFinds({ name: "Advising Office", kind: "contact", summary: "Helps.", email: "advising.madeup@temple.edu", search_terms: ["hold"] }), haikuFinds());
+    await backend.discovery.run();
+    const contact = backend.guidebook.search("hold", { kind: "contact" })[0]!;
+    backend.claude.willReply(
+      { content: [toolUseBlock("make_handoff", { contact_id: contact.id, why: "They help.", subject: "Hold", body: "Hello" })], stopReason: "tool_use" },
+      { chunks: ["Here's a Draft."] },
+    );
+    const events = await backend.sendAndCollect("Help me with my hold");
+    const { draft } = events.find((event) => event.type === "draft_card");
+    const { card } = (await (await call("POST", `/drafts/${draft.id}/send-card`)).json()) as { card: any };
+
+    expect(card.crisisEmail).toBeUndefined();
+    expect((await switchToLive(card)).status).toBe(404);
     expect((await sendingNow()).mode).toBe("practice");
   });
 

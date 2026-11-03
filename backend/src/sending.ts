@@ -12,8 +12,9 @@ export class BadOwnAddress extends Error {
 }
 
 /**
- * Practice mode, and the Student's own address it sends to. Only the You tab's routes call the parts
- * that change anything, and nothing that passes through Claude ever does.
+ * Practice mode, and the Student's own address it sends to. Only the You tab's routes and the Student's
+ * tap on an email from the Crisis card call the parts that change anything, and nothing that passes
+ * through Claude ever does.
  */
 export interface Sending {
   settings(): SendingSettings;

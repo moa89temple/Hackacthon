@@ -27,13 +27,12 @@ export interface CrisisEmailRoutesDeps {
 
 /** Only from the Guidebook, so with its Source, and only if there's one address to go by. It's never made up here. */
 function tuttlemanIn(contacts: GuidebookItem[]): GuidebookItem | null {
-  return (
-    contacts.find((contact) => {
-      if (!/tuttleman/i.test(contact.name)) return false;
-      const addresses = [...new Set(addressesIn(contact.email ?? ""))];
-      return addresses.length === 1 && addresses[0] !== NOT_FOR_REACHING_SOMEONE;
-    }) ?? null
-  );
+  for (const contact of contacts) {
+    if (!/tuttleman/i.test(contact.name)) continue;
+    const addresses = [...new Set(addressesIn(contact.email ?? ""))];
+    if (addresses.length === 1 && addresses[0] !== NOT_FOR_REACHING_SOMEONE) return { ...contact, email: addresses[0]! };
+  }
+  return null;
 }
 
 /**

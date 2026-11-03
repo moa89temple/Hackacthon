@@ -62,8 +62,8 @@ export function whyCrisisEmailCantGoYet(sites: Record<string, Site>, store: Pick
   const siteId = Object.entries(sites).find(([, site]) => site.sending)?.[0];
   if (siteId === undefined) return "Buddy can't send email yet.";
   const permission = store.readPermission(THE_STUDENT, siteId);
-  if (!permission) return "TUmail isn't connected, so this email can't go out yet. You can connect it on the You tab.";
-  if (permission.needsLogin) return "Buddy's Browser isn't logged in to TUmail, so this email can't go out yet. Tap Log in to TUmail on the You tab.";
+  if (!permission) return "TUmail isn't connected, so an email can't go out yet. You can connect it on the You tab.";
+  if (permission.needsLogin) return "Buddy's Browser isn't logged in to TUmail, so an email can't go out yet. Tap Log in to TUmail on the You tab.";
   return null;
 }
 
@@ -76,7 +76,8 @@ function wholeAddressIn(written: unknown): string | null {
 }
 
 /**
- * The send routine, which only the Student's tap on "Buddy sends it" can ask for. A card holds the
+ * The send routine, which only the Student's tap on "Buddy sends it", or on the Crisis card's offer to
+ * email someone they chose, can ask for. That offer has no Draft, so its card is all there is of it. A card holds the
  * recipient, subject and body as they stood when it was made, and everything after that works from the
  * card: nothing is looked up again except to see that it hasn't changed. In Practice mode the recipient
  * is the Student's own address, and with no such address there's no card, because a real recipient is
