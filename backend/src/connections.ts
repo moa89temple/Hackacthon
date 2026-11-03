@@ -71,6 +71,8 @@ export interface ConnectionType {
    * can't be connected. A Read Permission it already has stays until the Student revokes it, which deletes the login.
    */
   notReadableYet?: string;
+  /** A Briefing says only how many of this Connection's events there are, in these words, and shows none of them. */
+  briefingCount?: { one: string; many: string };
   card: ReadPermissionCard;
   /** What Claude is told to do with this Connection, while it's on. */
   whileOnTellClaude: string;

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConnectionType } from "../src/connections.ts";
 import type { ConnectionFactToStore } from "../src/store.ts";
+import { tumail } from "../src/tumail.ts";
 import { BackendHarness } from "./support/backend-harness.ts";
 import { haikuFindsDates, TEST_MILESTONE_OFFICES, WITHDRAW_16_WEEK, WITHDRAW_7B } from "./support/milestone-pages.ts";
 import { eventPageHtml, eventsListHtml, EVENTS_LIST_PAGE, FLU_CLINIC, FLU_CLINIC_PAGE, haikuFindsOpportunities, opportunityCalls } from "./support/opportunity-pages.ts";
@@ -348,6 +349,41 @@ describe("what a Briefing holds", () => {
     expect(briefing.moreNews).toEqual([{ connection: "A Connection with news", count: 2 }]);
   });
 
+  describe("from a Connection that's only counted", () => {
+    afterEach(() => {
+      delete newsConnection.briefingCount;
+    });
+
+    it("says how many, and none of the words", async () => {
+      newsConnection.briefingCount = { one: "new email", many: "new emails" };
+      await backend.briefings.runDue();
+      await connectionFinds();
+      await connectionFinds(fact("one", "A subject line"), fact("two", "Another subject line"));
+
+      await reach("2026-11-03T13:00:00Z");
+
+      const briefing = await backend.latestBriefing();
+      expect(briefing.news).toEqual([]);
+      expect(briefing.moreNews).toEqual([{ connection: "A Connection with news", count: 2, words: "2 new emails in A Connection with news." }]);
+      expect(JSON.stringify(briefing)).not.toContain("subject line");
+    });
+
+    it("says it in the singular for one", async () => {
+      newsConnection.briefingCount = { one: "new email", many: "new emails" };
+      await backend.briefings.runDue();
+      await connectionFinds();
+      await connectionFinds(fact("one"));
+
+      await reach("2026-11-03T13:00:00Z");
+
+      expect((await backend.latestBriefing()).moreNews[0].words).toBe("1 new email in A Connection with news.");
+    });
+
+    it("is what TUmail is, so that a Briefing never lists an email's subject", () => {
+      expect(tumail.briefingCount).toEqual({ one: "new email", many: "new emails" });
+    });
+  });
+
   it("keeps nothing from a Connection after its Read Permission is revoked", async () => {
     await backend.briefings.runDue();
     await connectionFinds();
@@ -590,8 +626,12 @@ describe("the Student's Briefing times", () => {
   it("say plainly whether phone notifications are on", async () => {
     expect((await backend.briefingSettings()).phoneNotifications).toEqual({ on: true, offBecause: null });
 
-    backend.notifier.offBecause = "Made up.";
-    expect((await backend.briefingSettings()).phoneNotifications).toEqual({ on: false, offBecause: "Made up." });
+    // What's wrong in detail goes in the backend's log. The Student gets words that don't need a developer.
+    backend.notifier.offBecause = "FIREBASE_SERVICE_ACCOUNT_FILE isn't set in .env.local.";
+    const { phoneNotifications } = await backend.briefingSettings();
+    expect(phoneNotifications.on).toBe(false);
+    expect(phoneNotifications.offBecause).toMatch(/aren't set up yet/);
+    expect(phoneNotifications.offBecause).not.toMatch(/FIREBASE|\.env/);
   });
 
   it("can be changed, and Briefings then go at the new times", async () => {

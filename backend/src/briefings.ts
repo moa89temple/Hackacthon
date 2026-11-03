@@ -47,6 +47,8 @@ export interface BriefingNews {
   at: string;
 }
 
+const NOTIFICATIONS_OFF = "Phone notifications aren't set up yet, so your Briefings only show on the Today tab.";
+
 export interface ShownBriefing {
   id: number;
   kind: BriefingKind;
@@ -58,7 +60,7 @@ export interface ShownBriefing {
   opportunities: Opportunity[];
   news: BriefingNews[];
   /** How much more each Connection has than is shown. */
-  moreNews: { connection: string; count: number }[];
+  moreNews: { connection: string; count: number; words?: string }[];
   /** Nothing was relevant when Buddy looked, so no notification went. */
   hadNothing: boolean;
 }
@@ -108,7 +110,7 @@ export interface BriefingsDeps {
   roadmap: Pick<Roadmap, "milestones">;
   opportunities: Opportunities;
   connections: Pick<Connections, "events">;
-  connectionTypes: Pick<ConnectionType, "id" | "name">[];
+  connectionTypes: Pick<ConnectionType, "id" | "name" | "briefingCount">[];
   logError: (error: unknown) => void;
 }
 
@@ -286,8 +288,13 @@ export function createBriefings(deps: BriefingsDeps): Briefings {
     const events = allEvents().filter(({ id }) => connectionEventIds.includes(id));
     const news: BriefingNews[] = [];
     const moreNews: ShownBriefing["moreNews"] = [];
-    for (const { name } of connectionTypes) {
+    for (const { name, briefingCount } of connectionTypes) {
       const fromThis = events.filter(({ connectionName }) => connectionName === name).toReversed();
+      if (briefingCount) {
+        const count = fromThis.length;
+        if (count > 0) moreNews.push({ connection: name, count, words: `${count} ${count === 1 ? briefingCount.one : briefingCount.many} in ${name}.` });
+        continue;
+      }
       news.push(...fromThis.slice(0, NEWS_SHOWN_FROM_EACH_CONNECTION).map(({ id, text, at }) => ({ id, connection: name, text, at: at.toISOString() })));
       const more = fromThis.length - NEWS_SHOWN_FROM_EACH_CONNECTION;
       if (more > 0) moreNews.push({ connection: name, count: more });
@@ -301,7 +308,8 @@ export function createBriefings(deps: BriefingsDeps): Briefings {
     return {
       times,
       next: { kind: next.kind, at: next.at.toISOString(), when: momentInWords(next.at) },
-      phoneNotifications: { on: notifier.offBecause === null, offBecause: notifier.offBecause },
+      // The backend's log says exactly what's wrong. This is for the Student.
+      phoneNotifications: { on: notifier.offBecause === null, offBecause: notifier.offBecause === null ? null : NOTIFICATIONS_OFF },
     };
   }
 

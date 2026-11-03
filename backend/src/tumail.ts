@@ -360,6 +360,9 @@ export const tumailAt = (home: string, appHosts: string[] = [new URL(home).hostn
     address: null,
   },
 
+  // Buddy brings up an email the Student didn't ask about only if it's urgent, and a Briefing has no model to judge that.
+  briefingCount: { one: "new email", many: "new emails" },
+
   whileOnTellClaude:
     "Call check_tumail before you answer anything about their email, such as whether someone has replied. Do anything else you need to first, such as saving a fact or making a Handoff, because once you've read their email those wait for their next message.",
 

@@ -36,13 +36,19 @@ class BriefingNews {
 
 /// How much more a Connection has than the Briefing shows.
 class MoreBriefingNews {
-  const MoreBriefingNews({required this.connection, required this.count});
+  const MoreBriefingNews({required this.connection, required this.count, this.words});
 
-  factory MoreBriefingNews.fromJson(Map<String, dynamic> json) =>
-      MoreBriefingNews(connection: json['connection'] as String, count: json['count'] as int);
+  factory MoreBriefingNews.fromJson(Map<String, dynamic> json) => MoreBriefingNews(
+        connection: json['connection'] as String,
+        count: json['count'] as int,
+        words: json['words'] as String?,
+      );
 
   final String connection;
   final int count;
+
+  /// All a Briefing says about a Connection it only counts, such as TUmail.
+  final String? words;
 }
 
 /// The latest Briefing, with each thing in it as it is now.
@@ -79,7 +85,7 @@ class Briefing {
   /// Nothing was relevant when Buddy looked, so no notification went.
   final bool hadNothing;
 
-  bool get isEmpty => milestones.isEmpty && opportunities.isEmpty && news.isEmpty;
+  bool get isEmpty => milestones.isEmpty && opportunities.isEmpty && news.isEmpty && moreNews.isEmpty;
 }
 
 /// Times of day on Philadelphia's clock, as HH:MM.

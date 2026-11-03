@@ -25,7 +25,7 @@ class BriefingsSection extends StatelessWidget {
   /// What's true of phone notifications here and now. The backend's side comes first, because nothing the phone does can help without it.
   (String, {bool canAsk}) _phoneWords(BriefingSettings settings) {
     if (!settings.phoneNotificationsOn) {
-      return (settings.offBecause ?? 'Phone notifications are off on the backend. Briefings still show on the Today tab.', canAsk: false);
+      return (settings.offBecause ?? "Phone notifications aren't set up yet, so your Briefings only show on the Today tab.", canAsk: false);
     }
     return switch (phone.status) {
       PhoneNotificationStatus.checking => ('Checking phone notifications.', canAsk: false),

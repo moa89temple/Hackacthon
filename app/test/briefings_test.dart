@@ -124,6 +124,30 @@ void main() {
       expect(find.text('And 2 others from TUmail.'), findsOneWidget);
     });
 
+    testWidgets('a Briefing with nothing but a count still says that count, and not that it has passed', (tester) async {
+      await openUnlockedApp(
+        tester,
+        FakeBackend()
+          ..latestBriefing = aBriefing(milestones: const [], moreNews: const [MoreBriefingNews(connection: 'TUmail', count: 1, words: '1 new email in TUmail.')]),
+      );
+      await openTab(tester, 'Today');
+
+      expect(find.text('1 new email in TUmail.'), findsOneWidget);
+      expect(find.textContaining('has passed or been removed'), findsNothing);
+    });
+
+    testWidgets('says only how many there are for a Connection a Briefing just counts', (tester) async {
+      await openUnlockedApp(
+        tester,
+        FakeBackend()
+          ..latestBriefing = aBriefing(moreNews: const [MoreBriefingNews(connection: 'TUmail', count: 3, words: '3 new emails in TUmail.')]),
+      );
+      await openTab(tester, 'Today');
+
+      await tester.scrollUntilVisible(find.text('3 new emails in TUmail.'), 200);
+      expect(find.textContaining('others from TUmail'), findsNothing);
+    });
+
     testWidgets('says when the first one comes, and shows nothing made up, before there has been one', (tester) async {
       await openUnlockedApp(tester, FakeBackend());
       await openTab(tester, 'Today');

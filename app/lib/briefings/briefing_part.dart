@@ -74,7 +74,7 @@ List<Widget> briefingPart(
     for (final more in latest.moreNews)
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Text('And ${more.count} ${more.count == 1 ? 'other' : 'others'} from ${more.connection}.'),
+        child: Text(more.words ?? 'And ${more.count} ${more.count == 1 ? 'other' : 'others'} from ${more.connection}.'),
       ),
     const SizedBox(height: 12),
   ];
