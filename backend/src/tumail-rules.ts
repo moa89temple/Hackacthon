@@ -1,5 +1,8 @@
-import type { KnownRequest, PagePattern } from "./browser-access.ts";
+import { parse } from "parse5";
+import type { DefaultTreeAdapterTypes as Html } from "parse5";
+import type { KnownRequest, PagePattern, SendingRules } from "./browser-access.ts";
 import type { ContactAddress } from "./guidebook.ts";
+import type { ApprovedEmail, RequestToCheck } from "./network-guard.ts";
 
 /**
  * Everything Buddy assumes about Outlook on the web, as data in one place, because none of it has been
@@ -28,7 +31,7 @@ export const INBOX_IS_READY = `${MESSAGE_ROW}, ${LOGIN_FORM}`;
 export const MESSAGE_IS_READY = `[aria-label="Message body"], ${LOGIN_FORM}`;
 
 /**
- * The only pages Buddy opens: the inbox and one message in it. Sent mail, Drafts, Junk, Deleted Items,
+ * The only pages Buddy opens to read: the inbox and one message in it. Sent mail, Drafts, Junk, Deleted Items,
  * writing an email, settings, the calendar and People all stay out, because each address is tested as
  * it is. The sign-in pages are there only so that a read can see a login has expired, and nothing is
  * taken from them.
@@ -106,4 +109,165 @@ export function addressesIn(written: string): string[] {
 
 export function contactWithAddress(address: string, contacts: ContactAddress[]): ContactAddress | null {
   return contacts.find((contact) => contact.email !== null && addressesIn(contact.email).includes(address)) ?? null;
+}
+
+/**
+ * SENDING. Everything from here down is UNVERIFIED, because nobody has seen a real compose window or a
+ * real send yet. It comes from what Outlook on the web is known to do, and a real Practice send has to
+ * prove each part. All of it fails closed: if Outlook differs, nothing is sent, and the card says what
+ * didn't match. The guard only looks at any of this while the send routine has it open for one approved
+ * card, so none of it makes reading any broader. See forSending in network-guard.ts.
+ */
+
+/** UNVERIFIED: that this address opens a new email by itself. The app's Open in Outlook button already uses it, on the phone. */
+const COMPOSE_PATH = "/mail/deeplink/compose";
+
+/** UNVERIFIED: each of these. The roles and labels Outlook's compose window has, which are all there is to go by. */
+export const COMPOSE_SELECTORS = {
+  ready: `[aria-label="Message body"][contenteditable="true"], ${LOGIN_FORM}`,
+  to: '[aria-label="To"]',
+  cc: '[aria-label="Cc"]',
+  bcc: '[aria-label="Bcc"]',
+  subject: 'input[aria-label="Add a subject"], input[aria-label="Subject"]',
+  body: '[aria-label="Message body"][contenteditable="true"]',
+  send: 'button[aria-label="Send"]',
+};
+
+/**
+ * UNVERIFIED: that a new email goes out as one CreateItem on this address, carrying the whole message,
+ * with the guard refusing everything before it, including the saves Outlook would otherwise make as a
+ * Draft. If it's really a save and then a send, or anything else, the guard refuses it and nothing goes.
+ */
+const SERVICE_PATH = /^\/owa(?:\/\d+)?\/service\.svc$/;
+const SEND_ACTION_QUERY = /^\?action=CreateItem(?:&(?!action=)[a-z0-9_]+=[^&;]*)*$/i;
+const SEND_ACTION_HEADER = /^CreateItem$/i;
+/** UNVERIFIED: the value that means send it, and not just save it. */
+const SENDS_THE_MESSAGE = new Set(["SendAndSaveCopy", "SendOnly"]);
+
+/** The home address and hosts are only ever something else for made-up pages in the checks of the real browser. */
+export function tumailSending(appHosts: string[], home: string = TUMAIL_HOME): SendingRules {
+  return {
+    composeUrl: new URL(COMPOSE_PATH, home).href,
+    pages: appHosts.map((host) => ({ host, path: /^\/mail(?:\/\d+)?\/deeplink\/compose\/?$/ })),
+    sendRequests: appHosts.map((host) => ({
+      method: "POST",
+      host,
+      path: SERVICE_PATH,
+      query: SEND_ACTION_QUERY,
+      headers: { action: SEND_ACTION_HEADER },
+    })),
+    whyNotThisEmail,
+  };
+}
+
+export const TUMAIL_SENDING = tumailSending(TUMAIL_APP_HOSTS);
+
+const sameEmailAddress = (left: unknown, right: string) => typeof left === "string" && left.trim().toLowerCase() === right.trim().toLowerCase();
+const inOneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+/** The message's lines, each with its spaces evened out. How many blank lines lie between them is the editor's to decide. */
+const linesOf = (text: string) => text.split("\n").map(inOneLine).filter((line) => line !== "").join("\n");
+const isNothing = (value: unknown) => value === undefined || value === null || (Array.isArray(value) && value.length === 0);
+
+function wordsInHtml(html: string): string {
+  const words: string[] = [];
+  const walk = (node: Html.ChildNode | Html.Document) => {
+    // A line break in the markup itself is only a space.
+    if (node.nodeName === "#text") words.push((node as Html.TextNode).value.replace(/\s+/g, " "));
+    if (node.nodeName === "style" || node.nodeName === "script" || node.nodeName === "head") return;
+    // A block and a line break each put what follows on a new line.
+    const breaksLine = node.nodeName === "br" || node.nodeName === "div" || node.nodeName === "p";
+    if (breaksLine) words.push("\n");
+    if ("childNodes" in node) node.childNodes.forEach(walk);
+    if (breaksLine) words.push("\n");
+  };
+  walk(parse(html));
+  return words.join("");
+}
+
+/** UNVERIFIED: that the request's data is JSON in its body, in a header that holds the same thing URL-encoded, or both. */
+function dataInRequest({ body, headers }: RequestToCheck): unknown[] | null {
+  const held = [body, headers?.["x-owa-urlpostdata"]];
+  try {
+    const data = [
+      ...(held[0] ? [JSON.parse(held[0])] : []),
+      ...(held[1] ? [JSON.parse(decodeURIComponent(held[1]))] : []),
+    ];
+    return data.length > 0 ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** UNVERIFIED: every field name here, which come from Exchange's published shape for CreateItem. */
+function whyNotInData(data: any, email: ApprovedEmail): string | null {
+  const request = data?.Body;
+  if (!SENDS_THE_MESSAGE.has(request?.MessageDisposition)) return "Outlook asked to do something other than send a message, such as save a Draft.";
+  if (!Array.isArray(request.Items) || request.Items.length !== 1) return "Outlook's request didn't hold exactly one message.";
+  const [message] = request.Items;
+  const to = message?.ToRecipients;
+  if (!Array.isArray(to) || to.length !== 1 || !sameEmailAddress(to[0]?.EmailAddress, email.to)) return "Outlook's request wasn't to exactly the approved recipient.";
+  if (!isNothing(message.CcRecipients) || !isNothing(message.BccRecipients)) return "Outlook's request had a copy going to someone.";
+  if (!isNothing(message.Attachments)) return "Outlook's request had an attachment.";
+  if (typeof message.Subject !== "string" || inOneLine(message.Subject) !== inOneLine(email.subject)) return "Outlook's request had a different subject.";
+  const body = message.Body;
+  if (typeof body?.Value !== "string") return "Outlook's request didn't show the message's words.";
+  const words = String(body.BodyType).toLowerCase() === "html" ? wordsInHtml(body.Value) : body.Value;
+  return linesOf(words) === linesOf(email.body) ? null : "Outlook's request had different words.";
+}
+
+/**
+ * Null only if the request is a send of one message, to exactly the approved recipient with no copies or
+ * attachments, with the approved subject and the approved words line by line. It doesn't look at anything
+ * else a request could say, such as its From or the addresses in a link, because only Outlook's own page
+ * could put something there, and nothing Buddy gives that page does.
+ */
+export function whyNotThisEmail(request: RequestToCheck, email: ApprovedEmail): string | null {
+  const held = dataInRequest(request);
+  if (!held) return "Buddy couldn't read what Outlook's request carries.";
+  for (const data of held) {
+    const why = whyNotInData(data, email);
+    if (why) return why;
+  }
+  return null;
+}
+
+/** The answer to the send request, which has to be told from Outlook's other answers. */
+export function isSendAnswer(address: string): boolean {
+  const url = URL.parse(address);
+  return url !== null && SERVICE_PATH.test(url.pathname) && SEND_ACTION_QUERY.test(url.search);
+}
+
+/** UNVERIFIED: the shape of Outlook's answer. Anything else means there's no telling, and never that it didn't go. */
+export function answerSaysSent(answer: string): boolean {
+  try {
+    const items = JSON.parse(answer)?.Body?.ResponseMessages?.Items;
+    return Array.isArray(items) && items.length === 1 && items[0]?.ResponseClass === "Success";
+  } catch {
+    return false;
+  }
+}
+
+/** What's in the compose window, as read back just before pressing Send. A line that isn't shown is null. */
+export interface ComposeContents {
+  /** Everything the To line shows, and every label and title inside it, where a chip may keep its address. */
+  to: string;
+  cc: string | null;
+  bcc: string | null;
+  subject: string;
+  body: string;
+}
+
+/**
+ * How the compose window differs from the card, in Buddy's words, with none of the email's. The number
+ * of blank lines can differ, because the editor keeps them its own way, but the lines themselves can't.
+ */
+export function differencesFromApproved(found: ComposeContents, email: ApprovedEmail): string[] {
+  const problems: string[] = [];
+  const addresses = [...new Set(addressesIn(found.to))];
+  if (addresses.length !== 1 || !sameEmailAddress(addresses[0], email.to)) problems.push("The To line didn't hold exactly the approved recipient.");
+  if (inOneLine(found.cc ?? "") !== "") problems.push("The Cc line wasn't empty.");
+  if (inOneLine(found.bcc ?? "") !== "") problems.push("The Bcc line wasn't empty.");
+  if (inOneLine(found.subject) !== inOneLine(email.subject)) problems.push("The subject wasn't what the card says.");
+  if (linesOf(found.body) !== linesOf(email.body)) problems.push("The message wasn't what the card says.");
+  return problems;
 }

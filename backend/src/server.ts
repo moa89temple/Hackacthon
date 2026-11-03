@@ -28,6 +28,7 @@ import { createDarsCards } from "./dars-roadmap.ts";
 import { DARS_ID } from "./dars-rules.ts";
 import { createDiscovery, type Discovery } from "./discovery.ts";
 import { createDrafts, type Drafts } from "./drafts.ts";
+import { emailSendRoutine } from "./email-send.ts";
 import { createGuidebook, type Guidebook } from "./guidebook.ts";
 import { createStandardMilestones, type StandardMilestones } from "./standard-milestones.ts";
 import type { Office } from "./office-pages.ts";
@@ -42,6 +43,8 @@ import { addOpportunityRoutes } from "./opportunity-routes.ts";
 import { createProfile, type Profile } from "./profile.ts";
 import { addRoadmapRoutes } from "./roadmap-routes.ts";
 import { createRoadmap } from "./roadmap.ts";
+import { createSending } from "./sending.ts";
+import { addSendingRoutes } from "./sending-routes.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { BUDDY_OPENING } from "./system-prompt.ts";
 
@@ -135,11 +138,23 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     logError: (error) => app.log.error(error),
   });
   const darsCards = createDarsCards({ store, clock: options.adapters.clock, profile });
+  const sending = createSending({ store, clock: options.adapters.clock, afterChange: () => actionCards.expireDue() });
   const actionCards = createActionCards({
     store,
     clock: options.adapters.clock,
     routines: [
       formSubmitRoutine({ sites: options.sites, guards, browserAccess, logError: (error) => app.log.error(error) }),
+      emailSendRoutine({
+        sites: options.sites,
+        drafts,
+        sending,
+        contacts: () => guidebook.contacts(),
+        browserAccess,
+        hasReadPermission: (site) => store.readPermission(THE_STUDENT, site) !== null,
+        store,
+        clock: options.adapters.clock,
+        logError: (error) => app.log.error(error),
+      }),
     ],
     logError: (error) => app.log.error(error),
   });
@@ -245,7 +260,8 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
 
   addGuidebookRoutes(app, guidebook);
   addActionCardRoutes(app, actionCards, isStoredId);
-  addDraftRoutes(app, drafts);
+  addDraftRoutes(app, drafts, () => actionCards.expireDue());
+  addSendingRoutes(app, { sending, actionCards, drafts, lastMessageShown: conversation.lastMessageShown, isStoredId });
   addRoadmapRoutes(app, roadmap, isStoredId);
   addOpportunityRoutes(app, opportunities, isStoredId);
   app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
@@ -288,7 +304,7 @@ function addGuidebookRoutes(app: FastifyInstance, guidebook: Guidebook): void {
 }
 
 /** Only the Student's changes come here. Opening a Draft in Outlook or copying it happens on the phone, and Buddy never hears of it. */
-function addDraftRoutes(app: FastifyInstance, drafts: Drafts): void {
+function addDraftRoutes(app: FastifyInstance, drafts: Drafts, afterEdit: () => void): void {
   app.patch<{ Params: { id: string }; Body: { subject?: unknown; body?: unknown } }>("/drafts/:id", async (request, reply) => {
     const { subject, body } = request.body ?? {};
     if (typeof subject !== "string" || typeof body !== "string" || body.trim() === "") {
@@ -296,6 +312,7 @@ function addDraftRoutes(app: FastifyInstance, drafts: Drafts): void {
     }
     const draft = isStoredId(request.params.id) ? drafts.edit(Number(request.params.id), { subject, body }) : null;
     if (!draft) return reply.code(404).send({ error: "There's no such Draft" });
+    afterEdit();
     const note = hiddenNote(`${draft.subject}\n${draft.body}`);
     return { draft, ...(note ? { hiddenNote: note } : {}) };
   });

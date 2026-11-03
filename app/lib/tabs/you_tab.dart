@@ -8,6 +8,8 @@ import '../profile/profile_controller.dart';
 import '../profile/profile_section.dart';
 import '../roadmap/goals_section.dart';
 import '../roadmap/roadmap_controller.dart';
+import '../sending/sending_controller.dart';
+import '../sending/sending_section.dart';
 
 class YouTab extends StatelessWidget {
   const YouTab({
@@ -16,12 +18,14 @@ class YouTab extends StatelessWidget {
     required this.profile,
     required this.connections,
     required this.roadmap,
+    required this.sending,
   });
 
   final BuddyBackend backend;
   final ProfileController profile;
   final ConnectionsController connections;
   final RoadmapController roadmap;
+  final SendingController sending;
 
   void _openActivity(BuildContext context) {
     Navigator.of(context).push(
@@ -40,6 +44,8 @@ class YouTab extends StatelessWidget {
         GoalsSection(roadmap: roadmap),
         const SizedBox(height: 32),
         ProfileSection(profile: profile),
+        const SizedBox(height: 32),
+        SendingSection(sending: sending),
         const SizedBox(height: 32),
         Semantics(
           header: true,

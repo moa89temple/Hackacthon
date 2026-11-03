@@ -33,7 +33,7 @@ import { isTuportalLoginPage, tuportalBlockedPages, tuportalReadablePages } from
 import { tumailAt } from "../../src/tumail.ts";
 import { runTumailCheck } from "../../src/tumail-check.ts";
 import { readInboxPage } from "../../src/tumail-pages.ts";
-import { MESSAGE_ROW, TUMAIL_ID, tumailReadablePages, tumailReadOnlyRequests } from "../../src/tumail-rules.ts";
+import { MESSAGE_ROW, TUMAIL_ID, tumailReadablePages, tumailReadOnlyRequests, tumailSending } from "../../src/tumail-rules.ts";
 
 const browserDirectory = fileURLToPath(new URL("../../../browser", import.meta.url));
 const CONTROL_PORT = 19222;
@@ -1492,5 +1492,108 @@ describe("the DARS reader, against made-up pages in the real browser", () => {
 
     expect(exitCode).toBe(EXIT_LOGIN_NEEDED);
     expect(output).not.toMatch(/marker/i);
+  });
+});
+
+/**
+ * These haven't been run yet. Every page here is the made-up one in browser/test-pages/server.py, which
+ * stands in for what Buddy assumes Outlook's new email is like, and nothing can reach any real mail.
+ */
+describe("the send routine", () => {
+  const COMPOSE_HOST = "127.0.0.6";
+  const COMPOSE_HOME = `http://${COMPOSE_HOST}:8000/mail/`;
+  const EMAIL = { to: "student@temple.edu", subject: "Hold on my account", body: "Hello,\n\nCan you help?\n\nThanks" };
+  const sending = tumailSending([COMPOSE_HOST], COMPOSE_HOME);
+  const composeSites: Record<string, Site> = {
+    [TUMAIL_ID]: {
+      name: "TUmail",
+      homeUrl: COMPOSE_HOME,
+      appHosts: [COMPOSE_HOST],
+      loginHosts: [COMPOSE_HOST],
+      isConnection: true,
+      readablePages: tumailReadablePages([COMPOSE_HOST]),
+      readOnlyRequests: tumailReadOnlyRequests([COMPOSE_HOST]),
+      sending,
+    },
+  };
+  const composeGuards = createGuardPolicy({ sites: composeSites, publicHosts: [], hasReadPermission: () => true });
+  const sendOn = (variant: string, beforePressing: () => string | null = () => null) => {
+    const guard = composeGuards.forSending(TUMAIL_ID);
+    return { guard, sent: browser.sendEmail({ ...EMAIL, composeUrl: `${sending.composeUrl}?variant=${variant}` }, guard, beforePressing) };
+  };
+  const sendsInLedger = () => pathsThatChanged().filter((path) => path.includes("action=CreateItem"));
+
+  it("sends exactly what's approved, once, replacing whatever was in the message", async () => {
+    const { guard, sent } = sendOn("plain");
+
+    expect(await sent).toEqual({ outcome: "sent" });
+
+    expect(guard.progress()).toBe("sent");
+    expect(sendsInLedger()).toHaveLength(1);
+    const body = JSON.parse(changesInLedger()[0]!.body);
+    expect(body.Body.Items[0].Subject).toBe(EMAIL.subject);
+    expect(body.Body.Items[0].ToRecipients).toEqual([{ EmailAddress: EMAIL.to }]);
+    expect(body.Body.Items[0].Body.Value).not.toContain("signature");
+  });
+
+  it("reads a recipient's address from inside the chip the page makes of it", async () => {
+    expect(await sendOn("chips").sent).toEqual({ outcome: "sent" });
+  });
+
+  it("lets one request through when the page tries to send three times", async () => {
+    await sendOn("sends-twice").sent;
+    await settle();
+    expect(sendsInLedger()).toHaveLength(1);
+  });
+
+  it("doesn't let the page save a Draft", async () => {
+    await sendOn("saves-first").sent;
+    await settle();
+    expect(sendsInLedger()).toHaveLength(1);
+    expect(JSON.parse(changesInLedger()[0]!.body).Body.MessageDisposition).toBe("SendAndSaveCopy");
+  });
+
+  it("stops the request when the page changes the recipient at the last moment", async () => {
+    const { guard, sent } = sendOn("swaps-recipient");
+
+    const outcome = await sent;
+
+    expect(outcome).toMatchObject({ outcome: "not_sent" });
+    expect(guard.progress()).toBe("closed");
+    expect(sendsInLedger()).toEqual([]);
+  });
+
+  it.each([
+    ["has-a-copy", "The Cc line"],
+    ["rewrites-subject", "The subject"],
+  ])("doesn't press Send when the page %s", async (variant, problem) => {
+    const outcome = await sendOn(variant).sent;
+
+    expect(outcome).toMatchObject({ outcome: "compose_differs" });
+    expect((outcome as { problems: string[] }).problems.join(" ")).toContain(problem);
+    expect(sendsInLedger()).toEqual([]);
+  });
+
+  it("doesn't press Send when the last look says not to", async () => {
+    const { guard, sent } = sendOn("plain", () => "Something changed.");
+
+    expect(await sent).toEqual({ outcome: "not_sent", why: "Something changed." });
+
+    expect(guard.progress()).toBe("shut");
+    expect(sendsInLedger()).toEqual([]);
+  });
+
+  it("says nothing was sent when pressing Send sends nothing, and shuts the guard", async () => {
+    const { guard, sent } = sendOn("does-nothing");
+
+    expect(await sent).toMatchObject({ outcome: "not_sent" });
+
+    expect(guard.progress()).toBe("closed");
+    expect(sendsInLedger()).toEqual([]);
+  });
+
+  it("can't tell, and says so, when Outlook answers with an error", async () => {
+    expect(await sendOn("answers-with-an-error").sent).toEqual({ outcome: "no_clear_answer" });
+    expect(sendsInLedger()).toHaveLength(1);
   });
 });

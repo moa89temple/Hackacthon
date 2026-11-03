@@ -9,7 +9,7 @@ import {
   actionFinished,
 } from "./activity.ts";
 import { describeInPhiladelphia, type Clock } from "./clock.ts";
-import { THE_STUDENT, type ActionCardStatus, type Store, type StoredActionCard } from "./store.ts";
+import { THE_STUDENT, type ActionCardStatus, type NewActivityEntry, type Store, type StoredActionCard } from "./store.ts";
 
 /** How long a card can wait for a tap. After this, it never runs. */
 const CARD_LIFETIME_MS = 24 * 60 * 60_000;
@@ -39,6 +39,13 @@ const STATUS_FOR_CLAUDE: Record<ActionCardStatus, string> = {
   expired: "expired with no tap, so nothing happened",
   replaced: "replaced by a newer card",
   invalid: "stopped because its content changed, so nothing happened",
+};
+
+/** Why the Student's tap makes no new card, when one with the same content has got this far. */
+const ALREADY_HAPPENED: Partial<Record<ActionCardStatus, string>> = {
+  running: "Buddy is doing exactly this now, so it won't start it again.",
+  done: "Buddy has already done exactly this, so it won't do it again. If you have more to say, change the Draft first.",
+  unknown: "Buddy can't tell whether this happened, so it won't risk doing it twice. Please check first. If it didn't happen, you can do it yourself or change the Draft for a new card.",
 };
 
 export interface CardLine {
@@ -77,6 +84,8 @@ export interface StepResult {
   outcome: string;
   /** For the Student, in Activity, when there's more to say. */
   detail?: string;
+  /** Saved to Activity along with what became of the card, so that one can't happen without the other. */
+  alsoRecord?: NewActivityEntry[];
 }
 
 /**
@@ -86,6 +95,11 @@ export interface StepResult {
  */
 export interface ActionRoutine {
   kind: string;
+  /**
+   * Only the Student's own tap can make this kind of card. Claude's tool is refused it, and it doesn't
+   * count towards Claude being offered that tool.
+   */
+  onlyTheStudentAsks?: boolean;
   /** Whether Buddy can ask for this at all right now. With no routine that can, Claude isn't offered the tool. */
   isAvailable(): boolean;
   /** Turns what Claude asked for into the exact content of a card. Throws ActionRefused. */
@@ -95,6 +109,11 @@ export interface ActionRoutine {
    * must make plain which of Buddy's own lines it is, so that nothing Claude asks for can pass for one.
    */
   describe(content: unknown): CardDescription;
+  /**
+   * Says why a waiting card can't ever count now, because something it was made from has changed. The
+   * card stops working and needs a new one. In words from Buddy's code, for the Student.
+   */
+  noLongerValid?(content: unknown): string | null;
   /** Says why an Approve can't start now, leaving the card waiting. Nothing is used up. */
   whyNotNow(): string | null;
   /** Carries the step out. Reads the card itself, so nothing can be slipped in on the way. */
@@ -123,6 +142,11 @@ export interface ActionCards {
    * editing a card means.
    */
   request(input: unknown, where: { afterMessageId: number; replaces?: number }): ActionCard;
+  /**
+   * Makes a card for a kind only the Student's tap can ask for. It never runs the step. The same
+   * content gives back a card that's still waiting, and is refused once it's running, done or unknown.
+   */
+  requestFromStudent(input: unknown, where: { afterMessageId: number }): ActionCard;
   get(id: number): ActionCard | null;
   list(): { card: ActionCard; afterMessageId: number; createdAt: Date }[];
   /**
@@ -133,7 +157,7 @@ export interface ActionCards {
   approve(id: number, seenFingerprint: string): Promise<ActionCard | null>;
   /** The Student's Decline tap. Tapping again changes nothing. Throws CardRefused when it's too late. */
   decline(id: number): ActionCard | null;
-  /** Ends any card whose time is up. Cards are only ever looked at through things that call this. */
+  /** Ends any card whose time is up, or that can no longer count. Cards are only ever looked at through things that call this. */
   expireDue(): void;
   /**
    * For when the backend starts. A step left running was cut off, and nobody can say how far it got,
@@ -201,11 +225,25 @@ export function createActionCards({ store, clock, routines, logError }: ActionCa
     };
   }
 
+  /** Why a waiting card can't ever count now. A card that can't be read can't count either. */
+  function whyNoLongerValid(stored: StoredActionCard): string | null {
+    try {
+      return routineFor(stored.kind).noLongerValid?.(JSON.parse(stored.content)) ?? null;
+    } catch (error) {
+      logError(error);
+      return "What Buddy had stored no longer matched what you were shown, so it didn't do this.";
+    }
+  }
+
   function expireIfDue(stored: StoredActionCard): StoredActionCard {
-    if (stored.status !== "waiting" || clock.now() < stored.expiresAt) return stored;
-    const moved = store.moveActionCard(THE_STUDENT, stored.id, "waiting", { status: "expired" }, [
-      actionCardExpired(describe(stored), stored.expiresAt),
-    ]);
+    if (stored.status !== "waiting") return stored;
+    const why = whyNoLongerValid(stored);
+    const moved =
+      clock.now() >= stored.expiresAt
+        ? store.moveActionCard(THE_STUDENT, stored.id, "waiting", { status: "expired" }, [actionCardExpired(describe(stored), stored.expiresAt)])
+        : why
+          ? store.moveActionCard(THE_STUDENT, stored.id, "waiting", { status: "invalid", outcome: why }, [actionCardInvalid(clock.now(), why)])
+          : stored;
     return moved ?? store.actionCard(THE_STUDENT, stored.id)!;
   }
 
@@ -217,6 +255,7 @@ export function createActionCards({ store, clock, routines, logError }: ActionCa
   function replace(id: number, input: unknown, afterMessageId: number): ActionCard {
     const old = current(id);
     if (old?.status !== "waiting") throw new ActionRefused("That card is no longer waiting, so it can't be changed.");
+    if (routineFor(old.kind).onlyTheStudentAsks) throw new ActionRefused("Only the Student can change that card.");
     const card = prepareCard(input, afterMessageId);
     const description = routineFor(card.kind).describe(JSON.parse(card.content));
     const replaced = store.replaceActionCard(THE_STUDENT, id, card, [
@@ -241,17 +280,31 @@ export function createActionCards({ store, clock, routines, logError }: ActionCa
       stored.id,
       "running",
       { status: result.status, outcome: result.outcome },
-      [actionFinished(result, describe(stored), clock.now())],
+      [actionFinished(result, describe(stored), clock.now()), ...(result.alsoRecord ?? [])],
     );
     return finished ?? store.actionCard(THE_STUDENT, stored.id)!;
   }
 
   return {
-    canAsk: () => routines.some((routine) => routine.isAvailable()),
+    canAsk: () => routines.some((routine) => !routine.onlyTheStudentAsks && routine.isAvailable()),
 
     request(input, { afterMessageId, replaces }) {
+      // Not the same as refusing a tap: Claude is told there's no such thing, as for any unknown kind.
+      if (routineFor((input as { kind?: unknown } | null)?.kind).onlyTheStudentAsks) throw new ActionRefused("Buddy has no such action.");
       if (replaces !== undefined) return replace(replaces, input, afterMessageId);
       const card = prepareCard(input, afterMessageId);
+      const description = routineFor(card.kind).describe(JSON.parse(card.content));
+      return toCard(store.addActionCard(THE_STUDENT, card, actionCardRequested(description, card.createdAt)));
+    },
+
+    requestFromStudent(input, { afterMessageId }) {
+      const card = prepareCard(input, afterMessageId);
+      for (const same of store.listActionCards(THE_STUDENT).filter((stored) => stored.fingerprint === card.fingerprint)) {
+        const latest = expireIfDue(same);
+        if (latest.status === "waiting") return toCard(latest);
+        const already = ALREADY_HAPPENED[latest.status];
+        if (already) throw new ActionRefused(already);
+      }
       const description = routineFor(card.kind).describe(JSON.parse(card.content));
       return toCard(store.addActionCard(THE_STUDENT, card, actionCardRequested(description, card.createdAt)));
     },

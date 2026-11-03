@@ -1,4 +1,4 @@
-import type { Site } from "./browser-access.ts";
+import type { KnownRequest, Site } from "./browser-access.ts";
 
 /** One request Buddy's Browser is about to make. */
 export interface RequestToCheck {
@@ -38,6 +38,29 @@ export interface ArmableGuard extends RequestGuard {
   progress(): StepProgress;
 }
 
+/** Exactly what the Student approved sending. */
+export interface ApprovedEmail {
+  to: string;
+  subject: string;
+  body: string;
+}
+
+/**
+ * How far one send has got. "closed" means it was opened and nothing went through, and "sent" means the
+ * one request has been let go, so whatever happens afterwards, it mustn't be tried again.
+ */
+export type SendProgress = "shut" | "open" | "closed" | "sent";
+
+export interface SendGuard extends RequestGuard {
+  /** Opens the exception, for one request that carries exactly this. It can only ever be opened once. */
+  open(email: ApprovedEmail): void;
+  /** Shuts it for good. Safe at any time, however many times. */
+  close(): void;
+  progress(): SendProgress;
+  /** Why what looked like the send was refused, in Buddy's words, with none of the email's. */
+  refusals(): string[];
+}
+
 export interface GuardPolicy {
   /** For everything Buddy reads. It has no way to be armed, so nothing it guards can change anything. */
   forReading(): RequestGuard;
@@ -54,6 +77,11 @@ export interface GuardPolicy {
   forPublicPage(address: string): RequestGuard;
   /** For one approved step. Only the gate in BrowserAccess asks for this. */
   forApprovedStep(): ArmableGuard;
+  /**
+   * For the one routine that sends an email. Only the gate in BrowserAccess asks for this. It starts
+   * shut, it's a new one for each send, and nothing else in Buddy has a way to open it.
+   */
+  forSending(siteId: string): SendGuard;
   /** Whether this is a page Buddy never opens, whatever a card says. */
   isBlockedPage(url: string): boolean;
 }
@@ -74,6 +102,12 @@ const WEB_SCHEMES = new Set(["http:", "https:"]);
 /** Names that only mean something on a private network. Docker's address for this laptop is one. */
 const PRIVATE_SUFFIXES = [".local", ".localhost", ".internal", ".lan", ".home", ".corp", ".intranet"];
 
+/** A page can ask for anything any number of times, and this ends up in Activity. */
+const MOST_NOTED_REFUSALS = 8;
+/** Only an address plain enough that it can't be holding anything of the Student's. */
+const PLAIN_PATH = /^\/[A-Za-z0-9_./-]{0,80}$/;
+const PLAIN_ACTION = /^[A-Za-z]{1,40}$/;
+
 const allow: GuardDecision = { allowed: true };
 const refuse = (why: string): GuardDecision => ({ allowed: false, why });
 
@@ -90,7 +124,8 @@ const refuse = (why: string): GuardDecision => ({ allowed: false, why });
  * 5. A request on the site's `readOnlyRequests` goes through. Anything else that changes something
  *    is refused.
  *
- * An approved card only ever affects rule 4, and only for its one request.
+ * An approved card only ever affects rule 4, and only for its one request. A send has its own guard
+ * with a rule of its own in that place: see forSending below.
  *
  * During a Takeover none of this runs, because Buddy isn't attached to the browser at all: see
  * BrowserAccess. Whatever Buddy does after the Student taps Done is guarded again.
@@ -117,17 +152,7 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
 
   function isKnownReadOnly(url: URL, method: string, headers: Record<string, string> = {}): boolean {
     return siteEntries.some(
-      ([, site]) =>
-        isOnSite(url.hostname, site) &&
-        (site.readOnlyRequests ?? []).some(
-          (known) =>
-            known.method.toUpperCase() === method &&
-            known.host === url.hostname &&
-            // The address as it is, undecoded: a list that allows something mustn't match more than it says.
-            known.path.test(url.pathname) &&
-            (known.query === undefined || known.query.test(url.search)) &&
-            Object.entries(known.headers ?? {}).every(([name, value]) => headers[name] === undefined || value.test(headers[name])),
-        ),
+      ([, site]) => isOnSite(url.hostname, site) && (site.readOnlyRequests ?? []).some((known) => isKnownRequest(known, url, method, headers)),
     );
   }
 
@@ -221,7 +246,81 @@ export function createGuardPolicy({ sites, publicHosts, hasReadPermission }: Gua
           }),
       };
     },
+
+    /**
+     * Sending's narrow exception. Rules 1 and 2 stay as they are, and so does the read-only list. On top
+     * of them, a page only opens if it's one a read may open or the page to write an email, and exactly
+     * one request of the site's sendRequests goes through, while it's open, if it carries exactly the
+     * approved email. It shuts the moment that has gone, and nothing keeps this object afterwards.
+     */
+    forSending(siteId) {
+      const site = Object.hasOwn(sites, siteId) ? sites[siteId] : undefined;
+      const rules = site?.sending;
+      const pages = [...(site?.readablePages ?? []), ...(rules?.pages ?? [])];
+      let approved: ApprovedEmail | null = null;
+      let progress: SendProgress = "shut";
+      const refusals: string[] = [];
+
+      /** What was stopped while open, by its place and action only, so that a real send shows what Outlook really did. */
+      function noteWhatWasStopped(request: RequestToCheck): void {
+        const url = URL.parse(request.url);
+        if (progress !== "open" || !url || READING_METHODS.has(request.method.toUpperCase()) || !isOnSite(url.hostname, site!)) return;
+        if (refusals.length >= MOST_NOTED_REFUSALS || !PLAIN_PATH.test(url.pathname)) return;
+        const action = url.searchParams.get("action");
+        refusals.push(`The guard stopped a ${request.method} to ${url.pathname}${action && PLAIN_ACTION.test(action) ? ` for ${action}` : ""}.`);
+      }
+
+      function takeTheSend(request: RequestToCheck): boolean {
+        if (!approved || !rules) return false;
+        const url = new URL(request.url);
+        const method = request.method.toUpperCase();
+        if (!rules.sendRequests.some((known) => isKnownRequest(known, url, method, request.headers))) return false;
+        const why = rules.whyNotThisEmail(request, approved);
+        if (why) {
+          refusals.push(why);
+          return false;
+        }
+        approved = null;
+        progress = "sent";
+        return true;
+      }
+
+      return {
+        open(email) {
+          if (!rules) throw new Error("This site has no rule for sending");
+          if (progress !== "shut") throw new Error("This send has already been opened");
+          approved = email;
+          progress = "open";
+        },
+        close() {
+          approved = null;
+          if (progress === "open") progress = "closed";
+        },
+        progress: () => progress,
+        refusals: () => [...refusals],
+        check(request) {
+          const decision = checkRequest(request, hasReadPermission, takeTheSend);
+          if (!decision.allowed) noteWhatWasStopped(request);
+          if (!decision.allowed || !request.opensPage) return decision;
+          const url = URL.parse(request.url);
+          if (!url || !WEB_SCHEMES.has(url.protocol)) return decision;
+          const listed = pages.some((page) => page.host === url.hostname && page.path.test(url.pathname));
+          return listed ? decision : refuse(`This isn't a page the send routine opens: ${url.host}`);
+        },
+      };
+    },
   };
+}
+
+function isKnownRequest(known: KnownRequest, url: URL, method: string, headers: Record<string, string> = {}): boolean {
+  return (
+    known.method.toUpperCase() === method &&
+    known.host === url.hostname &&
+    // The address as it is, undecoded: a list that allows something mustn't match more than it says.
+    known.path.test(url.pathname) &&
+    (known.query === undefined || known.query.test(url.search)) &&
+    Object.entries(known.headers ?? {}).every(([name, value]) => headers[name] === undefined || value.test(headers[name]))
+  );
 }
 
 /** Whether a host is one of this site's: its home page's, or any that holds part of its login. */

@@ -226,6 +226,7 @@ function watchingBrowser(
     liveView: inner.liveView,
     show: async () => notInACheck(),
     submitForm: async () => notInACheck(),
+    sendEmail: async () => notInACheck(),
     clearScreen: async () => notInACheck(),
     forgetLogin: async () => notInACheck(),
 

@@ -17,6 +17,9 @@ const _pasteInstead = 'Buddy copied the message, so you can paste it into a new 
 const _copied = 'Copied the message.';
 const _couldNotCopy = "Buddy couldn't copy the message. Try again, or open Edit and copy it from there.";
 const _saved = 'Your changes are saved.';
+const _buddySends = 'Buddy sends it shows you exactly what will go and to whom, and nothing goes until you tap Approve.';
+const _cardMade = 'Buddy made a card for you to check and approve. It\'s the newest thing in the conversation.';
+const _couldNotAsk = "The app couldn't reach Buddy, so it made no card. Check that the backend is running, then try again.";
 
 /// A Draft for the Student to send themselves. Nothing here tells the backend when it's opened or
 /// copied, because what the Student does with their email is their own business.
@@ -93,6 +96,16 @@ class _DraftCardState extends State<DraftCard> {
     if (saved != null) _say(saved.hiddenNote ?? _saved);
   }
 
+  /// Only ever makes a card. The email goes only if the Student taps Approve on it.
+  Future<void> _askBuddyToSend() async {
+    try {
+      final refusal = await widget.chat.askForSendCard(_draft);
+      _say(refusal ?? _cardMade, problem: refusal != null);
+    } on Exception {
+      _say(_couldNotAsk, problem: true);
+    }
+  }
+
   Widget _button(String label, {required String semanticsLabel, required VoidCallback onPressed}) {
     return TextButton(onPressed: onPressed, child: Text(label, semanticsLabel: semanticsLabel));
   }
@@ -142,6 +155,7 @@ class _DraftCardState extends State<DraftCard> {
                 _button('Edit', semanticsLabel: 'Edit $theDraft', onPressed: _edit),
                 _button('Open in Outlook', semanticsLabel: 'Open $theDraft in Outlook', onPressed: _openInOutlook),
                 _button('Copy', semanticsLabel: 'Copy $theDraft', onPressed: _copy),
+                if (email != null) _button('Buddy sends it', semanticsLabel: 'Buddy sends it: $theDraft', onPressed: _askBuddyToSend),
               ],
             ),
             if (_status case final status?)
@@ -160,6 +174,14 @@ class _DraftCardState extends State<DraftCard> {
                 child: Text(_otherRoute, style: theme.textTheme.bodySmall),
               ),
             ),
+            if (email != null)
+              Semantics(
+                container: true,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(_buddySends, style: theme.textTheme.bodySmall),
+                ),
+              ),
           ],
         ),
       ),

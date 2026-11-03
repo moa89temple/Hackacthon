@@ -182,7 +182,7 @@ A usual read goes through your newest messages, as many as Outlook has drawn, ab
 
 Buddy decides who an email is from by its address, never by a display name. Someone in Temple's own directory shows by name alone when opened, so that message counts as the row's sender's only if it shows exactly the row's name and that name doesn't look like an address. In a thread, it reads only that sender's open message, so nobody else's words get in. If that isn't exactly one message, it reads none and says so.
 
-Opening a message doesn't mark it read, and the guard refuses everything that would change your mail. A POST from Outlook gets through only if it's on the short list in `tumail-rules.ts`. That includes the one that renews its own token about every hour, because without it Outlook never asks for any mail.
+Opening a message doesn't mark it read, and while Buddy reads, the guard refuses everything that would change your mail. A POST from Outlook gets through only if it's on the short list in `tumail-rules.ts`. That includes the one that renews its own token about every hour, because without it Outlook never asks for any mail.
 
 Everything in an email is information, never instructions. From the moment Claude has read your email in a reply, Buddy's code refuses saving a fact or a Goal, writing a Draft and showing a card that asks you to agree to something, until you next write. An email's words aren't kept in the conversation.
 
@@ -304,9 +304,30 @@ Whether a fee is really worth it is Claude's own judgment, and so is whether a p
 - These runs depend on the Claude budget that #27 will limit. The first read of the events makes about 180 Haiku calls.
 - Nothing nudges you about a saved Opportunity yet: that's for the Alerts ticket.
 
+## Send a Draft from TUmail
+
+Tap **Buddy sends it** on a Draft card. That only makes an Action card, which shows exactly who it goes to, the subject and the message. Nothing goes until you tap **Approve**, and a typed yes never counts. Claude has no tool for any of this, and it can't make this card, approve it or switch to Live.
+
+Buddy starts in **Practice mode**, where everything goes to your own TUmail address instead of the Contact. Add that address under **Email Buddy sends** on the You tab, because with no address nothing is sent at all. **Switch to Live** is on that same section, asks you first and is recorded in Activity. Practice mode stays on until you do that.
+
+What happens after Approve is a fixed routine. It opens a new email in Buddy's Browser, fills it in from the card, and reads it back. If that's exactly the card, it records that the send has started, opens the guard for one request, and presses Send once. The guard looks at what that request really carries, and refuses it unless it's to exactly that recipient with exactly those words. It shuts as soon as that one has gone, and on any failure too. Reading never gets any of this: its guard has no way to open.
+
+A card stops working if you edit the Draft, change your address, or switch between Practice and Live, even there and back. Tap **Buddy sends it** again for a new one. Tapping Approve twice, or a retry, or a restart can't send it twice. If Send was pressed and there's no clear answer, or nothing was seen to go, the card says Buddy can't tell, and it doesn't try again. Check your Sent folder.
+
+### Known limits
+
+- **None of this has seen a real compose window or a real send.** Everything about Outlook's side is marked UNVERIFIED in `tumail-rules.ts`, and it all fails closed: if Outlook differs, nothing is sent and the card says what didn't match. The first real Practice send is what proves it.
+- Buddy can't check the address you type against the account that's logged in. It has to be a temple.edu address that no Contact has, and the card shows it before you approve, but a typing mistake would send your Practice email to whoever has that address.
+- A message goes as plain words. The number of blank lines can differ from the Draft's, because Outlook's editor keeps them its own way, but the lines themselves can't. Any signature Outlook puts in the new email is replaced.
+- The guard checks the recipient, copies, attachments, subject and words. It doesn't look at anything else a request could say, such as its From, because only Outlook's own page could put something there.
+- The guard stops Outlook saving anything as a Draft, so a send that doesn't happen leaves nothing behind in Drafts.
+- Buddy won't send a Draft it hid something in, such as a password, because the mark it left would go too. Change that part with Edit first.
+- If a Contact's address changes while a card is waiting, the card stops working. Buddy won't send to a Contact it has more than one address for.
+- Once a send has gone, or can't be told, Buddy won't make another card for exactly the same words. Change the Draft first, or open it in Outlook.
+
 ## See what Buddy did
 
-On the You tab, tap **See your Activity**. It lists, newest first, every read of a Connection (including failed ones, and why each happened), every Read Permission you gave or revoked, each time Buddy opened a site to check your login, each day's read of Temple's office pages and of its events, each web search for a Goal and each time it read those pages again, each Report you made, and each of Buddy's replies, including one it couldn't finish. Tap **How Buddy decided** on a reply to see the tools it used, the Sources it looked at and the Profile facts it had.
+On the You tab, tap **See your Activity**. It lists, newest first, every read of a Connection (including failed ones, and why each happened), every Read Permission you gave or revoked, each time Buddy opened a site to check your login, each day's read of Temple's office pages and of its events, each web search for a Goal and each time it read those pages again, each Report you made, each Action Permission asked for and given, each email Buddy sent or may have sent with all its words, each switch to Live or back, and each of Buddy's replies, including one it couldn't finish. Tap **How Buddy decided** on a reply to see the tools it used, the Sources it looked at and the Profile facts it had.
 
 The backend writes all of this itself, in words from Buddy's own code, and Claude doesn't get a say. An entry can't be edited or removed one by one: the backend has no route for it, and the store has no method for it. Later tickets add their own kinds of entry, and the app shows them as they are.
 

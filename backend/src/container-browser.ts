@@ -1,5 +1,6 @@
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 import { PageBlocked, type BuddysBrowser, type FrameReading, type PageReading } from "./buddys-browser.ts";
+import { sendEmailOnPage } from "./compose-in-page.ts";
 import { submitFormOnPage } from "./form-in-page.ts";
 import { attachGuard, type GuardConnection } from "./guard-connection.ts";
 import type { RequestGuard } from "./network-guard.ts";
@@ -181,6 +182,22 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
         } catch (error) {
           throw blockedByGuard(error, guarded);
         } finally {
+          await page.close();
+        }
+      });
+    },
+
+    sendEmail(email, guard, beforePressing) {
+      return whileGuarded(guard, async (context, guarded) => {
+        const page = await guardedPage(context, guarded);
+        page.setDefaultTimeout(PAGE_TIMEOUT_MS);
+        try {
+          return await sendEmailOnPage(page, email, guard, beforePressing);
+        } catch (error) {
+          throw blockedByGuard(error, guarded);
+        } finally {
+          // Before the page goes, so that nothing it tries as it closes can count as the send.
+          guard.close();
           await page.close();
         }
       });

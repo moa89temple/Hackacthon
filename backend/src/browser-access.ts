@@ -3,8 +3,11 @@ import { fingerprintOf } from "./action-cards.ts";
 import { loginChecked } from "./activity.ts";
 import {
   PageBlocked,
+  SEND_EMAIL,
   SUBMIT_FORM,
   type BuddysBrowser,
+  type EmailSending,
+  type EmailStep,
   type FormStep,
   type FormSubmission,
   type FormToSubmit,
@@ -13,7 +16,7 @@ import {
   type ReadOptions,
 } from "./buddys-browser.ts";
 import type { Clock } from "./clock.ts";
-import type { GuardPolicy, RequestGuard } from "./network-guard.ts";
+import type { ApprovedEmail, GuardPolicy, RequestGuard, RequestToCheck } from "./network-guard.ts";
 import { keepToReadablePages } from "./readable-pages.ts";
 import { THE_STUDENT, type Store, type StoredTakeover } from "./store.ts";
 
@@ -46,6 +49,22 @@ export interface KnownRequest {
   query?: RegExp;
   /** By lower-case name. A request that carries one of these must carry a value that matches. */
   headers?: Record<string, RegExp>;
+}
+
+/**
+ * How a site sends an email, for the one routine that does. None of this applies to reading, and the
+ * guard only looks at it while that routine has opened it for one approved card. See forSending in
+ * network-guard.ts.
+ */
+export interface SendingRules {
+  /** Where to write a new email. */
+  composeUrl: string;
+  /** The pages only the send routine opens, on top of the site's readablePages. */
+  pages: PagePattern[];
+  /** The only requests that can carry the send. */
+  sendRequests: KnownRequest[];
+  /** Null only when the request carries exactly this email and nothing more. In Buddy's words, with none of the email's. */
+  whyNotThisEmail: (request: RequestToCheck, email: ApprovedEmail) => string | null;
 }
 
 export interface Site {
@@ -88,6 +107,8 @@ export interface Site {
    * as an app that only changes the part after the #, or one that sends a login to another host.
    */
   isLoginPage?: (address: string) => boolean;
+  /** How this site sends an email. With none, Buddy can't send from it. */
+  sending?: SendingRules;
 }
 
 export interface Takeover {
@@ -183,6 +204,15 @@ export interface BrowserAccess {
    * If this throws, nothing can have left the browser.
    */
   submitApprovedForm(cardId: number): Promise<FormSubmission>;
+  /**
+   * The browser's send step, with the same gate as submitApprovedForm: it takes only a card's id, reads
+   * the email from the stored card, and only ever lets a card through once. The guard it's given starts
+   * shut, is closed again however this ends, and is never kept. `beforePressing` comes right before the
+   * guard opens: if it says why not, or throws, Send isn't pressed.
+   *
+   * If this throws, nothing can have left the browser.
+   */
+  sendApprovedEmail(cardId: number, beforePressing: (step: EmailStep) => string | null): Promise<EmailSending>;
   currentTakeover(): Takeover | null;
   /**
    * Gives the Student control. Asking again for the same site returns the Takeover under way. Throws
@@ -286,10 +316,16 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
    * NoActionPermission for anything else, or if what's stored isn't what the Student saw.
    */
   function takeApprovedForm(cardId: number): FormToSubmit {
+    const { site: _, ...form } = JSON.parse(takeApprovedCard(cardId, SUBMIT_FORM)) as FormStep;
+    return form;
+  }
+
+  /** The content of a card of this kind that's just had its Approve tap, and only once for that card. */
+  function takeApprovedCard(cardId: number, kind: string): string {
     const card = store.actionCard(THE_STUDENT, cardId);
     if (
       !card ||
-      card.kind !== SUBMIT_FORM ||
+      card.kind !== kind ||
       card.status !== "running" ||
       card.approvedFingerprint === null ||
       card.approvedFingerprint !== card.fingerprint ||
@@ -298,8 +334,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
     ) {
       throw new NoActionPermission();
     }
-    const { site: _, ...form } = JSON.parse(card.content) as FormStep;
-    return form;
+    return card.content;
   }
 
   async function submitApprovedForm(cardId: number): Promise<FormSubmission> {
@@ -317,6 +352,32 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
         // It may have left the browser, so nobody may ever think it's safe to try again.
         logError(error);
         return { outcome: "no_clear_answer" as const };
+      }
+    });
+  }
+
+  async function sendApprovedEmail(cardId: number, beforePressing: (step: EmailStep) => string | null): Promise<EmailSending> {
+    failIfStudentInControl();
+    return oneAtATime(async () => {
+      // A Takeover may have started while this step was waiting its turn.
+      failIfStudentInControl();
+      const step = JSON.parse(takeApprovedCard(cardId, SEND_EMAIL)) as EmailStep;
+      const rules = Object.hasOwn(sites, step.site) ? sites[step.site]!.sending : undefined;
+      if (!rules) throw new NoActionPermission();
+      const guard = guards.forSending(step.site);
+      failIfGuardRefuses(guard, rules.composeUrl);
+      try {
+        const email = { composeUrl: rules.composeUrl, to: step.to, subject: step.subject, body: step.body };
+        const sent = await browser.sendEmail(email, guard, () => beforePressing(step));
+        // Once the guard has opened, Send has been pressed, whatever the browser makes of what followed.
+        return sent.outcome === "not_sent" && guard.progress() !== "shut" ? { outcome: "pressed_nothing_seen" as const, why: sent.why } : sent;
+      } catch (error) {
+        if (guard.progress() === "shut") throw error;
+        // It may have left the browser, so nobody may ever think it's safe to try again.
+        logError(error);
+        return { outcome: "no_clear_answer" as const };
+      } finally {
+        guard.close();
       }
     });
   }
@@ -344,6 +405,7 @@ export function createBrowserAccess(deps: BrowserAccessDeps): BrowserAccess {
     readPublicPage: (url) => readUnderGuard(url, guards.forPublicPage(url)),
     readToCheckLogin,
     submitApprovedForm,
+    sendApprovedEmail,
     currentTakeover,
 
     async startTakeover(id) {

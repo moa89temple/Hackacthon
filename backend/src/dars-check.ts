@@ -106,6 +106,7 @@ function watchingBrowser(inner: BuddysBrowser, mayGoOn: () => boolean, visits: P
     liveView: inner.liveView,
     show: async () => notInACheck(),
     submitForm: async () => notInACheck(),
+    sendEmail: async () => notInACheck(),
     clearScreen: async () => notInACheck(),
     forgetLogin: async () => notInACheck(),
 

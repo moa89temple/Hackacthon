@@ -17,6 +17,7 @@ import 'opportunities/opportunities_controller.dart';
 import 'profile/profile_controller.dart';
 import 'roadmap/roadmap_controller.dart';
 import 'roadmap/roadmap_tab.dart';
+import 'sending/sending_controller.dart';
 import 'tabs/today_tab.dart';
 import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
@@ -242,6 +243,7 @@ class _TabsState extends State<_Tabs> {
   late final MilestonesController _milestones = MilestonesController(widget.backend)..load();
   late final RoadmapController _roadmap = RoadmapController(widget.backend)..load();
   late final OpportunitiesController _opportunities = OpportunitiesController(widget.backend)..load();
+  late final SendingController _sending = SendingController(widget.backend, onChanged: () => _chat.checkWaitingCards())..load();
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
   int _selected = 0;
@@ -284,6 +286,7 @@ class _TabsState extends State<_Tabs> {
     _profile.load();
     _connections.load();
     _roadmap.load();
+    _sending.load();
   }
 
   /// The Roadmap tab's way into the conversation. If Buddy is still replying, the Student is shown that instead.
@@ -308,6 +311,7 @@ class _TabsState extends State<_Tabs> {
     _milestones.dispose();
     _roadmap.dispose();
     _opportunities.dispose();
+    _sending.dispose();
     super.dispose();
   }
 
@@ -330,6 +334,7 @@ class _TabsState extends State<_Tabs> {
             profile: _profile,
             connections: _connections,
             roadmap: _roadmap,
+            sending: _sending,
           ),
         ],
       ),
