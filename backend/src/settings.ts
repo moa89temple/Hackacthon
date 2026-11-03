@@ -6,6 +6,17 @@ import { CANVAS_BLOCKED_PAGES, CANVAS_HOME, CANVAS_ID, CANVAS_READABLE_PAGES } f
 import { dars } from "./dars.ts";
 import { DARS_ID, DARS_SITE } from "./dars-rules.ts";
 import { googleCalendar } from "./google-calendar.ts";
+import { handshake } from "./handshake.ts";
+import {
+  HANDSHAKE_APP_HOSTS,
+  HANDSHAKE_BLOCKED_PAGES,
+  HANDSHAKE_HOME,
+  HANDSHAKE_ID,
+  HANDSHAKE_LOGIN_HOSTS,
+  HANDSHAKE_NAME,
+  HANDSHAKE_READABLE_PAGES,
+  isHandshakeLoginPage,
+} from "./handshake-rules.ts";
 import { MILESTONE_OFFICES } from "./milestone-pages.ts";
 import { navigate360 } from "./navigate360.ts";
 import { isNavigate360LoginPage } from "./navigate360-pages.ts";
@@ -44,7 +55,7 @@ export const settings = {
     liveView: { host: "127.0.0.1", port: 6080 },
   },
   /** Every Connection there is. Each stays off until the Student gives its Read Permission. */
-  connectionTypes: [googleCalendar, canvas, tuportal, dars, tumail, navigate360],
+  connectionTypes: [googleCalendar, canvas, tuportal, dars, tumail, navigate360, handshake],
   /**
    * Public pages Buddy's Browser may open, each as this exact host. A whole domain would be wrong:
    * Temple's single sign-on could log it in to a Connection that has no Read Permission.
@@ -100,6 +111,17 @@ export const settings = {
       readablePages: NAVIGATE360_READABLE_PAGES,
       blockedPages: NAVIGATE360_BLOCKED_PAGES,
       isLoginPage: isNavigate360LoginPage,
+    },
+    [HANDSHAKE_ID]: {
+      name: HANDSHAKE_NAME,
+      homeUrl: HANDSHAKE_HOME,
+      appHosts: HANDSHAKE_APP_HOSTS,
+      // Temple's single sign-on and Duo too, as for Canvas. They're shared, so see forgetLogin.
+      loginHosts: HANDSHAKE_LOGIN_HOSTS,
+      isConnection: true,
+      readablePages: HANDSHAKE_READABLE_PAGES,
+      blockedPages: HANDSHAKE_BLOCKED_PAGES,
+      isLoginPage: isHandshakeLoginPage,
     },
   },
 };

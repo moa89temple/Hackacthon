@@ -60,7 +60,7 @@ describe("the tool Claude has", () => {
     expect(BUDDY_SYSTEM_PROMPT).toContain(CHECK_DARS_TOOL.name);
     expect(BUDDY_SYSTEM_PROMPT).toMatch(/never runs a new audit/);
     expect(BUDDY_SYSTEM_PROMPT).toMatch(/In progress and planned aren't done/);
-    expect(BUDDY_SYSTEM_PROMPT).toMatch(/Google Calendar, Canvas, TUportal, TUmail, Navigate360 and DARS/);
+    expect(BUDDY_SYSTEM_PROMPT).toMatch(/Google Calendar, Canvas, TUportal, TUmail, Navigate360, DARS and Handshake/);
   });
 });
 
