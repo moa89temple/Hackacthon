@@ -50,6 +50,7 @@ import { addRoadmapRoutes } from "./roadmap-routes.ts";
 import { createRoadmap } from "./roadmap.ts";
 import { createSending } from "./sending.ts";
 import { addSendingRoutes } from "./sending-routes.ts";
+import { createSpending, DAILY_BACKGROUND_LIMIT, type Spending } from "./spending.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { BUDDY_OPENING } from "./system-prompt.ts";
 
@@ -69,7 +70,8 @@ export interface BackendOptions {
   discovery: { model: string; offices: Office[]; milestoneOffices: Office[] };
   host: string;
   port: number;
-  logger: boolean;
+  /** True logs to the console. The other form is for a test to look at what's logged. */
+  logger: boolean | { level: string; stream: { write(line: string): void } };
 }
 
 export interface RunningBackend {
@@ -84,11 +86,16 @@ export interface RunningBackend {
   opportunities: Opportunities;
   opportunityDiscovery: OpportunityDiscovery;
   briefings: Briefings;
+  spending: Spending;
   close(): Promise<void>;
 }
 
 export async function startBackend(options: BackendOptions): Promise<RunningBackend> {
   const store = openStore(options.databasePath);
+  const spending = createSpending({ store, clock: options.adapters.clock, logError: (error) => app.log.error(error) });
+  // Every Claude call goes through one of these two. Nothing below gets options.adapters.claude itself.
+  const chatClaude = spending.forChat(options.adapters.claude);
+  const backgroundClaude = spending.forBackground(options.adapters.claude);
   const devices = createDevices({ store, clock: options.adapters.clock });
   const profile = createProfile({
     store,
@@ -99,7 +106,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   const drafts = createDrafts({ store, clock: options.adapters.clock, guidebook });
   const milestones = createStandardMilestones({ store, clock: options.adapters.clock });
   const discovery = createDiscovery({
-    claude: options.adapters.claude,
+    claude: backgroundClaude,
     web: options.adapters.web,
     clock: options.adapters.clock,
     store,
@@ -122,7 +129,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   });
   const opportunities = createOpportunities({ store, clock: options.adapters.clock });
   const opportunityDiscovery = createOpportunityDiscovery({
-    claude: options.adapters.claude,
+    claude: backgroundClaude,
     web: options.adapters.web,
     browserAccess,
     clock: options.adapters.clock,
@@ -141,7 +148,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     opportunityPagesFor: (connection) =>
       createOpportunityPagesFromConnection({
         connection,
-        claude: options.adapters.claude,
+        claude: backgroundClaude,
         store,
         model: options.discovery.model,
         logError: (error) => app.log.error(error),
@@ -182,12 +189,12 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
     logError: (error) => app.log.error(error),
   });
   const conversation = createConversation({
-    claude: options.adapters.claude,
+    claude: chatClaude,
     clock: options.adapters.clock,
     store,
     chatModel: options.chatModel,
     crisisCheck: createCrisisCheck({
-      claude: options.adapters.claude,
+      claude: chatClaude,
       ...options.crisisCheck,
       logError: (error) => app.log.error(error),
     }),
@@ -293,9 +300,15 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addOpportunityRoutes(app, opportunities, isStoredId);
   addBriefingRoutes(app, briefings, devices);
   app.get("/milestones/upcoming", async () => ({ milestones: milestones.upcoming() }));
+  app.get("/spending", async () => ({
+    todayNanodollars: spending.today().total,
+    thisMonthNanodollars: spending.thisMonth().total,
+    backgroundLimitNanodollars: DAILY_BACKGROUND_LIMIT,
+    backgroundStoppedForToday: spending.backgroundStoppedForToday(),
+  }));
 
   const url = await app.listen({ host: options.host, port: options.port });
-  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, opportunities, opportunityDiscovery, briefings, close: () => app.close() };
+  return { url, browserAccess, actionCards, connections, devices, guidebook, milestones, discovery, opportunities, opportunityDiscovery, briefings, spending, close: () => app.close() };
 }
 
 function addProfileRoutes(app: FastifyInstance, profile: Profile): void {

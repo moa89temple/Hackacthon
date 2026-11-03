@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { discoveryFailed, discoveryRead } from "./activity.ts";
 import type { Claude, ClaudeRequest } from "./claude.ts";
-import { philadelphiaClock, type Clock } from "./clock.ts";
+import { philadelphiaClock, todayInPhiladelphia, type Clock } from "./clock.ts";
 import { allNumbersAmong, askModel, comparable, filled, numbersIn } from "./extraction.ts";
 import { dialableNumbersIn, itemKey, namesToKeep, type ItemFields } from "./guidebook.ts";
 import { takeInMilestonePage } from "./milestone-reading.ts";
 import { readOfficePage, type OfficePage } from "./office-page.ts";
 import type { Office } from "./office-pages.ts";
+import { BackgroundLimitReached } from "./spending.ts";
 import { THE_STUDENT, type GuidebookItemToStore, type Store } from "./store.ts";
 import type { Web } from "./web.ts";
 
@@ -177,6 +178,8 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
   const { claude, web, clock, store, model, offices, milestoneOffices, logError } = deps;
   let underWay: Promise<void> | undefined;
   let timer: NodeJS.Timeout | undefined;
+  /** The day the limit last stopped a read. Forgotten by a restart, which costs one more trip to the web. */
+  let stoppedOn: string | undefined;
 
   /** The page's words, or null if it didn't answer with a page. Network failures say nothing about which. */
   async function fetchPage(url: string): Promise<OfficePage | null> {
@@ -220,6 +223,7 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
     ];
     const couldNotRead: string[] = [];
     let answered = 0;
+    let stopped = false;
 
     for (const { office, url, takeIn } of allPages) {
       const page = await fetchPage(url);
@@ -231,10 +235,18 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
       try {
         await takeIn(office, url, page, now);
       } catch (error) {
-        logError(new Error(`Discovery couldn't take in ${url}: ${error instanceof Error ? error.message : "unknown error"}`));
+        // It goes on to the other pages, because one whose words haven't changed needs no Claude.
+        if (error instanceof BackgroundLimitReached) stopped = true;
+        else logError(new Error(`Discovery couldn't take in ${url}: ${error instanceof Error ? error.message : "unknown error"}`));
       }
     }
 
+    // This read isn't finished, so it isn't recorded, and a page it skipped mustn't lose anything for not being
+    // read. Discovery is due again once the limit lifts, and what's already taken in won't need asking about.
+    if (stopped) {
+      stoppedOn = todayInPhiladelphia(clock.now());
+      return;
+    }
     if (answered === 0) {
       // No page answered, so this laptop is off the web. That says nothing about any one page, and
       // Activity needs telling once a day rather than at every try.
@@ -263,6 +275,8 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
 
   async function runDue(): Promise<void> {
     const now = clock.now();
+    // Otherwise it would fetch every page each minute until midnight, with nothing it could do with them.
+    if (stoppedOn === todayInPhiladelphia(now)) return;
     const last = store.lastDiscoveryAt();
     if (last && readDay(last) === readDay(now)) return;
     const failed = store.lastDiscoveryFailureAt();

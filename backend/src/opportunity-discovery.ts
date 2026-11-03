@@ -9,6 +9,7 @@ import { eventListPage, isNowTempleEvent, MOST_EVENT_LIST_PAGES } from "./now-te
 import { goalKey } from "./opportunities.ts";
 import { fetchPublicPage, openPublicPage, readPublicPage, readWholePage, takeInOpportunityPage } from "./opportunity-reading.ts";
 import { searchForGoal } from "./opportunity-search.ts";
+import { BackgroundLimitReached } from "./spending.ts";
 import { THE_STUDENT, type Store } from "./store.ts";
 import type { Web } from "./web.ts";
 
@@ -79,6 +80,8 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
   let readingEvents: Promise<void> | undefined;
   let searching: Promise<void> | undefined;
   let timer: NodeJS.Timeout | undefined;
+  /** The day the limit last stopped the events' read. Forgotten by a restart, which costs one more trip to the web. */
+  let eventsStoppedOn: string | undefined;
 
   const recentlyFailed = (failedAt: Date | null, now: Date) => failedAt !== null && now.getTime() - failedAt.getTime() < RETRY_AFTER_FAILURE_MS;
   /** Activity needs telling once a day rather than at every try. */
@@ -110,18 +113,19 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
     return { events: [...byAddress.values()], cancelled };
   }
 
-  /** Whether it could read the list. */
-  async function readEvents(now: Date): Promise<boolean> {
+  /** "Failed" means it couldn't read the list. "Stopped" means the limit left some of it unread, so it's still to do. */
+  async function readEvents(now: Date): Promise<"done" | "failed" | "stopped"> {
     const list = await readEventsList();
     if (!list) {
       const { failedAt } = data.lastRun(EVENTS_RUN);
       data.recordRunFailed(THE_STUDENT, EVENTS_RUN, now, saidToday(failedAt, now) ? null : eventsFailed(clock.now()));
-      return false;
+      return "failed";
     }
     for (const url of list.cancelled) data.removePage(url);
 
     const today = todayInPhiladelphia(now);
     const couldNotRead: string[] = [];
+    let stopped = false;
     for (const event of list.events) {
       // It's still on the list, so whatever happens to its own page, it hasn't gone from its Source.
       data.confirmSeen(event.url, now);
@@ -131,37 +135,49 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
         if (page) await takeInOpportunityPage(takeInDeps, { url: event.url, page, event, goal: null }, now);
         else couldNotRead.push(event.url);
       } catch (error) {
+        if (error instanceof BackgroundLimitReached) {
+          stopped = true;
+          continue;
+        }
         couldNotRead.push(event.url);
         logCouldNotTakeIn(event.url, error);
       }
     }
+    if (stopped) return "stopped";
     data.recordRunDone(THE_STUDENT, EVENTS_RUN, now, eventsRead(list.events.length, couldNotRead, clock.now()));
-    return true;
+    return "done";
   }
 
   /**
    * What a search found stays as long as its page says it, whatever later searches pick. So its page gets
    * read again once a week, and one that has stopped answering is left to go after two weeks. An event's
-   * Source is the list, which gets read each day.
+   * Source is the list, which gets read each day. Whether the limit left some of them unread.
    */
-  async function readSearchedPagesAgain(now: Date): Promise<void> {
+  async function readSearchedPagesAgain(now: Date): Promise<boolean> {
     // Handshake's come from its Connection's own reads. Read from here, with no login, each would be a login page.
     const urls = data.pagesLastSeenBefore(new Date(now.getTime() - SEARCH_EVERY_MS)).filter((url) => !isNowTempleEvent(url) && !isFromHandshake(url));
-    if (urls.length === 0) return;
+    if (urls.length === 0) return false;
     const couldNotRead: string[] = [];
+    let stopped = false;
     for (const url of urls) {
       try {
         const page = await readPublicPage(readers, url, readWholePage);
         if (page) await takeInOpportunityPage(takeInDeps, { url, page, event: null, goal: null }, now);
         else couldNotRead.push(url);
       } catch (error) {
+        if (error instanceof BackgroundLimitReached) {
+          stopped = true;
+          continue;
+        }
         couldNotRead.push(url);
         logCouldNotTakeIn(url, error);
       }
     }
-    store.addActivity(THE_STUDENT, pagesReadAgain(urls.length, couldNotRead, clock.now()));
+    if (!stopped) store.addActivity(THE_STUDENT, pagesReadAgain(urls.length, couldNotRead, clock.now()));
+    return stopped;
   }
 
+  /** The limit leaves its search not done, and not failed either, so that it's tried again the day it lifts. */
   async function searchGoal(text: string, now: Date): Promise<void> {
     const key = goalKey(text);
     const failed = (pages: string[]) => {
@@ -172,22 +188,30 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
     try {
       addresses = await searchForGoal(claude, model, text, todayInPhiladelphia(now));
     } catch (error) {
+      if (error instanceof BackgroundLimitReached) return;
       logError(new Error(`Discovery couldn't search for a Goal: ${error instanceof Error ? error.message : "unknown error"}`));
       failed([]);
       return;
     }
     const goal = { studentId: THE_STUDENT, key, text };
     const couldNotRead: string[] = [];
+    let stopped = false;
     for (const url of addresses) {
       try {
         const page = await readPublicPage(readers, url, readWholePage);
         if (page) await takeInOpportunityPage(takeInDeps, { url, page, event: null, goal }, now);
         else couldNotRead.push(url);
       } catch (error) {
+        if (error instanceof BackgroundLimitReached) {
+          stopped = true;
+          continue;
+        }
         couldNotRead.push(url);
         logCouldNotTakeIn(url, error);
       }
     }
+    // Nothing else knows the pages it picked, so waiting a week would lose them for a week.
+    if (stopped) return;
     // Waiting a week would be wrong if nothing it picked could be read, as when Haiku is down.
     if (addresses.length > 0 && couldNotRead.length === addresses.length) failed(couldNotRead);
     else data.recordRunDone(THE_STUDENT, goalRun(key), now, goalSearched(text, addresses.length, couldNotRead, clock.now()));
@@ -195,13 +219,17 @@ export function createOpportunityDiscovery(deps: OpportunityDiscoveryDeps): Oppo
 
   async function readEventsIfDue(): Promise<void> {
     const now = clock.now();
+    // Otherwise it would fetch every event's page each minute until midnight, with nothing it could do with them.
+    if (eventsStoppedOn === todayInPhiladelphia(now)) return;
     const { doneAt, failedAt } = data.lastRun(EVENTS_RUN);
     if ((doneAt && readDay(doneAt) === readDay(now)) || recentlyFailed(failedAt, now)) return;
+    const events = await readEvents(now);
     // Only once it's clear this laptop is on the web. If it isn't, that says nothing about any page.
-    if (await readEvents(now)) {
-      await readSearchedPagesAgain(now);
-      data.removeMissing(new Date(now.getTime() - MISSING_FOR_MS));
-    }
+    if (events === "failed") return;
+    const pagesStopped = await readSearchedPagesAgain(now);
+    // A page the limit left unread mustn't lose anything for not having been read.
+    if (events === "stopped" || pagesStopped) eventsStoppedOn = todayInPhiladelphia(clock.now());
+    else data.removeMissing(new Date(now.getTime() - MISSING_FOR_MS));
   }
 
   async function searchGoalsIfDue(): Promise<void> {

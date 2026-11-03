@@ -3,12 +3,14 @@ import { PageBlocked, type PageReading } from "./buddys-browser.ts";
 import { LoginNeeded, ReadProblem, type ConnectionType, type ReadContext } from "./connections.ts";
 import { LIST_READY, LISTING_READY, readListingPage, readListPage } from "./handshake-pages.ts";
 import { HANDSHAKE_ID, HANDSHAKE_LISTS, HANDSHAKE_NAME, isFromHandshake, isHandshakeLoginPage, kindOfListingAt, type ListingKind } from "./handshake-rules.ts";
+import { BackgroundLimitReached } from "./spending.ts";
 
 const LOG_IN = "Buddy needs you to log in to Handshake before it can read it. Tap Log in to Handshake on the You tab.";
 const COULD_NOT_OPEN = "Buddy's Browser couldn't open Handshake. Check that it's running. Buddy will try again at its next read, or you can tap Read now.";
 const STUDENT_IN_CONTROL = "Buddy didn't finish reading Handshake because a Takeover was open in Buddy's Browser. Once it's finished with Done, tap Read now.";
 const COULD_NOT_UNDERSTAND = "Buddy opened Handshake but couldn't make sense of it, so what it already found stays as it was. Handshake may have changed how it works.";
 const MISSED_PART = "Buddy couldn't read part of Handshake, so it may have missed some jobs or events. It will try again at its next read, or you can tap Read now.";
+const STOPPED_FOR_TODAY = "Buddy has used today's limit for background work, so it will read the rest of Handshake tomorrow. What it already found stays as it was.";
 
 /** Whether a page Buddy opened is somewhere to log in, whichever way it got sent there. */
 function failIfLoggedOut(page: PageReading): void {
@@ -31,18 +33,18 @@ async function openList({ browser }: ReadContext, kind: ListingKind): Promise<Li
 }
 
 /** Whether Buddy got what it came for. A failure is counted and doesn't stop the read, unless the login has gone. */
-async function takeInListing({ browser, opportunityPages, now }: ReadContext, url: string, kind: ListingKind): Promise<boolean> {
+async function takeInListing({ browser, opportunityPages, now }: ReadContext, url: string, kind: ListingKind): Promise<"read" | "missed" | "stopped"> {
   try {
     const page = await browser.read(url, { until: LISTING_READY });
     failIfLoggedOut(page);
     const listing = kindOfListingAt(page.url) === kind ? readListingPage(page.html) : null;
-    if (!listing) return false;
+    if (!listing) return "missed";
     await opportunityPages.takeIn({ url, page: listing, oneEvent: kind === "event" }, now);
-    return true;
+    return "read";
   } catch (error) {
     if (error instanceof ReadProblem) throw error;
     if (error instanceof TakeoverInProgress) throw new ReadProblem(STUDENT_IN_CONTROL);
-    return false;
+    return error instanceof BackgroundLimitReached ? "stopped" : "missed";
   }
 }
 
@@ -63,20 +65,27 @@ async function readHandshake(context: ReadContext): Promise<[]> {
     ...("failed" in jobs ? [] : jobs.listings.map((url) => ({ url, kind: "job" as const }))),
     ...("failed" in events ? [] : events.listings.map((url) => ({ url, kind: "event" as const }))),
   ];
+  // Once the limit has stopped it, it opens no more pages, because Claude can't read them today. Each is still
+  // confirmed as being on its list, and it's opened at a later read because nothing says it has been read.
+  let stopped = false;
   for (const { url, kind } of listed) {
-    if (opportunityPages.confirmIfNothingToAsk(url, now)) continue;
-    if (!(await takeInListing(context, url, kind))) missed = true;
+    if (opportunityPages.confirmIfNothingToAsk(url, now) || stopped) continue;
+    const outcome = await takeInListing(context, url, kind);
+    if (outcome === "missed") missed = true;
+    if (outcome === "stopped") stopped = true;
   }
 
   // Only the first of each list gets read, so something can drop off the list while its own page, its Source, is still
   // there. So that gets looked at directly. If it's gone, that's no problem to report: it leaves after two weeks.
   const onLists = new Set(listed.map(({ url }) => url));
   for (const url of opportunityPages.pagesNotSeenLately(now)) {
+    if (stopped) break;
     const kind = kindOfListingAt(url);
-    if (kind && isFromHandshake(url) && !onLists.has(url)) await takeInListing(context, url, kind);
+    if (kind && isFromHandshake(url) && !onLists.has(url)) stopped = (await takeInListing(context, url, kind)) === "stopped";
   }
 
-  if (missed) reportMissed(MISSED_PART);
+  if (stopped) reportMissed(STOPPED_FOR_TODAY);
+  else if (missed) reportMissed(MISSED_PART);
   // What it finds goes to the Opportunities. A job isn't something about the Student, so none of it is a Profile fact.
   return [];
 }

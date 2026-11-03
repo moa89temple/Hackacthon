@@ -57,6 +57,8 @@ export class BackendHarness {
   readonly browser = new RecordingBrowser();
   readonly web = new SavedWeb();
   readonly notifier = new RecordingNotifier();
+  /** Every line that went to the error log, in the words of its message. */
+  readonly errorsLogged: string[] = [];
   readonly #directory = mkdtempSync(join(tmpdir(), "buddy-test-"));
   #backend!: RunningBackend;
   /** The key of the phone every helper here acts as, paired the way the real app pairs. */
@@ -103,7 +105,14 @@ export class BackendHarness {
       discovery: { model: TEST_DISCOVERY_MODEL, offices: this.#offices, milestoneOffices: this.#milestoneOffices },
       host: "127.0.0.1",
       port: 0,
-      logger: false,
+      logger: {
+        level: "error",
+        stream: {
+          write: (line) => {
+            this.errorsLogged.push((JSON.parse(line) as { msg: string }).msg);
+          },
+        },
+      },
     });
   }
 
@@ -119,6 +128,11 @@ export class BackendHarness {
   /** What the rest of the backend sees of the Guidebook. */
   get guidebook(): RunningBackend["guidebook"] {
     return this.#backend.guidebook;
+  }
+
+  /** What Buddy has spent on Claude, and how background work reaches it. */
+  get spending(): RunningBackend["spending"] {
+    return this.#backend.spending;
   }
 
   /** What the backend's timer calls each minute. */

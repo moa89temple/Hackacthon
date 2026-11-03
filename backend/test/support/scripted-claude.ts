@@ -14,6 +14,10 @@ export interface ScriptedReply {
   /** The final message's content. Defaults to one text block holding the chunks. */
   content?: ContentBlock[];
   stopReason?: ClaudeMessage["stop_reason"];
+  /** What this call used, for a test about spending. Everything left out is zero. */
+  usage?: Partial<ClaudeMessage["usage"]>;
+  /** The model the final message says answered, when it isn't the one asked for. */
+  servedBy?: string;
 }
 
 export function textBlock(text: string): ContentBlock {
@@ -67,9 +71,18 @@ export class ScriptedClaude implements Claude {
         id: `msg_${this.requests.length}`,
         type: "message",
         role: "assistant",
-        model: request.model,
+        model: reply.servedBy ?? request.model,
         content: reply.content ?? [textBlock(chunks.join(""))],
         stop_reason: reply.stopReason ?? "end_turn",
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_input_tokens: null,
+          cache_creation_input_tokens: null,
+          cache_creation: null,
+          server_tool_use: null,
+          ...reply.usage,
+        },
       } as ClaudeMessage,
     };
   }
