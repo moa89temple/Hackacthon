@@ -4,7 +4,6 @@ import '../backend/buddy_backend.dart';
 import '../sending/sending_backend.dart';
 import '../sending/sending_section.dart';
 import 'chat_controller.dart';
-import 'crisis_card.dart';
 
 // One button, because the card comes before Buddy's reply, and a taller card pushes that off the screen.
 const _wantsSomeone = 'Want Buddy to email someone? Choose who.';
@@ -20,8 +19,6 @@ const _cardMade = 'Buddy made a card further down the conversation. It shows wha
 const _couldNotAsk = "The app couldn't reach Buddy, so it made no card. Check that the backend is running, then try again. The numbers above don't need Buddy.";
 const _couldNotSwitch = "The app couldn't reach Buddy, so it may or may not have switched. Check on the You tab, then try again.";
 const _couldNotCheck = "The app couldn't reach Buddy, so it couldn't check. Try again in a moment. The numbers above don't need Buddy.";
-const _filledIn = "Buddy filled in the address for Tuttleman Counseling from the Guidebook. Check it below.";
-const _tuttlemanName = 'Tuttleman Counseling';
 
 // Plain words the Student can change, written here so that they're there whatever the model does.
 const _startingSubject = 'I could use some help';
@@ -31,12 +28,10 @@ const _startingBody =
 /// The Crisis card's offer to email someone the Student chooses. It only ever leads to an Action card,
 /// and the crisis Resources above it wait for none of it, whatever becomes of it.
 class CrisisEmailOfferView extends StatefulWidget {
-  const CrisisEmailOfferView({super.key, required this.words, required this.chat, required this.openPhone, required this.announce, required this.onOpened});
+  const CrisisEmailOfferView({super.key, required this.words, required this.chat, required this.announce, required this.onOpened});
 
   final CrisisEmailWords words;
   final ChatController chat;
-  final PhoneOpener openPhone;
-
   /// True when the card has just appeared. An earlier card says nothing out loud when the app opens.
   final bool announce;
 
@@ -118,12 +113,6 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
     });
   }
 
-  void _chooseTuttleman(GuidebookItem tuttleman) {
-    _name.text = _tuttlemanName;
-    _address.text = tuttleman.email ?? '';
-    _say(_filledIn);
-  }
-
   /// Only ever makes a card. The email goes only if the Student taps Approve on it.
   Future<void> _askForCard() async {
     if (_asking) return;
@@ -155,14 +144,6 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
     }
   }
 
-  Future<void> _openSource(Uri address) async {
-    try {
-      await widget.openPhone(address);
-    } on Exception {
-      return;
-    }
-  }
-
   Widget _spaced(Widget child) => Padding(padding: const EdgeInsets.only(top: 8), child: child);
 
   String _whereItGoes(CrisisEmailOffer offer) {
@@ -175,10 +156,6 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
   }
 
   List<Widget> _form(ThemeData theme, CrisisEmailOffer? offer) {
-    final tuttleman = offer?.tuttleman;
-    final source = tuttleman?.sources.firstOrNull;
-    final sourceAddress = source == null ? null : Uri.tryParse(source.url);
-    final lastSeen = source == null ? null : MaterialLocalizations.of(context).formatFullDate(source.lastSeenAt.toLocal());
     return [
       _spaced(Semantics(header: true, child: Text(_asksWhom, style: theme.textTheme.titleSmall))),
       _spaced(Semantics(container: true, child: const Text(_whatHappens))),
@@ -186,17 +163,7 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
         _spaced(Semantics(container: true, liveRegion: _tapped, child: Text(_whereItGoes(offer)))),
         if (!offer.isLive) _spaced(OutlinedButton(onPressed: _switchToLive, child: const Text('Switch to Live'))),
       ],
-      if (tuttleman != null) ...[
-        _spaced(OutlinedButton(onPressed: () => _chooseTuttleman(tuttleman), child: const Text('Email $_tuttlemanName'))),
-        if (source != null) ...[
-          TextButton(
-            onPressed: sourceAddress?.scheme == 'https' ? () => _openSource(sourceAddress!) : null,
-            child: Text('Source: ${source.title}', semanticsLabel: 'Open Source: ${source.title}, last seen $lastSeen'),
-          ),
-          ExcludeSemantics(child: Text('Last seen $lastSeen', style: theme.textTheme.bodySmall)),
-        ],
-      ] else if (offer != null)
-        _spaced(Semantics(container: true, child: Text(_noTuttleman, style: theme.textTheme.bodySmall))),
+      if (offer != null) _spaced(Semantics(container: true, child: Text(_noTuttleman, style: theme.textTheme.bodySmall))),
       _spaced(TextField(controller: _name, decoration: const InputDecoration(labelText: 'Their name (you can leave this out)'))),
       _spaced(TextField(
         controller: _address,

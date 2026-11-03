@@ -57,7 +57,7 @@ mixin FakeSendingCalls implements SendingBackend {
   }
 
   /// How things stand for the Crisis card's offer. Holding it means the backend never answers.
-  CrisisEmailOffer crisisOffer = const CrisisEmailOffer(whyNotYet: null, isLive: false, ownAddress: 'student@temple.test', tuttleman: null);
+  CrisisEmailOffer crisisOffer = const CrisisEmailOffer(whyNotYet: null, isLive: false, ownAddress: 'student@temple.test');
   Completer<void>? holdCrisisOffer;
   Object? crisisOfferError;
 

@@ -191,7 +191,6 @@ class _CrisisCardState extends State<CrisisCard> {
               CrisisEmailOfferView(
                 words: widget.item.emailWords,
                 chat: widget.chat,
-                openPhone: widget.openPhone,
                 announce: widget.announce,
                 onOpened: _stopKeepingInView,
               ),

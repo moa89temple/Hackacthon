@@ -17,25 +17,18 @@ class SendingSettings {
 
 /// How things stand for the Crisis card's offer to email someone, as the backend says.
 class CrisisEmailOffer {
-  const CrisisEmailOffer({required this.whyNotYet, required this.isLive, required this.ownAddress, required this.tuttleman});
+  const CrisisEmailOffer({required this.whyNotYet, required this.isLive, required this.ownAddress});
 
   factory CrisisEmailOffer.fromJson(Map<String, dynamic> json) => CrisisEmailOffer(
         whyNotYet: json['whyNotYet'] as String?,
         isLive: json['isLive'] == true,
         ownAddress: json['ownAddress'] as String?,
-        tuttleman: switch (json['tuttleman']) {
-          final Map<String, dynamic> item => GuidebookItem.fromJson(item),
-          _ => null,
-        },
       );
 
   /// Why an email can't go out yet, for the Student, when it can't.
   final String? whyNotYet;
   final bool isLive;
   final String? ownAddress;
-
-  /// Tuttleman Counseling as the Guidebook has it, when that gives one address to write to.
-  final GuidebookItem? tuttleman;
 }
 
 /// The backend said no, in words for the Student.

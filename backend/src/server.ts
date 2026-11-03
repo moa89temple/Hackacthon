@@ -288,7 +288,7 @@ export async function startBackend(options: BackendOptions): Promise<RunningBack
   addActionCardRoutes(app, actionCards, isStoredId);
   addDraftRoutes(app, drafts, () => actionCards.expireDue());
   addSendingRoutes(app, { sending, actionCards, drafts, lastMessageShown: conversation.lastMessageShown, isStoredId });
-  addCrisisEmailRoutes(app, { sites: options.sites, store, sending, actionCards, contacts: () => guidebook.contacts(), lastMessageShown: conversation.lastMessageShown, isStoredId });
+  addCrisisEmailRoutes(app, { sites: options.sites, store, sending, actionCards, lastMessageShown: conversation.lastMessageShown, isStoredId });
   addRoadmapRoutes(app, roadmap, isStoredId);
   addOpportunityRoutes(app, opportunities, isStoredId);
   addBriefingRoutes(app, briefings, devices);

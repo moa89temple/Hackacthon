@@ -3,51 +3,27 @@ import { ActionRefused, type ActionCards } from "./action-cards.ts";
 import type { Site } from "./browser-access.ts";
 import { SEND_EMAIL } from "./buddys-browser.ts";
 import { asStep, whyCrisisEmailCantGoYet } from "./email-send.ts";
-import type { GuidebookItem } from "./guidebook.ts";
 import type { Sending } from "./sending.ts";
 import { THE_STUDENT, type Store } from "./store.ts";
-import { addressesIn } from "./tumail-rules.ts";
-
-/**
- * Temple's Let's Talk page gives this for emailing a consent form, and it's the only address its counseling
- * pages publish. Nothing says anyone reads it for a Student who needs help, so Buddy never offers it for that.
- */
-const NOT_FOR_REACHING_SOMEONE = "lets.talk@temple.edu";
 
 export interface CrisisEmailRoutesDeps {
   sites: Record<string, Site>;
   store: Pick<Store, "readPermission" | "actionCard">;
   sending: Sending;
   actionCards: ActionCards;
-  contacts: () => GuidebookItem[];
   /** The newest message on the Student's screen, so that a card made by a tap goes after it when the conversation loads. */
   lastMessageShown: () => number | null;
   isStoredId: (id: string) => boolean;
 }
 
-/** Only pages on this host can say what Tuttleman's address is, whatever another page calls itself. */
-const TUTTLEMAN_HOST = "counseling.temple.edu";
-
-/** Only from the Guidebook, so with its Source, and only if there's one address to go by. It's never made up here. */
-function tuttlemanIn(contacts: GuidebookItem[]): GuidebookItem | null {
-  for (const contact of contacts) {
-    if (!/tuttleman counseling/i.test(contact.name)) continue;
-    if (!contact.sources.some((source) => URL.parse(source.url)?.hostname === TUTTLEMAN_HOST)) continue;
-    const addresses = [...new Set(addressesIn(contact.email ?? ""))];
-    if (addresses.length === 1 && addresses[0] !== NOT_FOR_REACHING_SOMEONE) return { ...contact, email: addresses[0]! };
-  }
-  return null;
-}
-
 /**
  * What the Crisis card's offer to email someone calls. Like an Approve tap, each comes straight from the
- * paired phone and never passes through Claude. Who gets an email is what the Student's tap sends, and the
- * only part of that from anywhere else is Tuttleman's address from the Guidebook, which fills the form for
- * them to see. The crisis Resources are in the app's own code and wait for none of this. The backend's
- * request hook has already refused anything but a paired phone's key.
+ * paired phone and never passes through Claude. Who gets an email is only what the Student wrote, because a
+ * Crisis card's content never comes from the model. The crisis Resources are in the app's own code and wait for
+ * none of this. The backend's request hook has already refused anything but a paired phone's key.
  */
 export function addCrisisEmailRoutes(app: FastifyInstance, deps: CrisisEmailRoutesDeps): void {
-  const { sites, store, sending, actionCards, contacts, lastMessageShown, isStoredId } = deps;
+  const { sites, store, sending, actionCards, lastMessageShown, isStoredId } = deps;
 
   /** It only ever makes a card. The email goes only after the Student taps Approve on that. */
   function makeCard(email: Record<string, unknown>) {
@@ -64,7 +40,6 @@ export function addCrisisEmailRoutes(app: FastifyInstance, deps: CrisisEmailRout
         whyNotYet: whyCrisisEmailCantGoYet(sites, store),
         isLive: mode === "live",
         ownAddress,
-        tuttleman: tuttlemanIn(contacts()),
       },
     };
   });

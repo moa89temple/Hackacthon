@@ -293,60 +293,14 @@ describe("when the email can't go out", () => {
 });
 
 describe("what the Crisis card is told", () => {
-  async function discoverTuttleman(email: string | null) {
-    backend.web.save(TUTTLEMAN_CONTACT_PAGE, `<html><head><title>Contact Us</title></head><body><p>${"Words. ".repeat(50)} Write to ${email ?? "us"}.</p></body></html>`);
-    backend.claude.willReply(haikuFinds(), haikuFinds({ name: "Tuttleman Counseling Services", kind: "contact", summary: "Counseling.", email }), haikuFinds());
-    await backend.discovery.run();
-  }
-
   it("has nothing in the way, and the mode, when TUmail is ready", async () => {
-    expect(await offer()).toMatchObject({ whyNotYet: null, isLive: false, ownAddress: OWN_ADDRESS, tuttleman: null });
+    expect(await offer()).toMatchObject({ whyNotYet: null, isLive: false, ownAddress: OWN_ADDRESS });
     await goLive();
     expect(await offer()).toMatchObject({ isLive: true });
   });
 
-  it("gives Tuttleman's address only from the Guidebook, with its Source", async () => {
-    await discoverTuttleman("counseling.madeup@temple.edu");
-
-    const { tuttleman } = await offer();
-
-    expect(tuttleman.name).toBe("Tuttleman Counseling Services");
-    expect(tuttleman.email).toBe("counseling.madeup@temple.edu");
-    expect(tuttleman.sources[0].url).toBe(TUTTLEMAN_CONTACT_PAGE);
-  });
-
-  it("gives none when the Guidebook has no address for Tuttleman", async () => {
-    await discoverTuttleman(null);
-    expect((await offer()).tuttleman).toBeNull();
-  });
-
-  // The real Let's Talk page gives this for emailing a consent form, so nobody may be reading it for this.
-  it("doesn't give the Let's Talk consent form address, the only one Temple's counseling pages publish", async () => {
-    await discoverTuttleman("lets.talk@temple.edu");
-    expect((await offer()).tuttleman).toBeNull();
-  });
-
-  it("doesn't take another Contact with Tuttleman in its name for the counseling service", async () => {
-    backend.web.save(TUTTLEMAN_CONTACT_PAGE, `<html><head><title>Contact Us</title></head><body><p>${"Words. ".repeat(50)} Write to learning.madeup@temple.edu.</p></body></html>`);
-    backend.claude.willReply(haikuFinds(), haikuFinds({ name: "Tuttleman Learning Center", kind: "contact", summary: "A building.", email: "learning.madeup@temple.edu" }), haikuFinds());
-    await backend.discovery.run();
-
-    expect((await offer()).tuttleman).toBeNull();
-  });
-
-  it("doesn't take an address for Tuttleman from any page but its own office's", async () => {
-    backend.web.save(WRITING_CENTER_PAGE, `<html><head><title>Elsewhere</title></head><body><p>${"Words. ".repeat(50)} Write to elsewhere.madeup@temple.edu.</p></body></html>`);
-    backend.claude.willReply(haikuFinds({ name: "Tuttleman Counseling Services", kind: "contact", summary: "Counseling.", email: "elsewhere.madeup@temple.edu" }), haikuFinds(), haikuFinds());
-    await backend.discovery.run();
-
-    expect((await offer()).tuttleman).toBeNull();
-  });
-
-  it("gives none once Tuttleman has been reported", async () => {
-    await discoverTuttleman("counseling.madeup@temple.edu");
-    const { tuttleman } = await offer();
-    await backend.report(tuttleman.id);
-    expect((await offer()).tuttleman).toBeNull();
+  it("offers no address from the Guidebook, because a Crisis card's content never comes from the model", async () => {
+    expect(await offer()).not.toHaveProperty("tuttleman");
   });
 });
 

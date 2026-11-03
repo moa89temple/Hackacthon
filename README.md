@@ -124,7 +124,7 @@ In Practice mode the card says the email will go to you instead, and offers **Sw
 
 If TUmail isn't connected or its login has expired, the card says plainly that an email can't go out yet. The crisis Resources come from the app's own code and don't wait for any of this. While a new card's reply is arriving, the app keeps the card's top on screen unless you scroll or open the form, so a long reply can end up below the fold.
 
-Tuttleman Counseling is offered only if the Guidebook has one address for it from a page on `counseling.temple.edu`, shown with its Source. Today its contact page gives only a phone number. The only address on its pages, `lets.talk@temple.edu`, is for sending in a Let's Talk consent form, so Buddy never offers it for this. Without an address, you can write one yourself or call the number on the card.
+Buddy never fills in an address for Tuttleman Counseling, because a Crisis card's content comes only from Buddy's own code. The card gives its phone number, and the Student can write an address if they have one.
 
 Live has never been used for real, and neither has an address outside Temple, so an email to a friend or family member hasn't been seen to work.
 

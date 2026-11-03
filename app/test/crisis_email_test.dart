@@ -53,16 +53,8 @@ ActionCard liveCard() => const ActionCard(
       isCrisisEmail: true,
     );
 
-GuidebookItem tuttleman() => GuidebookItem(
-      id: 4,
-      name: 'Tuttleman Counseling Services',
-      summary: 'Counseling.',
-      email: 'counseling.madeup@temple.test',
-      sources: [GuidebookSource(url: 'https://counseling.temple.edu/about-us/contact-us', title: 'Contact Us', lastSeenAt: DateTime.utc(2026, 11, 2, 14))],
-    );
-
-CrisisEmailOffer offer({String? whyNotYet, bool isLive = false, String? own = ownAddress, GuidebookItem? tuttleman}) =>
-    CrisisEmailOffer(whyNotYet: whyNotYet, isLive: isLive, ownAddress: own, tuttleman: tuttleman);
+CrisisEmailOffer offer({String? whyNotYet, bool isLive = false, String? own = ownAddress}) =>
+    CrisisEmailOffer(whyNotYet: whyNotYet, isLive: isLive, ownAddress: own);
 
 void useOrdinaryPhone(WidgetTester tester) {
   tester.view
@@ -549,42 +541,7 @@ void main() {
   });
 
   group('Tuttleman Counseling', () {
-    testWidgets("fills in the Guidebook's address, and shows its Source", (tester) async {
-      final opened = <Uri>[];
-      await showCrisisCard(
-        tester,
-        FakeBackend()..crisisOffer = offer(tuttleman: tuttleman()),
-        openPhone: (uri) async {
-          opened.add(uri);
-          return true;
-        },
-      );
-      await openForm(tester);
-
-      await tapThrough(tester, find.text('Email Tuttleman Counseling'));
-
-      expect(tester.widget<TextField>(field('Their email address')).controller!.text, 'counseling.madeup@temple.test');
-      expect(tester.widget<TextField>(field('Their name (you can leave this out)')).controller!.text, 'Tuttleman Counseling');
-
-      await tapThrough(tester, find.text('Source: Contact Us'));
-      expect(opened, [Uri.parse('https://counseling.temple.edu/about-us/contact-us')]);
-    });
-
-    testWidgets('a screen reader hears that the address was filled in, and when its Source was last seen', (tester) async {
-      final handle = tester.ensureSemantics();
-      await showCrisisCard(tester, FakeBackend()..crisisOffer = offer(tuttleman: tuttleman()));
-      await openForm(tester);
-
-      await tapThrough(tester, find.text('Email Tuttleman Counseling'));
-
-      expect(tester.getSemantics(find.textContaining('Buddy filled in the address')).flagsCollection.isLiveRegion, isTrue);
-      await tester.ensureVisible(find.text('Source: Contact Us'));
-      await tester.pump();
-      expect(find.bySemanticsLabel(RegExp('^Open Source: Contact Us, last seen')), findsOneWidget);
-      handle.dispose();
-    });
-
-    testWidgets("says so when the Guidebook has no address, and doesn't make one up", (tester) async {
+    testWidgets("says Buddy has no address for it, leaving the Student to write one or call", (tester) async {
       await showCrisisCard(tester, FakeBackend());
       await openForm(tester);
 
@@ -892,8 +849,7 @@ void main() {
     testWidgets('the form and the Action card meet the tap target, label and contrast guidelines', (tester) async {
       final handle = tester.ensureSemantics();
       final backend = FakeBackend()
-        ..crisisCardToMake = practiceCard()
-        ..crisisOffer = offer(tuttleman: tuttleman());
+        ..crisisCardToMake = practiceCard();
       await showFormOnScreen(tester, backend);
 
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
@@ -918,13 +874,12 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       final backend = FakeBackend()
         ..crisisCardToMake = practiceCard()
-        ..crisisOffer = offer(tuttleman: tuttleman())
         ..history = [student('Help'), CrisisCardItem(), buddy('I am here.')];
       await openUnlockedApp(tester, backend);
 
       await openForm(tester);
       expect(tester.takeException(), isNull);
-      for (final label in ['Email Tuttleman Counseling', 'Source: Contact Us', 'Switch to Live', 'Show me the email']) {
+      for (final label in ['Switch to Live', 'Show me the email']) {
         await tester.ensureVisible(find.text(label, skipOffstage: false));
         await tester.pumpAndSettle();
         expect(find.text(label).hitTestable(), findsOneWidget, reason: label);
@@ -975,7 +930,7 @@ void main() {
     test('reads the offer', () async {
       final seen = <http.Request>[];
       final read = await backendAnswering(200, {
-        'offer': {'whyNotYet': 'Not yet.', 'isLive': true, 'ownAddress': ownAddress, 'tuttleman': null},
+        'offer': {'whyNotYet': 'Not yet.', 'isLive': true, 'ownAddress': ownAddress},
       }, seen).loadCrisisEmailOffer();
 
       expect(seen.single.url.path, '/crisis-email/offer');
@@ -983,7 +938,6 @@ void main() {
       expect(read.whyNotYet, 'Not yet.');
       expect(read.isLive, isTrue);
       expect(read.ownAddress, ownAddress);
-      expect(read.tuttleman, isNull);
     });
 
     test('asks for a card with the exact words, and reads what it says about Live', () async {
