@@ -18,7 +18,6 @@ export const BRIEFING_MIGRATION = `CREATE TABLE briefing_schedules (
      contents TEXT NOT NULL,
      title TEXT NOT NULL,
      body TEXT,
-     told_sent INTEGER NOT NULL DEFAULT 0,
      told_failed INTEGER NOT NULL DEFAULT 0
    );
    CREATE TABLE push_tokens (
@@ -48,7 +47,6 @@ export interface StoredBriefing {
   title: string;
   /** What the phone notification says. Null when nothing was relevant, so no notification goes. */
   body: string | null;
-  toldSent: boolean;
   toldFailed: boolean;
 }
 
@@ -76,12 +74,12 @@ export interface BriefingStore {
   /** The one Briefing kept. Saves it, what it replaces going, the moment handled and the Activity entry together. */
   addBriefing(studentId: string, briefing: NewBriefing, handledUpTo: Date, entry: NewActivityEntry): void;
   latest(studentId: string): StoredBriefing | null;
-  noteSent(studentId: string, briefingId: number, entry: NewActivityEntry): void;
   noteFailed(studentId: string, briefingId: number, entry: NewActivityEntry): void;
   /** A phone's token. A token this device had before is replaced, and any other device's row with this token goes. */
   savePushToken(studentId: string, deviceKeyHash: string, token: string): void;
   pushTokens(studentId: string): StoredPushToken[];
-  markTokenSent(token: string, briefingId: number): void;
+  /** Saves that this phone has had this Briefing and the Activity entry together. */
+  markTokenSent(studentId: string, token: string, briefingId: number, entry: NewActivityEntry): void;
   deleteToken(token: string): void;
 }
 
@@ -102,9 +100,8 @@ export function createBriefingStore(
   const insertBriefing = db.prepare(`INSERT INTO briefings (student_id, kind, made_at, contents, title, body) VALUES (?, ?, ?, ?, ?, ?)`);
   const deleteOlder = db.prepare(`DELETE FROM briefings WHERE student_id = ? AND id < ?`);
   const selectLatest = db.prepare(
-    `SELECT id, kind, made_at, contents, title, body, told_sent, told_failed FROM briefings WHERE student_id = ? ORDER BY id DESC LIMIT 1`,
+    `SELECT id, kind, made_at, contents, title, body, told_failed FROM briefings WHERE student_id = ? ORDER BY id DESC LIMIT 1`,
   );
-  const updateToldSent = db.prepare(`UPDATE briefings SET told_sent = 1 WHERE student_id = ? AND id = ?`);
   const updateToldFailed = db.prepare(`UPDATE briefings SET told_failed = 1 WHERE student_id = ? AND id = ?`);
   const deleteTokenRow = db.prepare(`DELETE FROM push_tokens WHERE token = ?`);
   const deleteTokenOnOtherDevices = db.prepare(`DELETE FROM push_tokens WHERE token = ? AND device_key_hash != ?`);
@@ -125,7 +122,6 @@ export function createBriefingStore(
       contents: JSON.parse(row.contents),
       title: row.title,
       body: row.body,
-      toldSent: row.told_sent !== 0,
       toldFailed: row.told_failed !== 0,
     };
   };
@@ -170,13 +166,6 @@ export function createBriefingStore(
 
     latest,
 
-    noteSent(studentId, briefingId, entry) {
-      inTransaction(() => {
-        updateToldSent.run(studentId, briefingId);
-        addActivity(studentId, entry);
-      });
-    },
-
     noteFailed(studentId, briefingId, entry) {
       inTransaction(() => {
         updateToldFailed.run(studentId, briefingId);
@@ -196,8 +185,11 @@ export function createBriefingStore(
       return selectTokens.all(studentId).map((row: any) => ({ token: row.token, lastBriefingId: row.last_briefing_id }));
     },
 
-    markTokenSent(token, briefingId) {
-      updateTokenSent.run(briefingId, token);
+    markTokenSent(studentId, token, briefingId, entry) {
+      inTransaction(() => {
+        updateTokenSent.run(briefingId, token);
+        addActivity(studentId, entry);
+      });
     },
 
     deleteToken(token) {

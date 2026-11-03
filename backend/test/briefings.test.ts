@@ -292,7 +292,7 @@ describe("what a Briefing holds", () => {
     expect(milestoneNames(await backend.latestBriefing())).toEqual(["First", "Second", "Third"]);
   });
 
-  it("has Temple's events only in the week-ahead Briefing, unless the Student saved one", async () => {
+  it("has Opportunities open to any Student only in the week-ahead Briefing, unless the Student saved one", async () => {
     await backend.briefings.runDue();
     const flu = await templeHasTheFluClinic();
 
@@ -644,6 +644,19 @@ describe("the Student's Briefing times", () => {
 
     expect(backend.notifier.sent).toHaveLength(0);
     await reach("2026-11-04T12:00:00Z");
+    expect(backend.notifier.sent).toHaveLength(1);
+  });
+
+  it("don't lose a Briefing that came due just before they changed, before the timer looked", async () => {
+    await backend.briefings.runDue();
+    await backend.registerPushToken(TOKEN);
+    await roadmap.addMilestone({ name: "Soon", dueDate: "2026-11-05", goalId: null });
+
+    // 8:00:30 on Tuesday, with the worker's minute not yet come round. Only Sunday's time changes.
+    backend.clock.moveTo("2026-11-03T13:00:30Z");
+    await backend.changeBriefingTimes({ weekdays: "08:00", sunday: "20:00" });
+    await backend.briefings.runDue();
+
     expect(backend.notifier.sent).toHaveLength(1);
   });
 

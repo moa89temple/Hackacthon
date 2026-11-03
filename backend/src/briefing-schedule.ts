@@ -65,11 +65,16 @@ function onDay(day: string, times: BriefingTimes): ScheduledBriefing | null {
     : { kind: "weekday", at: philadelphiaMoment(day, times.weekdays) };
 }
 
+/** The day this many days from this one, as YYYY-MM-DD. */
+export function plusDays(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T12:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
 /** Each Philadelphia day's Briefing, from this moment's day onward or backward. */
 function* briefingsFrom(now: Date, direction: 1 | -1, times: BriefingTimes): Generator<ScheduledBriefing> {
-  const today = Date.parse(`${todayInPhiladelphia(now)}T12:00:00Z`);
+  const today = todayInPhiladelphia(now);
   for (let days = 0; days < DAYS_TO_LOOK; days++) {
-    const briefing = onDay(new Date(today + direction * days * DAY_MS).toISOString().slice(0, 10), times);
+    const briefing = onDay(plusDays(today, direction * days), times);
     if (briefing) yield briefing;
   }
 }

@@ -1,4 +1,4 @@
-import { latestScheduled, nextScheduled, isTimeOfDay, type BriefingKind, type BriefingTimes } from "./briefing-schedule.ts";
+import { isTimeOfDay, latestScheduled, nextScheduled, plusDays, type BriefingKind, type BriefingTimes } from "./briefing-schedule.ts";
 import type { BriefingContents, StoredBriefing } from "./briefing-store.ts";
 import { PHILADELPHIA, todayInPhiladelphia, type Clock } from "./clock.ts";
 import type { Connections, ConnectionType } from "./connections.ts";
@@ -112,10 +112,6 @@ export interface BriefingsDeps {
   logError: (error: unknown) => void;
 }
 
-function plusDays(day: string, days: number): string {
-  return new Date(Date.parse(`${day}T12:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
-}
-
 /** Such as "Wednesday, November 4 at 8:00 AM", on Philadelphia's clock. */
 function momentInWords(moment: Date): string {
   const date = new Intl.DateTimeFormat("en-US", { timeZone: PHILADELPHIA, weekday: "long", month: "long", day: "numeric" }).format(moment);
@@ -193,7 +189,7 @@ export function createBriefings(deps: BriefingsDeps): Briefings {
     };
   }
 
-  /** What the Student saved, then what's for their Goals. Anyone's Temple events only look far enough ahead to plan a week with. */
+  /** What the Student saved, then what's for their Goals. Opportunities open to any Student come only in the week-ahead Briefing. */
   function opportunitiesComingUp(kind: BriefingKind, isSoon: (date: string, endDate?: string | null) => boolean): number[] {
     const rank = ({ saved, forGoals }: Opportunity) => (saved ? 0 : forGoals.length > 0 ? 1 : 2);
     return opportunities
@@ -236,14 +232,13 @@ export function createBriefings(deps: BriefingsDeps): Briefings {
     const briefing = data.latest(THE_STUDENT);
     if (!briefing?.body) return;
     const notification: PhoneNotification = { title: briefing.title, body: briefing.body, data: BRIEFING_DATA, replaces: REPLACES };
-    let { toldSent, toldFailed } = briefing;
+    let { toldFailed } = briefing;
     for (const { token, lastBriefingId } of data.pushTokens(THE_STUDENT)) {
       if (lastBriefingId >= briefing.id) continue;
       const sent = await notifier.send(token, notification);
       if (sent.outcome === "sent") {
-        data.markTokenSent(token, briefing.id);
-        if (!toldSent) data.noteSent(THE_STUDENT, briefing.id, briefingSent(briefing, clock.now()));
-        toldSent = true;
+        // Each phone's, with its Activity entry, because each is something else that left for Firebase.
+        data.markTokenSent(THE_STUDENT, token, briefing.id, briefingSent(briefing, clock.now()));
       } else if (sent.outcome === "token_gone") {
         data.deleteToken(token);
       } else if (!toldFailed) {
@@ -300,8 +295,19 @@ export function createBriefings(deps: BriefingsDeps): Briefings {
     return { news, moreNews };
   }
 
+  function settings(): BriefingSettings {
+    const times = data.times(THE_STUDENT);
+    const next = nextScheduled(clock.now(), times);
+    return {
+      times,
+      next: { kind: next.kind, at: next.at.toISOString(), when: momentInWords(next.at) },
+      phoneNotifications: { on: notifier.offBecause === null, offBecause: notifier.offBecause },
+    };
+  }
+
   return {
     runDue,
+    settings,
 
     startSchedule(everyMs = SCHEDULE_CHECK_EVERY_MS) {
       const check = () => void runDue();
@@ -331,24 +337,16 @@ export function createBriefings(deps: BriefingsDeps): Briefings {
       };
     },
 
-    settings() {
-      const times = data.times(THE_STUDENT);
-      const next = nextScheduled(clock.now(), times);
-      return {
-        times,
-        next: { kind: next.kind, at: next.at.toISOString(), when: momentInWords(next.at) },
-        phoneNotifications: { on: notifier.offBecause === null, offBecause: notifier.offBecause },
-      };
-    },
-
     changeTimes({ weekdays, sunday }) {
       if (!isTimeOfDay(weekdays) || !isTimeOfDay(sunday)) throw new BadBriefingTime();
       const was = data.times(THE_STUDENT);
       if (was.weekdays !== weekdays || was.sunday !== sunday) {
         const now = clock.now();
+        // One that came due since the timer last looked still counts, before counting from now.
+        makeLatest(now);
         data.saveTimes(THE_STUDENT, { weekdays, sunday }, now, timesChanged({ weekdays, sunday }, now));
       }
-      return this.settings();
+      return settings();
     },
 
     savePushToken(deviceKeyHash, token) {

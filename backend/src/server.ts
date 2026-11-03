@@ -3,6 +3,8 @@ import { addActionCardRoutes } from "./action-card-routes.ts";
 import { createActionCards, type ActionCards } from "./action-cards.ts";
 import { listActivity } from "./activity.ts";
 import type { Adapters } from "./adapters.ts";
+import { addBriefingRoutes } from "./briefing-routes.ts";
+import { createBriefings, type Briefings } from "./briefings.ts";
 import {
   BrowserUnreachable,
   createBrowserAccess,
@@ -47,8 +49,6 @@ import { createSending } from "./sending.ts";
 import { addSendingRoutes } from "./sending-routes.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 import { BUDDY_OPENING } from "./system-prompt.ts";
-import { addBriefingRoutes } from "./briefing-routes.ts";
-import { createBriefings, type Briefings } from "./briefings.ts";
 
 const PAIR_ROUTE = "/devices/pair";
 
