@@ -33,7 +33,7 @@ const MOST_NEWS = 10;
 
 const LOG_IN = "Buddy needs you to log in to Navigate360 before it can read it. Tap Log in to Navigate360 on the You tab.";
 const COULD_NOT_OPEN = "Buddy's Browser couldn't open Navigate360. Check that it's running. Buddy will try again at its next read, or you can tap Read now.";
-const STUDENT_IN_CONTROL = "You're in control of Buddy's Browser, so Buddy didn't read Navigate360. Tap Done, and it can read it again.";
+const STUDENT_IN_CONTROL = "Buddy didn't read Navigate360 because a Takeover was open in Buddy's Browser. Once it's finished with Done, tap Read now.";
 const COULD_NOT_UNDERSTAND = "Buddy opened Navigate360 but couldn't make sense of it, so it kept what it already had. Navigate360 may have changed how it works.";
 const MISSED_PART = "Buddy couldn't read part of Navigate360, so some of what it has may be out of date. It will try again at its next read, or you can tap Read now.";
 const UNUSABLE_ADVISOR = "Buddy found an advisor on Navigate360 whose name or email it couldn't use, so it left them out and kept what it already had about your advisors. Check with your college's advising office if that looks wrong.";

@@ -33,7 +33,7 @@ const LONGEST_NAME = 100;
 
 const LOG_IN = "Buddy needs you to log in to TUmail before it can read it. Tap Log in to TUmail on the You tab.";
 const COULD_NOT_OPEN = "Buddy's Browser couldn't open TUmail. Check that it's running. Buddy will try again at its next read, or you can tap Read now.";
-const STUDENT_IN_CONTROL = "You're in control of Buddy's Browser, so Buddy didn't read TUmail. Tap Done, and it can read it again.";
+const STUDENT_IN_CONTROL = "Buddy didn't read TUmail because a Takeover was open in Buddy's Browser. Once it's finished with Done, tap Read now.";
 const COULD_NOT_UNDERSTAND = "Buddy opened TUmail but couldn't make sense of the page, so it kept what it already had. Outlook may have changed how the page looks.";
 const MISSED_SENDERS = "Buddy couldn't see who some of your recent emails are from, so it didn't open those. It will try again at its next read, or you can tap Read now.";
 const MISSED_MESSAGE = "Buddy couldn't read some of your emails from temple.edu addresses and Contacts, so it may be missing their words. It will try again at its next read, or you can tap Read now.";

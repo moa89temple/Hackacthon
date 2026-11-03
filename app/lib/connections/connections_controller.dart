@@ -30,6 +30,7 @@ class ConnectionsController extends ChangeNotifier {
 
   /// The Connection a Takeover is under way for. Buddy stays out until the Student taps Done.
   String? takeoverSite;
+  String? _takeoverSiteName;
 
   /// A Takeover is being opened, or is on the screen.
   bool openingLogin = false;
@@ -63,11 +64,19 @@ class ConnectionsController extends ChangeNotifier {
 
   Future<void> _checkForTakeover() async {
     try {
-      takeoverSite = (await _backend.currentTakeover())?.site;
+      final takeover = await _backend.currentTakeover();
+      takeoverSite = takeover?.site;
+      _takeoverSiteName = takeover?.siteName;
       _changed();
     } on Exception {
       // Starting a Takeover returns any Takeover under way, so the button still works.
     }
+  }
+
+  /// Says which Takeover it is and where its Done is, because the screen with the Done on it has been left.
+  String get _stillInControl {
+    final name = _takeoverSiteName ?? 'another Connection';
+    return "You're still in control of Buddy's Browser for $name, so Buddy can't read anything. On the You tab, tap Continue logging in to $name, then Done.";
   }
 
   /// The Student logging in through a Takeover. A login that worked gets read straight away.
@@ -81,7 +90,14 @@ class ConnectionsController extends ChangeNotifier {
       takeover = await _backend.startTakeover(connection.id);
     } on Exception {
       openingLogin = false;
-      _setNote("Buddy couldn't open its browser. Check that Buddy's Browser is running, then try again.", isProblem: true);
+      // Only one Takeover at a time, so the backend may be saying no because of another. The browser's fine then.
+      await _checkForTakeover();
+      if (_disposed) return;
+      final blocking = takeoverSite != null && takeoverSite != connection.id;
+      _setNote(
+        blocking ? _stillInControl : "Buddy couldn't open its browser. Check that Buddy's Browser is running, then try again.",
+        isProblem: true,
+      );
       return;
     }
 
@@ -90,7 +106,12 @@ class ConnectionsController extends ChangeNotifier {
     await _checkForTakeover();
     if (_disposed) return;
     if (finished == null) {
-      _changed();
+      // Leaving keeps it going, and nothing else would say that Buddy can't read anything until Done.
+      if (takeoverSite != null) {
+        _setNote(_stillInControl, isProblem: true);
+      } else {
+        _changed();
+      }
       return;
     }
     if (!finished.signedIn) {
@@ -113,8 +134,15 @@ class ConnectionsController extends ChangeNotifier {
       final updated = await _backend.readConnection(connection.id);
       _replace(updated);
       if (sayWhenDone) {
+        // The usual words would leave the Student looking at this Connection, when what's in the way is another's Takeover.
+        if (updated.lastReadProblem != null) await _checkForTakeover();
+        if (_disposed) return;
         _setNote(
-          updated.lastReadProblem == null ? 'Buddy read ${updated.name}.' : "Buddy couldn't read ${updated.name}.",
+          updated.lastReadProblem == null
+              ? 'Buddy read ${updated.name}.'
+              : takeoverSite != null
+                  ? _stillInControl
+                  : "Buddy couldn't read ${updated.name}.",
           isProblem: updated.lastReadProblem != null,
         );
       }

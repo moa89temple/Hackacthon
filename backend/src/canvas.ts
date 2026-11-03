@@ -28,7 +28,7 @@ const OVERDUE_DAYS = 14;
 
 const LOG_IN = "Buddy needs you to log in to Canvas before it can read it. Tap Log in to Canvas on the You tab.";
 const COULD_NOT_OPEN = "Buddy's Browser couldn't open Canvas. Check that it's running. Buddy will try again at its next read, or you can tap Read now.";
-const STUDENT_IN_CONTROL = "You're in control of Buddy's Browser, so Buddy didn't read Canvas. Tap Done, and it can read it again.";
+const STUDENT_IN_CONTROL = "Buddy didn't read Canvas because a Takeover was open in Buddy's Browser. Once it's finished with Done, tap Read now.";
 const COULD_NOT_UNDERSTAND = "Buddy opened Canvas but couldn't make sense of the page, so it kept what it already had. Canvas may have changed how the page looks.";
 const MISSED_PART = "Buddy couldn't read part of Canvas, so some of what it has may be out of date. It will try again at its next read, or you can tap Read now.";
 

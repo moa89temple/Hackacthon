@@ -77,6 +77,52 @@ void main() {
       expect(find.text('Log in to Canvas'), findsOneWidget);
     });
 
+    testWidgets("names the other Connection's Takeover when that's what's in the way, not the browser", (tester) async {
+      final backend = FakeBackend()
+        ..connections = [canvasConnection(on: true), canvasConnection(id: 'navigate360', name: 'Navigate360', on: true)]
+        ..takeoverUnderWay = canvasTakeover
+        ..startTakeoverError = const BackendException('409');
+      await openUnlockedApp(tester, backend);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
+      await tester.pump();
+
+      await tester.scrollUntilVisible(find.text('Log in to Navigate360'), 100);
+      await tester.ensureVisible(find.text('Log in to Navigate360'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Log in to Navigate360'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('tap Continue logging in to Canvas, then Done'), findsOneWidget);
+      expect(find.textContaining("couldn't open its browser"), findsNothing);
+    });
+
+    testWidgets("says the Takeover's still open when the Student leaves without tapping Done", (tester) async {
+      final backend = FakeBackend()..takeoverToStart = canvasTakeover;
+      await openYouTab(tester, backend);
+      await openLiveView(tester);
+      backend.takeoverUnderWay = canvasTakeover;
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining("You're still in control of Buddy's Browser for Canvas"), findsOneWidget);
+    });
+
+    testWidgets("says which Takeover is in the way when Read now can't read", (tester) async {
+      final backend = FakeBackend()
+        ..takeoverUnderWay = canvasTakeover
+        ..connectionAfterRead = canvasConnection(on: true, problem: 'A Takeover is open.');
+      await openYouTab(tester, backend);
+
+      await tester.scrollUntilVisible(find.text('Read now'), 100);
+      await tester.ensureVisible(find.text('Read now'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Read now'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('tap Continue logging in to Canvas, then Done'), findsOneWidget);
+    });
+
     testWidgets('offers to continue when a Takeover is already under way', (tester) async {
       final backend = FakeBackend()
         ..takeoverUnderWay = canvasTakeover

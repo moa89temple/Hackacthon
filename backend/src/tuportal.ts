@@ -30,7 +30,7 @@ const LONGEST_CHARACTERS_FROM_A_PAGE = 300;
 
 const LOG_IN = "Buddy needs you to log in to TUportal before it can read it. Tap Log in to TUportal on the You tab.";
 const COULD_NOT_OPEN = "Buddy's Browser couldn't open TUportal. Check that it's running. Buddy will try again at its next read, or you can tap Read now.";
-const STUDENT_IN_CONTROL = "You're in control of Buddy's Browser, so Buddy didn't read TUportal. Tap Done, and it can read it again.";
+const STUDENT_IN_CONTROL = "Buddy didn't read TUportal because a Takeover was open in Buddy's Browser. Once it's finished with Done, tap Read now.";
 const COULD_NOT_UNDERSTAND =
   "Buddy opened TUportal but couldn't make sense of its pages, so it kept what it already had. That doesn't mean you have no holds. TUportal may have changed how its pages look.";
 
