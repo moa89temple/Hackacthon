@@ -304,6 +304,50 @@ Whether a fee is really worth it is Claude's own judgment, and so is whether a p
 - These runs depend on the Claude budget that #27 will limit. The first read of the events makes about 180 Haiku calls.
 - Nothing nudges you about a saved Opportunity yet: that's for the Alerts ticket.
 
+## Briefings and phone notifications
+
+A Briefing collects what's relevant right now. A short one goes each weekday at 8 a.m. and a week-ahead one each Sunday at 6 p.m., Philadelphia time, through the clock changes. Change either time in the You tab's **Briefings** section. There are no quiet hours and no daily limit. Today shows the latest Briefing at the top, and tapping its notification opens Today, even if the app wasn't running.
+
+The backend's timer checks each minute. If the laptop was asleep or off, it makes only the latest Briefing that was missed when it wakes. It doesn't send one for a time that passed before the backend first ran this feature, and changing a time doesn't send one for a time that's already passed today. Changing to later today does send another that day, even if today's has gone.
+
+**What's in it.** Buddy's own records, chosen by Buddy's own code, with no model involved, so nothing in it is written for the occasion:
+
+- **Milestones**, from your Roadmap and the Standard Milestones, each with its Source. A weekday's looks 3 days ahead and holds at most 3. A week-ahead's looks 7 days ahead and holds at most 6.
+- **Opportunities**, each with its Source and cost. What you saved comes first, then what's for your Goals, with the same limits. Temple's other events come only in the week-ahead Briefing.
+- **News from Connections**, since the last Briefing. Today shows the newest 3 from each Connection and says how many others there are.
+
+A Briefing is stored as ids, and each one's words are looked up when you open Today. So a Report, a revoked Read Permission or a deleted fact takes it out of the Briefing too, and what's read from a Connection doesn't stay behind there.
+
+**When nothing is relevant,** no notification goes, and Today says that nothing needed you at that time.
+
+**What Firebase sees.** The notification goes through Google's Firebase Cloud Messaging, which is outside Buddy. It says only how many of what, such as "Your Briefing: 2 Milestones and 1 thing new in your Connections." It never names a Milestone, an Opportunity or a Goal, and has no grades, balances or email. Firebase also sees this phone's Installation ID, and that a notification went to it and when. Activity records the exact words each time.
+
+### Set up Firebase
+
+Buddy runs without this. The backend then logs that phone notifications are off, the app's You tab says so, and Briefings still show on Today.
+
+1. In the [Firebase console](https://console.firebase.google.com), create a free project. Google Analytics isn't needed.
+2. Add an Android app with the package name `dev.hackathon.buddy`. Skip the steps about changing Gradle files: they're already done.
+3. Download `google-services.json` and put it at `app/android/app/google-services.json`. Git ignores it.
+4. In **Project settings > Service accounts**, tap **Generate new private key**, and save the file as `backend/secrets/firebase-service-account.json`. Git ignores that folder. This key can send notifications in your project's name, so keep it off everything else.
+5. Add this to `.env.local` at the top of the repo, then restart the backend, which should log that phone notifications are on. A relative path goes by the top of the repo.
+
+   ```
+   FIREBASE_SERVICE_ACCOUNT_FILE=backend/secrets/firebase-service-account.json
+   ```
+
+6. Build the app again with `flutter run`. A hot reload isn't enough, because the config is built in. On Android 13 and later the phone asks to allow notifications after you unlock Buddy. An emulator needs a system image with Google Play.
+
+To see one soon, add a Milestone due in the next 3 days to your Roadmap, then set today's Briefing time a minute or two ahead in the You tab. There's nothing on a Saturday.
+
+### Known limits
+
+- The phone has to be reachable by Firebase, and the laptop has to be on and awake for a Briefing to be made. A Briefing that couldn't be sent is tried each minute until the next one replaces it.
+- Tapping a notification while Buddy is locked opens the lock screen first, then Today.
+- Buddy can't tell whether the phone showed a notification. If notifications are turned off in the phone's settings, the backend still counts it as sent until the You tab next finds out, and even then it only tells you.
+- There's no way to turn Briefings off, only to change their times.
+- The iPhone build isn't set up for this. It needs its own `GoogleService-Info.plist`, push setup on your Mac, and the Installation ID setting in `Info.plist`.
+
 ## Send a Draft from TUmail
 
 Tap **Buddy sends it** on a Draft card. That only makes an Action card, which shows exactly who it goes to, the subject and the message. Nothing goes until you tap **Approve**, and a typed yes never counts. Claude has no tool for any of this, and it can't make this card, approve it or switch to Live.
