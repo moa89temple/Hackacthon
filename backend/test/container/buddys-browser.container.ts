@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Page } from "playwright-core";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createBrowserAccess, TakeoverInProgress, type Site } from "../../src/browser-access.ts";
 import { PageBlocked, type FormToSubmit } from "../../src/buddys-browser.ts";
 import { canvasAt } from "../../src/canvas.ts";
@@ -434,7 +434,7 @@ describe("the network guard while reading", () => {
 
 describe("reading one public page", () => {
   const SCRIPT_BUILT = "http://cdn.elsewhere.test:8000/made-up-event-built-by-script";
-  const readPublic = (url: string) => browser.read(url, guards.forPublicPage(url));
+  const readPublic = (url: string) => backend.browserAccess.readPublicPage(url);
 
   it("reads what only a script shows, from a host on no list", async () => {
     const reading = await readPublic(SCRIPT_BUILT);
@@ -450,6 +450,32 @@ describe("reading one public page", () => {
     expect(paths).toContain("/made-up-event-built-by-script");
     expect(paths).not.toContain("/from-public-page");
     expect(paths).not.toContain("/connection-from-public-page");
+  });
+
+  describe("keeps it apart from the profile that holds the logins", () => {
+    const LEAVES_A_COOKIE = "http://cdn.elsewhere.test:8000/made-up-page-that-leaves-a-cookie";
+    const anyRequest = { check: () => ({ allowed: true as const }) };
+    const readInTheProfile = () => browser.read(LEAVES_A_COOKIE, anyRequest);
+
+    afterEach(() => browser.forgetLogin(["cdn.elsewhere.test"]));
+
+    it("leaves nothing in that profile", async () => {
+      await readPublic(LEAVES_A_COOKIE);
+
+      expect((await readInTheProfile()).text).toContain("came with: nothing");
+    });
+
+    it("can't see what's in that profile", async () => {
+      await readInTheProfile();
+
+      expect((await readPublic(LEAVES_A_COOKIE)).text).toContain("came with: nothing");
+    });
+
+    it("keeps nothing from one public page to the next", async () => {
+      await readPublic(LEAVES_A_COOKIE);
+
+      expect((await readPublic(LEAVES_A_COOKIE)).text).toContain("came with: nothing");
+    });
   });
 
   it("doesn't let it open a Connection", async () => {

@@ -77,15 +77,20 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
   async function whileConnected<T>(
     work: (context: BrowserContext) => Promise<T>,
     alsoEndIf: Promise<never> = new Promise(() => {}),
+    apartFromLogins = false,
   ): Promise<T> {
     const browser = await chromium.connectOverCDP(settings.controlUrl, { timeout: CONNECT_TIMEOUT_MS });
     // Closing the connection makes whatever the work does next fail, so it can't go on unguarded.
     alsoEndIf.catch(() => browser.close());
     try {
       // The default context is the one that uses the saved profile, and so the logins.
-      const context = browser.contexts()[0];
+      const context = apartFromLogins ? await browser.newContext() : browser.contexts()[0];
       if (!context) throw new Error("Buddy's Browser has no default context");
-      return await work(context);
+      try {
+        return await work(context);
+      } finally {
+        if (apartFromLogins) await context.close();
+      }
     } finally {
       await browser.close();
     }
@@ -95,10 +100,11 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
   async function whileGuarded<T>(
     guard: RequestGuard,
     work: (context: BrowserContext, guarded: GuardConnection) => Promise<T>,
+    apartFromLogins = false,
   ): Promise<T> {
     const guarded = await attachGuard(settings.controlUrl, guard);
     try {
-      return await whileConnected((context) => work(context, guarded), guarded.lost);
+      return await whileConnected((context) => work(context, guarded), guarded.lost, apartFromLogins);
     } finally {
       guarded.close();
     }
@@ -170,7 +176,7 @@ export function containerBrowser(settings: ContainerBrowserSettings): BuddysBrow
         } finally {
           await page.close();
         }
-      });
+      }, options.apartFromLogins);
     },
 
     submitForm(form, guard) {

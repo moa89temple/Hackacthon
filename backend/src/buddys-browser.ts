@@ -53,6 +53,11 @@ export interface ReadOptions {
    * result goes through the guard like everything else.
    */
   scrollList?: { item: string; times: number };
+  /**
+   * For a page that could be anyone's: opens it in a profile of its own, which is thrown away afterwards.
+   * It can't see the saved profile that holds the logins, and it can't leave anything there.
+   */
+  apartFromLogins?: boolean;
 }
 
 /**

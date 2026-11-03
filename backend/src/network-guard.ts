@@ -72,7 +72,8 @@ export interface GuardPolicy {
   /**
    * For reading one public page that's on no list, such as a search result. It may open only that page's
    * exact host, it only ever reads, and it stays out of every Connection and sign-on, even one with a
-   * Read Permission, because those logins are in this browser and the page could be anyone's.
+   * Read Permission, because those logins are in this browser and the page could be anyone's. The page
+   * is also opened apart from the saved profile: see ReadOptions.apartFromLogins.
    */
   forPublicPage(address: string): RequestGuard;
   /** For one approved step. Only the gate in BrowserAccess asks for this. */

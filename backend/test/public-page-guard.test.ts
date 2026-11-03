@@ -85,6 +85,7 @@ describe("reading one public page through Buddy's Browser", () => {
     const reading = await backend.browserAccess.readPublicPage(SEARCH_RESULT);
 
     expect(reading.title).toBe("Awards");
+    expect(backend.browser.actions).toContainEqual({ type: "read", url: SEARCH_RESULT, apartFromLogins: true });
     await backend.stop();
   });
 

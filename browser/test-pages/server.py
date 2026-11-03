@@ -500,6 +500,16 @@ class Pages(BaseHTTPRequestHandler):
             # A session cookie, like Canvas's: it has no expiry date.
             self.send_header("set-cookie", "session=signed-in; Path=/; HttpOnly")
             self.page("Sign in", "<h1>Sign in</h1><p>You are signed in.</p>")
+        elif self.path == "/made-up-page-that-leaves-a-cookie":
+            # Says which cookie it came with, so a check can see what a browser kept.
+            body = f"<title>Leaves a cookie</title><p>came with: {cookies['left_behind'].value if 'left_behind' in cookies else 'nothing'}</p>".encode()
+            self.send_response(200)
+            self.send_header("set-cookie", "left_behind=yes; Path=/; Max-Age=3600")
+            self.send_header("content-type", "text/html")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         elif self.path == "/home" and "session" in cookies:
             self.send_response(200)
             self.page("Dashboard", '<h1>Dashboard</h1><p>Your courses</p><button>Open a course</button>')

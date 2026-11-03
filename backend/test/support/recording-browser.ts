@@ -6,7 +6,7 @@ import { madeUpSendRequest } from "./outlook-send.ts";
 
 export type RecordedAction =
   | { type: "show"; url: string }
-  | { type: "read"; url: string }
+  | { type: "read"; url: string; apartFromLogins?: true }
   | { type: "submit"; form: FormToSubmit }
   | { type: "send-email"; email: EmailToSend }
   | { type: "clear-screen" }
@@ -95,7 +95,7 @@ export class RecordingBrowser implements BuddysBrowser {
 
   async read(url: string, guard: RequestGuard, options: ReadOptions = {}): Promise<PageReading> {
     this.#failIfUnreachable();
-    this.actions.push({ type: "read", url });
+    this.actions.push({ type: "read", url, ...(options.apartFromLogins ? { apartFromLogins: true } : {}) });
     await this.holdReads;
     const page = this.savedPages.get(url);
     if (!page) throw new Error(`RecordingBrowser: no saved page for ${url}`);

@@ -277,7 +277,7 @@ Two things find them, both from the backend's timer, so if the laptop was asleep
 - **Temple's events.** Once a day, from 6 a.m. Philadelphia time, Discovery reads the first 15 pages of now.temple.edu's events, which reach a little over two weeks ahead, and then each event's own page. Only a page whose words have changed goes to Haiku. The name and the date come from the list, not from Haiku.
 - **Searches for your Goals.** Haiku runs Claude's web search for each Goal, at most 5 searches, and picks at most 8 pages. A Goal is searched within a minute of being added or having its words changed, and again each week. If its search or all of its pages fail, it tries again in an hour. Only your Goal's words go into the search, and they go to Anthropic and its search provider. What a search found goes when its Goal does, unless you saved it. Its pages get read again each week whatever later searches pick, so it stays as long as its page says it.
 
-Buddy reads a page with a plain fetch if that works. If a page is built by script or turns plain fetches away, it goes through Buddy's Browser with its own guard: only that page's exact host opens, only reading gets through, and neither the page nor anything it loads can reach a Connection or Temple's sign-on, even with a Read Permission.
+Buddy reads a page with a plain fetch if that works. If a page is built by script or turns plain fetches away, it goes through Buddy's Browser with its own guard: only that page's exact host opens, only reading gets through, and neither the page nor anything it loads can reach a Connection or Temple's sign-on, even with a Read Permission. It also opens in a profile of its own that's thrown away afterwards, so it can't see the one holding your logins or leave anything there.
 
 ### What's checked, and what's only asked of Claude
 
@@ -300,7 +300,7 @@ Whether a fee is really worth it is Claude's own judgment, and so is whether a p
 - A page that redirects to another host can't be read at all, because the plain fetch won't follow it and the guard won't open it. Neither can a Temple page that isn't on the public list, except by plain fetch.
 - Items merge by name and date, so a reworded one counts as new, and its save stays with the old one until that leaves.
 - The check that a search result isn't this laptop goes by its name, so a public name that points back here would get a plain fetch. The backend refuses any host name it doesn't know.
-- A page opened in Buddy's Browser can leave cookies in its profile, which is the one that holds your logins. It can also load things from any public host, as any public page can. The guard keeps it from reaching your logins. `npm run forget-login` doesn't clear what it leaves.
+- A page opened in Buddy's Browser can load things from any public host, as any public page can.
 - These runs depend on the Claude budget that #27 will limit. The first read of the events makes about 180 Haiku calls.
 - Nothing nudges you about a saved Opportunity yet: that's for the Alerts ticket.
 
