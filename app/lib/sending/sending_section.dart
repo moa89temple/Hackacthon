@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'sending_controller.dart';
 
 /// Asks before the switch to Live, wherever the Student started it. True only if they said yes.
-Future<bool> askToSwitchToLive(BuildContext context, {String goesTo = 'the Contact', String waitingCards = 'Any card waiting for a tap stops working'}) async {
+Future<bool> askToSwitchToLive(BuildContext context, {String goesTo = 'the Contact', String cardsStopping = 'Any card waiting for a tap stops working'}) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -11,7 +11,7 @@ Future<bool> askToSwitchToLive(BuildContext context, {String goesTo = 'the Conta
       title: const Text('Switch to Live?'),
       content: Text(
         "What you approve will really go to $goesTo, from your TUmail, and it can't be taken back. "
-        'Buddy still sends nothing without your Approve tap. $waitingCards, and you can switch back at any time.',
+        'Buddy still sends nothing without your Approve tap. $cardsStopping, and you can switch back at any time.',
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Stay in Practice mode')),
@@ -22,8 +22,8 @@ Future<bool> askToSwitchToLive(BuildContext context, {String goesTo = 'the Conta
   return confirmed == true;
 }
 
-/// The You tab's control over where what Buddy sends goes. The only other way to Live is the Student's tap
-/// on an email from the Crisis card, and nothing Buddy reads or writes can reach either.
+/// The You tab's control over where what Buddy sends goes. The only other ways to Live are the Student's
+/// taps on the Crisis card's offer and on the Action card it makes, and nothing Buddy reads or writes can reach any of them.
 class SendingSection extends StatefulWidget {
   const SendingSection({super.key, required this.sending});
 

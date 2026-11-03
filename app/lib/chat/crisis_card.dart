@@ -78,8 +78,11 @@ class _CrisisCardState extends State<CrisisCard> {
       _bringTopIntoView();
       // The reply goes below the card and the list is anchored to its bottom, so the reply would push
       // the title and 988 off the top. They matter more, so the reply goes below the fold if it must.
-      _keepingInView = true;
-      widget.chat.addListener(_keepTopInView);
+      // The list can also build this card again long after its turn, and then there's nothing to hold.
+      if (widget.chat.replyInProgress != null) {
+        _keepingInView = true;
+        widget.chat.addListener(_keepTopInView);
+      }
     }
   }
 
@@ -106,6 +109,7 @@ class _CrisisCardState extends State<CrisisCard> {
   }
 
   void _keepTopInView() {
+    // A new turn has started, so what's new now is below this card.
     _bringTopIntoView();
     if (widget.chat.replyInProgress == null) _stopKeepingInView();
   }

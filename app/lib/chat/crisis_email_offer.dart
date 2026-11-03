@@ -15,9 +15,13 @@ const _whatHappens =
 const _noTuttleman =
     "Buddy doesn't have an email address for Tuttleman Counseling. You can call them with the number above, or write their address below if you have one.";
 const _writeAddress = 'Write the email address of who should get this, then tap again.';
-const _cardMade = "Buddy made a card for you to check and approve. It's the newest thing in the conversation. Nothing has gone yet.";
+// It can stay on screen after the card has been approved, so it has to stay true then.
+const _cardMade = 'Buddy made a card further down the conversation. It shows what would go, and nothing goes until you tap Approve on it.';
 const _couldNotAsk = "The app couldn't reach Buddy, so it made no card. Check that the backend is running, then try again. The numbers above don't need Buddy.";
 const _couldNotSwitch = "The app couldn't reach Buddy, so it may or may not have switched. Check on the You tab, then try again.";
+const _couldNotCheck = "The app couldn't reach Buddy, so it couldn't check. Try again in a moment. The numbers above don't need Buddy.";
+const _filledIn = "Buddy filled in the address for Tuttleman Counseling from the Guidebook. Check it below.";
+const _tuttlemanName = 'Tuttleman Counseling';
 
 // Plain words the Student can change, written here so that they're there whatever the model does.
 const _startingSubject = 'I could use some help';
@@ -58,6 +62,7 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
   bool _asking = false;
   String? _status;
   bool _statusIsProblem = false;
+  late int _checksSeen;
 
   @override
   void initState() {
@@ -66,11 +71,14 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
     _address.addListener(() => widget.words.address = _address.text);
     _subject.addListener(() => widget.words.subject = _subject.text);
     _body.addListener(() => widget.words.body = _body.text);
+    _checksSeen = widget.chat.crisisOfferChecks;
+    widget.chat.addListener(_lookAgainIfAsked);
     _load();
   }
 
   @override
   void dispose() {
+    widget.chat.removeListener(_lookAgainIfAsked);
     _name.dispose();
     _address.dispose();
     _subject.dispose();
@@ -78,13 +86,28 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  /// The mode or TUmail may have changed somewhere else, and what the form says has to follow.
+  void _lookAgainIfAsked() {
+    if (widget.chat.crisisOfferChecks == _checksSeen) return;
+    _checksSeen = widget.chat.crisisOfferChecks;
+    _load();
+  }
+
+  /// Returns whether the backend answered.
+  Future<bool> _load() async {
     try {
       final offer = await widget.chat.loadCrisisEmailOffer();
       if (mounted) setState(() => _offer = offer);
+      return true;
     } on Exception {
-      return;
+      return false;
     }
+  }
+
+  Future<void> _checkAgain() async {
+    setState(() => _tapped = true);
+    final answered = await _load();
+    _say(answered ? null : _couldNotCheck, problem: !answered);
   }
 
   void _say(String? status, {bool problem = false}) {
@@ -96,8 +119,9 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
   }
 
   void _chooseTuttleman(GuidebookItem tuttleman) {
-    _name.text = tuttleman.name;
+    _name.text = _tuttlemanName;
     _address.text = tuttleman.email ?? '';
+    _say(_filledIn);
   }
 
   /// Only ever makes a card. The email goes only if the Student taps Approve on it.
@@ -118,7 +142,7 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
 
   Future<void> _switchToLive() async {
     setState(() => _tapped = true);
-    if (!await askToSwitchToLive(context, goesTo: 'the person you choose')) return;
+    if (!await askToSwitchToLive(context, goesTo: "whoever it's written to, including the person you choose")) return;
     try {
       await widget.chat.switchToLive();
       await _load();
@@ -151,6 +175,7 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
     final tuttleman = offer?.tuttleman;
     final source = tuttleman?.sources.firstOrNull;
     final sourceAddress = source == null ? null : Uri.tryParse(source.url);
+    final lastSeen = source == null ? null : MaterialLocalizations.of(context).formatFullDate(source.lastSeenAt.toLocal());
     return [
       _spaced(Semantics(header: true, child: Text(_asksWhom, style: theme.textTheme.titleSmall))),
       _spaced(Semantics(container: true, child: const Text(_whatHappens))),
@@ -159,12 +184,14 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
         if (!offer.isLive) _spaced(OutlinedButton(onPressed: _switchToLive, child: const Text('Switch to Live'))),
       ],
       if (tuttleman != null) ...[
-        _spaced(OutlinedButton(onPressed: () => _chooseTuttleman(tuttleman), child: Text('Email ${tuttleman.name}'))),
-        if (source != null)
+        _spaced(OutlinedButton(onPressed: () => _chooseTuttleman(tuttleman), child: const Text('Email $_tuttlemanName'))),
+        if (source != null) ...[
           TextButton(
             onPressed: sourceAddress?.scheme == 'https' ? () => _openSource(sourceAddress!) : null,
-            child: Text('Source: ${source.title}', semanticsLabel: 'Open Source: ${source.title}'),
+            child: Text('Source: ${source.title}', semanticsLabel: 'Open Source: ${source.title}, last seen $lastSeen'),
           ),
+          ExcludeSemantics(child: Text('Last seen $lastSeen', style: theme.textTheme.bodySmall)),
+        ],
       ] else if (offer != null)
         _spaced(Semantics(container: true, child: Text(_noTuttleman, style: theme.textTheme.bodySmall))),
       _spaced(TextField(controller: _name, decoration: const InputDecoration(labelText: 'Their name (you can leave this out)'))),
@@ -204,10 +231,7 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
             child: Text(whyNotYet, style: TextStyle(color: colors.error)),
           )),
           _spaced(OutlinedButton(
-            onPressed: () {
-              setState(() => _tapped = true);
-              _load();
-            },
+            onPressed: _checkAgain,
             child: const Text('Check again', semanticsLabel: 'Check again whether Buddy can send this email'),
           )),
         ] else if (widget.words.isOpen)

@@ -258,6 +258,15 @@ class ChatController extends ChangeNotifier {
   /// How things stand for the Crisis card's offer. Throws if the backend can't be reached.
   Future<CrisisEmailOffer> loadCrisisEmailOffer() => _backend.loadCrisisEmailOffer();
 
+  /// Goes up whenever a Crisis card's offer should ask again how things stand.
+  int crisisOfferChecks = 0;
+
+  /// The mode can change on the You tab or on a card, and TUmail can be connected or logged in to.
+  void checkCrisisOffers() {
+    crisisOfferChecks++;
+    _changed();
+  }
+
   /// The Student's tap on the Crisis card's offer, which makes a card and sends nothing. Returns why
   /// there's no card, when there isn't. Throws if the backend can't be reached.
   Future<String?> askForCrisisEmailCard({required String name, required String address, required String subject, required String body}) async {
@@ -292,6 +301,7 @@ class ChatController extends ChangeNotifier {
         refusal = refused.message;
       }
       onSendingChanged?.call();
+      checkCrisisOffers();
       await checkWaitingCards();
       return refusal;
     } finally {

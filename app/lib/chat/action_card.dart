@@ -12,9 +12,10 @@ const _couldNotSwitch = "The app couldn't reach Buddy, so it may or may not have
 const _needSomeoneNow = "Need someone right now? You don't have to wait for this email.";
 const _couldNotCall = "Your phone couldn't open that. Dial 988 yourself, or use another phone if you can.";
 
-/// Shows exactly what will happen, and asks for the Student's tap. Everything on it comes from the
+/// Shows exactly what will happen, and asks for the Student's tap. What it says will happen comes from the
 /// backend's own record of the card, never from what Claude wrote in the chat, and Approve is the only
-/// thing in the app that can give an Action Permission.
+/// thing in the app that can give an Action Permission. An email from the Crisis card also keeps 988 next
+/// to it, in the app's own words.
 class ActionCardView extends StatefulWidget {
   const ActionCardView({super.key, required this.card, required this.chat, required this.openPhone, required this.announce});
 
@@ -52,7 +53,11 @@ class _ActionCardViewState extends State<ActionCardView> {
   /// Asks first, as the You tab does. Live is the Student's to choose, and it makes a new card for them to approve.
   Future<void> _switchToLive() async {
     final card = widget.card;
-    final yes = await askToSwitchToLive(context, goesTo: 'the person you chose', waitingCards: 'This card stops working and Buddy makes a new one for you to approve');
+    final yes = await askToSwitchToLive(
+      context,
+      goesTo: "whoever it's written to, including the person you chose",
+      cardsStopping: 'Every card waiting for a tap stops working, Buddy makes a new one of this email for you to approve',
+    );
     if (yes) await _tap(() => widget.chat.switchCardToLive(card), _couldNotSwitch);
   }
 

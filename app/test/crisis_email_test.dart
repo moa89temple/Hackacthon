@@ -253,6 +253,36 @@ void main() {
       await backend.reply.close();
     });
 
+    testWidgets("doesn't hold the view on an earlier turn's card during the next reply", (tester) async {
+      useOrdinaryPhone(tester);
+      final backend = FakeBackend(history: [for (var i = 0; i < 40; i++) buddy('Message $i')]);
+      await openUnlockedApp(tester, backend);
+      await sendMessage(tester, 'I want to kill myself');
+      backend.reply.add(const ReplyCrisisCard());
+      await tester.pumpAndSettle();
+      backend.reply.add(ReplyDone(buddy('I am here.')));
+      await backend.reply.close();
+      await tester.pumpAndSettle();
+
+      // Far enough that the list forgets the card, and back, so that the card starts over.
+      await tester.drag(find.byType(ListView), const Offset(0, 3000));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -6000));
+      await tester.pumpAndSettle();
+
+      backend.nextReply();
+      await sendMessage(tester, 'Thanks. What is a hold?');
+      await tester.pumpAndSettle();
+      for (var chunk = 0; chunk < 8; chunk++) {
+        backend.reply.add(const ReplyText('A hold stops you registering. '));
+        await tester.pump();
+        await tester.pump();
+      }
+
+      expect(find.textContaining('A hold stops you registering.').hitTestable(), findsOneWidget);
+      await backend.reply.close();
+    });
+
     testWidgets('a screen reader hears the offer by name, as a button', (tester) async {
       final handle = tester.ensureSemantics();
       await showCrisisCard(tester, FakeBackend());
@@ -362,6 +392,32 @@ void main() {
       await expectEveryResourceReachable(tester);
     });
 
+    testWidgets("Check again says so when it can't reach Buddy", (tester) async {
+      final backend = FakeBackend()..crisisOffer = offer(whyNotYet: notConnected);
+      await showCrisisCard(tester, backend);
+
+      backend.crisisOfferError = http.ClientException('no route');
+      await tapThrough(tester, find.text('Check again'));
+
+      expect(find.textContaining("couldn't reach Buddy"), findsOneWidget);
+      expect(find.text(notConnected), findsOneWidget);
+      await expectEveryResourceReachable(tester);
+    });
+
+    testWidgets('looks again when the Student comes back from the You tab', (tester) async {
+      final backend = FakeBackend()..crisisOffer = offer(whyNotYet: notConnected);
+      await showCrisisCard(tester, backend);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
+      await settleApp(tester);
+
+      backend.crisisOffer = offer();
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(notConnected), findsNothing);
+      expect(find.text(offerTitle), findsOneWidget);
+    });
+
     testWidgets('if the login goes at the Approve tap, the card says nothing was sent, and the Resources stay', (tester) async {
       const outcome = "Buddy's Browser isn't logged in to TUmail. Tap Log in to TUmail on the You tab, then ask for a new card. Nothing was sent.";
       final backend = FakeBackend()
@@ -434,6 +490,26 @@ void main() {
       expect(find.text('Done.'), findsOneWidget);
     });
 
+    testWidgets("what the form says about the card stays true once it's been approved", (tester) async {
+      final backend = FakeBackend()
+        ..crisisCardToMake = practiceCard()
+        ..cardAfterApprove = practiceCard(status: 'done', statusText: 'Done.', canDecide: false);
+      await showCrisisCard(tester, backend);
+      tester.view.physicalSize = const Size(412, 3000);
+      await tester.pump();
+      await openForm(tester);
+      await fillIn(tester, 'Their email address', friendAddress);
+      await tapThrough(tester, find.text('Show me the email'));
+      // A second tap gets the same card, which leaves the form where it is, saying what happened.
+      await tapThrough(tester, find.text('Show me the email'));
+      expect(find.textContaining('Buddy made a card'), findsOneWidget);
+
+      await tapThrough(tester, find.widgetWithText(FilledButton, 'Approve'));
+
+      expect(find.textContaining('Nothing has gone'), findsNothing);
+      expect(find.textContaining('Nothing goes until you tap Approve'), findsWidgets);
+    });
+
     testWidgets('a typed yes approves nothing', (tester) async {
       final backend = FakeBackend()..crisisCardToMake = practiceCard();
       await showCrisisCard(tester, backend);
@@ -485,20 +561,34 @@ void main() {
       );
       await openForm(tester);
 
-      await tapThrough(tester, find.text('Email Tuttleman Counseling Services'));
+      await tapThrough(tester, find.text('Email Tuttleman Counseling'));
 
       expect(tester.widget<TextField>(field('Their email address')).controller!.text, 'counseling.madeup@temple.test');
-      expect(tester.widget<TextField>(field('Their name (you can leave this out)')).controller!.text, 'Tuttleman Counseling Services');
+      expect(tester.widget<TextField>(field('Their name (you can leave this out)')).controller!.text, 'Tuttleman Counseling');
 
       await tapThrough(tester, find.text('Source: Contact Us'));
       expect(opened, [Uri.parse('https://counseling.temple.edu/about-us/contact-us')]);
+    });
+
+    testWidgets('a screen reader hears that the address was filled in, and when its Source was last seen', (tester) async {
+      final handle = tester.ensureSemantics();
+      await showCrisisCard(tester, FakeBackend()..crisisOffer = offer(tuttleman: tuttleman()));
+      await openForm(tester);
+
+      await tapThrough(tester, find.text('Email Tuttleman Counseling'));
+
+      expect(tester.getSemantics(find.textContaining('Buddy filled in the address')).flagsCollection.isLiveRegion, isTrue);
+      await tester.ensureVisible(find.text('Source: Contact Us'));
+      await tester.pump();
+      expect(find.bySemanticsLabel(RegExp('^Open Source: Contact Us, last seen')), findsOneWidget);
+      handle.dispose();
     });
 
     testWidgets("says so when the Guidebook has no address, and doesn't make one up", (tester) async {
       await showCrisisCard(tester, FakeBackend());
       await openForm(tester);
 
-      expect(find.text('Email Tuttleman Counseling Services'), findsNothing);
+      expect(find.text('Email Tuttleman Counseling'), findsNothing);
       expect(find.textContaining("Buddy doesn't have an email address for Tuttleman Counseling"), findsOneWidget);
       expect(tester.widget<TextField>(field('Their email address')).controller!.text, isEmpty);
     });
@@ -590,6 +680,50 @@ void main() {
       expect(find.text(friendAddress), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Approve'), findsOneWidget);
       expect(onActionCard('Switch to Live'), findsNothing);
+    });
+
+    testWidgets('the form stops saying Practice mode once the Action card has switched to Live', (tester) async {
+      final backend = FakeBackend()
+        ..cardAfterLive = liveCard()
+        ..cardWhenChecked = practiceCard(status: 'invalid', statusText: 'No longer works.', canDecide: false);
+      await showPracticeCard(tester, backend);
+      // Tall enough to hold the form, the old card and the new one all at once.
+      tester.view.physicalSize = const Size(412, 4000);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Practice mode is on, so this email'), findsOneWidget);
+
+      backend.crisisOffer = offer(isLive: true);
+      await tapThrough(tester, onActionCard('Switch to Live'));
+      await tapThrough(tester, inDialog('Switch to Live'));
+
+      expect(find.textContaining('Practice mode is on, so this email'), findsNothing);
+      expect(find.textContaining('Live is on, so this email'), findsOneWidget);
+    });
+
+    testWidgets('the form stops saying Live once the You tab has gone back to Practice mode', (tester) async {
+      final backend = FakeBackend()
+        ..crisisOffer = offer(isLive: true)
+        ..sending = const SendingSettings(isLive: true, ownAddress: ownAddress);
+      await showCrisisCard(tester, backend);
+      await openForm(tester);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
+      await settleApp(tester);
+
+      backend.crisisOffer = offer();
+      await tapThrough(tester, find.text('Back to Practice mode'));
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Practice mode is on, so this email will go to you', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets('asking first says Live goes for everything Buddy sends, and stops every waiting card', (tester) async {
+      await showPracticeCard(tester, FakeBackend());
+
+      await tapThrough(tester, onActionCard('Switch to Live'));
+
+      expect(find.descendant(of: find.byType(AlertDialog), matching: find.textContaining('whoever it\'s written to')), findsOneWidget);
+      expect(find.descendant(of: find.byType(AlertDialog), matching: find.textContaining('Every card waiting')), findsOneWidget);
     });
 
     testWidgets('the You tab shows Live after switching on the card', (tester) async {
@@ -751,7 +885,7 @@ void main() {
 
       await openForm(tester);
       expect(tester.takeException(), isNull);
-      for (final label in ['Email Tuttleman Counseling Services', 'Source: Contact Us', 'Switch to Live', 'Show me the email']) {
+      for (final label in ['Email Tuttleman Counseling', 'Source: Contact Us', 'Switch to Live', 'Show me the email']) {
         await tester.ensureVisible(find.text(label, skipOffstage: false));
         await tester.pumpAndSettle();
         expect(find.text(label).hitTestable(), findsOneWidget, reason: label);

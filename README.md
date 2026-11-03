@@ -124,7 +124,7 @@ In Practice mode the card says the email will go to you instead, and offers **Sw
 
 If TUmail isn't connected or its login has expired, the card says plainly that an email can't go out yet. The crisis Resources come from the app's own code and don't wait for any of this. While a new card's reply is arriving, the app keeps the card's top on screen unless you scroll or open the form, so a long reply can end up below the fold.
 
-Tuttleman Counseling is offered only if the Guidebook has one address for it, shown with its Source. Today its contact page gives only a phone number. The only address on its pages, `lets.talk@temple.edu`, is for sending in a Let's Talk consent form, so Buddy never offers it for this. Without an address, you can write one yourself or call the number on the card.
+Tuttleman Counseling is offered only if the Guidebook has one address for it from a page on `counseling.temple.edu`, shown with its Source. Today its contact page gives only a phone number. The only address on its pages, `lets.talk@temple.edu`, is for sending in a Let's Talk consent form, so Buddy never offers it for this. Without an address, you can write one yourself or call the number on the card.
 
 Live has never been used for real, and neither has an address outside Temple, so an email to a friend or family member hasn't been seen to work.
 
@@ -320,7 +320,7 @@ Whether a fee is really worth it is Claude's own judgment, and so is whether a p
 
 Tap **Buddy sends it** on a Draft card. That only makes an Action card, which shows exactly who it goes to, the subject and the message. Nothing goes until you tap **Approve**, and a typed yes never counts. Claude has no tool for any of this, and it can't make this card, approve it or switch to Live.
 
-Buddy starts in **Practice mode**, where everything goes to your own TUmail address instead of the Contact. Add that address under **Email Buddy sends** on the You tab, because with no address nothing is sent at all. **Switch to Live** is on that same section, asks you first and is recorded in Activity. Practice mode stays on until you do that.
+Buddy starts in **Practice mode**, where everything goes to your own TUmail address instead of the Contact. Add that address under **Email Buddy sends** on the You tab, because with no address nothing is sent at all. **Switch to Live** is on that same section, and on the Crisis card's offer to email someone. It asks you first and is recorded in Activity. Practice mode stays on until you do that.
 
 What happens after Approve is a fixed routine. It opens a new email in Buddy's Browser, fills it in from the card, and reads it back. If that's exactly the card, it records that the send has started, opens the guard for one request, and presses Send once. The guard looks at what that request really carries, and refuses it unless it's to exactly that recipient with exactly those words. It shuts as soon as that one has gone, and on any failure too. Reading never gets any of this: its guard has no way to open.
 
