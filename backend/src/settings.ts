@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { canvas } from "./canvas.ts";
@@ -121,6 +122,15 @@ export function readTailscaleAddress(address = readLocalFile().TAILSCALE_ADDRESS
 
 export function allowedHostsWithTailscale(address = readTailscaleAddress()): string[] {
   return address ? [...settings.allowedHosts, new URL(address).hostname] : settings.allowedHosts;
+}
+
+/**
+ * Where the Firebase service account file is, from FIREBASE_SERVICE_ACCOUNT_FILE in the local file. A relative
+ * path goes by the top of the repo, where that file is. See the README. Without it, phone notifications are off.
+ */
+export function readFirebaseServiceAccountFile(path = readLocalFile().FIREBASE_SERVICE_ACCOUNT_FILE): string | undefined {
+  const trimmed = path?.trim();
+  return trimmed ? resolve(dirname(secretsPath), trimmed) : undefined;
 }
 
 export function readSecrets(): { anthropicApiKey: string } {
