@@ -160,7 +160,7 @@ Buddy's code decides what can be opened, in each Connection's `*-rules.ts`, and 
 
 ### DARS
 
-Everything assumed about DARS is in `dars-rules.ts`, which says what was seen and what's a guess. Its pages in the tests are made up, so until `npm run check-dars` has run against a real login, none of this is known to fit. One thing the reader doesn't understand anywhere on a page means it keeps what it had and says it couldn't read it, because a wrong "complete" could mislead you about graduating.
+Everything assumed about DARS is in `dars-rules.ts`, which says what was seen and what's a guess. One real audit was read on 2026-11-03, and the tests keep a copy of its layout with every word replaced. Another Student's audit may differ, and `npm run check-dars` shows where without showing their records. One thing the reader doesn't understand anywhere on a page means it keeps what it had and says it couldn't read it, because a wrong "complete" could mislead you about graduating.
 
 Buddy reads the newest audit already on your list, and never runs one, deletes one or opens a What-If audit. So it's only as new as your latest audit: run one yourself at `dars.temple.edu`, then tap **Read now**. It doesn't keep your name, ID, GPA or grades.
 
@@ -316,7 +316,7 @@ A card stops working if you edit the Draft, change your address, or switch betwe
 
 ### Known limits
 
-- **One real Practice send has gone through this.** It went on 2026-11-03, once, with no signature set. What it can't speak for is marked UNVERIFIED in `tumail-rules.ts` and `compose-in-page.ts`, and it all fails closed: if Outlook differs, nothing is sent and the card says what didn't match. Live has never been used.
+- **One real Practice send has gone through this.** It went on 2026-11-03, once, and arrived once, with nothing left in Drafts. What it can't speak for is marked UNVERIFIED in `tumail-rules.ts` and `compose-in-page.ts`, and it all fails closed: if Outlook differs, nothing is sent and the card says what didn't match. Live has never been used.
 - Buddy can't check the address you type against the account that's logged in. It has to be a temple.edu address that no Contact has, and the card shows it before you approve, but a typing mistake would send your Practice email to whoever has that address.
 - A message goes as plain words. The number of blank lines can differ from the Draft's, because Outlook's editor keeps them its own way, but the lines themselves can't. Any signature Outlook puts in the new email is replaced.
 - The guard checks the recipient, copies, attachments, subject and words. It doesn't look at anything else a request could say, such as its From, because only Outlook's own page could put something there.

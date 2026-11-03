@@ -27,7 +27,7 @@ const NEEDED = { newEmail: "button to write a new email", to: "To line", subject
  * What makes this the approved email isn't this code but the guard, which looks at what the request
  * really carries. Reading back is what stops Buddy pressing Send on something that doesn't match.
  *
- * All of this worked against real Outlook in one Practice send on 2026-11-03, with no signature set. Any of it
+ * All of this worked against real Outlook in one Practice send on 2026-11-03. Any of it
  * being wrong for another email stops here, with nothing sent. See tumail-rules.ts.
  */
 export async function sendEmailOnPage(page: Page, email: EmailToSend, guard: SendGuard, beforePressing: () => string | null): Promise<EmailSending> {
