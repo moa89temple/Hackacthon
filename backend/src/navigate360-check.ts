@@ -21,6 +21,9 @@ import { hasPath } from "./page-answers.ts";
 import { createProfile } from "./profile.ts";
 import { openStore, THE_STUDENT } from "./store.ts";
 
+/** The login works and the reader says it missed something, which is what this check is for finding. */
+export const EXIT_READ_PROBLEM = 7;
+
 /**
  * Checks the Navigate360 reader against a real login, for someone who must not see the Student's
  * records. It runs the real reader through the real gate and prints only counts, cleaned addresses and
@@ -391,5 +394,5 @@ async function runChecked({ browser, connection, sites, student, print }: Naviga
     print("Its HTML, by tag and class. An app that draws inside its own elements shows little here:");
     for (const line of structureOf(page.html || "<body></body>")) print(`  ${line}`);
   }
-  return EXIT_OK;
+  return status.lastReadProblem ? EXIT_READ_PROBLEM : EXIT_OK;
 }

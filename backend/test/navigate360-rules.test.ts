@@ -32,6 +32,10 @@ describe("the pages Buddy opens", () => {
 
   it.each([
     // Named in the public scripts.
+    "#/my/host/as3/appointment-dashboard",
+    "#/my/host/as3/appointment-dashboard?tab_name=invitations",
+    "#/my/host/as3/appointment-dashboard?tab_name=appointments&next=appointment-new",
+    "#/my/host/as3/appointment-new",
     "#/native/my/apps/as3/appointment-new",
     "#/native/my/apps/as3/appointment-dashboard",
     "#/native/my/apps/as3/appointment-cancel-details",

@@ -48,11 +48,16 @@ describe("reading the Student's team", () => {
     expect(readTeamAnswer(team(person({ relationship: "Instructor" })))).toMatchObject({ advisors: [], othersOnTeam: 1, unusable: 0 });
   });
 
+  it("reads a team as a real login gets it, with nothing around it, the same as one inside data", () => {
+    expect(readTeamAnswer(JSON.stringify({ team: [person()] }))).toEqual(readTeamAnswer(JSON.stringify({ data: { team: [person()] } })));
+    expect(readTeamAnswer(JSON.stringify({ team: [person()] }))?.advisors).toHaveLength(1);
+  });
+
   it.each([
     ["isn't JSON", "<html>Sign in</html>"],
     ["is empty", ""],
     ["has no team in it", JSON.stringify({ data: {} })],
-    ["has its team somewhere else", JSON.stringify({ team: [person()] })],
+    ["has its team somewhere else", JSON.stringify({ people: { team: [person()] } })],
     ["has a team that isn't a list", JSON.stringify({ data: { team: "nobody" } })],
     ["has something on its team that isn't a person", team("Riley Madeup")],
   ])("an answer that %s couldn't be understood, which isn't the same as no advisor", (_, body) => {

@@ -7,13 +7,14 @@ export const TEAM_PAGE = `${ORIGIN}/app/v2/#/native/my/features/resources/people
 export const HOME_PAGE = `${ORIGIN}/app/v2/#/native/my/home/`;
 export const V1_LANDED = `${ORIGIN}/app/v1/#/my/feed/`;
 export const V1_TEAM_PAGE = `${ORIGIN}/app/v1/#/my/resources/people/`;
-export const V1_APPOINTMENTS_PAGE = `${ORIGIN}/app/v1/#/my/schedule/`;
+export const V1_APPOINTMENTS_PAGE = `${ORIGIN}/app/v1/#/my/host/as3/appointment-dashboard?tab_name=appointments`;
 export const LOGGED_OUT = `${ORIGIN}/app/v1/#/authentication/`;
 export const TEAM_ANSWER_ADDRESS = "https://temple.campus.eab.com/api/students/7/support_team";
 export const APPOINTMENTS_ANSWER_ADDRESS = `${ORIGIN}/api/v2/scheduling/current_user?slim=%27true%27`;
 
 export const savedAnswer = (name: string) => readFileSync(new URL(`../fixtures/navigate360-pages/${name}.json`, import.meta.url), "utf8");
-export const teamAnswer = (...people: unknown[]) => JSON.stringify({ data: { team: people } });
+/** As a real login gets it. */
+export const teamAnswer = (...people: unknown[]) => JSON.stringify({ team: people });
 export const appointmentsAnswer = (...list: unknown[]) => JSON.stringify({ data: { user: { upcoming_appointments: list } } });
 
 export const person = (more: object = {}) => ({

@@ -1,14 +1,16 @@
 import type { PagePattern } from "./browser-access.ts";
 
 /**
- * Everything Buddy assumes about Navigate360, in one place, so that the real login can correct it. No
- * one working on this has seen the app logged in. What's here comes from three public places:
+ * Everything Buddy assumes about Navigate360, in one place. A real login on v1 was compared with this on
+ * 2026-11-02: its team and appointment answers are the ones named here, and its appointments are at
+ * APPOINTMENT_LIST_ROUTE. That login had no upcoming appointments, so what one looks like, and all of v2,
+ * are still unconfirmed. The rest comes from three public places:
  *
  * - Temple's own pages (onestop.temple.edu/resources/navigate-360) give the address.
  * - The page at /app/ is a small script that sends the browser to /app/v1/ or /app/v2/, by a setting
  *   for each person, and goes to v1 when it can't tell, which is what a browser with no login gets.
  * - The app's public scripts name its pages and what it asks the server for. Those are what's marked
- *   "From v2's scripts" below. v1 loads most of its pages later, so what's here for v1 is a guess.
+ *   "From v2's scripts" below.
  *
  * `npm run check-navigate360` prints what the real app does, in shape only, to correct this against.
  */
@@ -35,13 +37,16 @@ export const NAVIGATE360_LOGIN_HOSTS = ["eab.com", NAVIGATE360_CAMPUS_HOST, SIGN
 
 export type AppVersion = "v1" | "v2";
 
+/** v1's list of the Student's appointments. It's the one appointment page Buddy opens, and only with this tab. */
+const APPOINTMENT_LIST_ROUTE = "#/my/host/as3/appointment-dashboard?tab_name=appointments";
+
 /**
  * The pages the reader opens, for each version of the app. The app keeps its pages after the # in an
  * address, and builds each one by script.
  */
 export const NAVIGATE360_ROUTES: Record<AppVersion, { team: string; appointments: string }> = {
-  // A guess: v1's address for its my.resources.people page, and the one its menu calls Appointments.
-  v1: { team: "#/my/resources/people/", appointments: "#/my/schedule/" },
+  // From a real login and v1's scripts: its people page, and where its menu's My Appointments goes.
+  v1: { team: "#/my/resources/people/", appointments: APPOINTMENT_LIST_ROUTE },
   // From v2's scripts.
   v2: { team: "#/native/my/features/resources/people/categories", appointments: "#/native/my/home/" },
 };
@@ -113,7 +118,7 @@ export const NAVIGATE360_BLOCKED_PAGES: PagePattern[] = [
   {
     path: /^\/+app\//,
     fragment: new RegExp(
-      `^#/+(?:[^?]*/)?(?:apps|appointment-[a-z-]+|pre-appointment-[a-z-]+|standalonescheduler|schedule-appointment)${END}`,
+      `^(?!${escaped(APPOINTMENT_LIST_ROUTE)}/?$)#/+(?:[^?]*/)?(?:apps|appointment-[a-z-]+|pre-appointment-[a-z-]+|standalonescheduler|schedule-appointment)${END}`,
     ),
   },
   // Messages, and raising a hand, which is a message to the Student's team.

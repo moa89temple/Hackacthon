@@ -1,29 +1,31 @@
 {
-  "data": {
-    "team": [
-      {
-        "id": 501,
-        "first_name": "Riley",
-        "last_name": "Madeup",
-        "email": "riley.madeup@temple.edu",
-        "work_phone": "215-555-0142",
-        "relationship": "Primary Advisor",
-        "relationship_type": "Advisor",
-        "visible_to_student": true,
-        "formatted_pronouns": "",
-        "courses": []
-      },
-      {
-        "id": 502,
-        "first_name": "Sam",
-        "last_name": "Invented",
-        "email": "sam.invented@temple.edu",
-        "work_phone": "",
-        "relationship": "Instructor",
-        "relationship_type": "Instructor",
-        "visible_to_student": true,
-        "courses": [{ "course_name": "Made-up Course 1001" }]
-      }
-    ]
-  }
+  "team": [
+    {
+      "id": 501,
+      "first_name": "Riley",
+      "last_name": "Madeup",
+      "email": "riley.madeup@temple.edu",
+      "work_phone": "215-555-0142",
+      "relationship": "Primary Advisor",
+      "relationship_type": "Advisor",
+      "visible_to_student": true,
+      "formatted_pronouns": "",
+      "courses": []
+    },
+    {
+      "id": 502,
+      "first_name": "Sam",
+      "last_name": "Invented",
+      "email": "sam.invented@temple.edu",
+      "work_phone": "",
+      "relationship": "Instructor",
+      "relationship_type": "Instructor",
+      "visible_to_student": true,
+      "courses": [
+        {
+          "course_name": "Made-up Course 1001"
+        }
+      ]
+    }
+  ]
 }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { EXIT_LOGIN_NEEDED, EXIT_NO_READ_PERMISSION, EXIT_OK, EXIT_OLD_LOGIN_REMAINS, EXIT_TAKEOVER_UNDER_WAY } from "../src/canvas-check.ts";
 import { navigate360 } from "../src/navigate360.ts";
-import { cleanAddress, runNavigate360Check, shapeOfAccessibility, shapeOfAnswer } from "../src/navigate360-check.ts";
+import { cleanAddress, EXIT_READ_PROBLEM, runNavigate360Check, shapeOfAccessibility, shapeOfAnswer } from "../src/navigate360-check.ts";
 import { settings } from "../src/settings.ts";
 import {
   appointmentsAnswer,
@@ -194,7 +194,7 @@ describe("when the reader can't understand the app", () => {
     saveNavigate360PagesWithoutAnswers(browser);
     addLeakyDetails();
 
-    expect(await check()).toBe(EXIT_OK);
+    expect(await check()).toBe(EXIT_READ_PROBLEM);
 
     expect(output()).toMatch(/Problem: Buddy opened Navigate360 but couldn't make sense of it/);
     expect(output()).toMatch(/Shape of the page, where the reader didn't get what it came for/);

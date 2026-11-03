@@ -5,8 +5,7 @@ import { ADVISOR_EMAIL_DOMAIN, ADVISOR_ROLE, isLoginRoute, NAVIGATE360_HOST, NOT
  * Reads what Navigate360's own scripts got from its server. There's no model here and no fetching. Each
  * function returns null when an answer isn't what it should be, because that's different from an answer
  * that really has nothing in it: a Student's advisor shouldn't disappear, and Buddy shouldn't say they
- * have none, over something it couldn't understand. Assume this is wrong about the real app until
- * `npm run check-navigate360` says otherwise.
+ * have none, over something it couldn't understand. `npm run check-navigate360` compares this with the real app.
  */
 
 export interface AdvisorOnPage {
@@ -79,10 +78,10 @@ export function usableAdvisorEmail(raw: string): string | null {
   return domain === ADVISOR_EMAIL_DOMAIN || domain.endsWith(`.${ADVISOR_EMAIL_DOMAIN}`) ? address : null;
 }
 
-/** Answers `/api/students/:id/support_team`, as `{ data: { team: [...] } }`. */
+/** Answers `/api/students/:id/support_team`. A real login gets `{ team: [...] }`, and v2's scripts expect it inside `data`. */
 export function readTeamAnswer(body: string): TeamOnPage | null {
   const answer = parsed(body);
-  const team = isRecord(answer) && isRecord(answer.data) ? answer.data.team : undefined;
+  const team = isRecord(answer) ? (isRecord(answer.data) ? answer.data.team : answer.team) : undefined;
   if (!Array.isArray(team) || !team.every(isRecord)) return null;
 
   const rolesOf = (person: Record<string, unknown>) => [person.relationship, person.relationship_type].map(words).filter((role) => role !== null);
