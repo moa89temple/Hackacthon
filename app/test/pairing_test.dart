@@ -4,6 +4,7 @@ import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/device/app_lock.dart';
 import 'package:buddy/device/pairing_details.dart';
 import 'package:buddy/device/qr_scanner.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -127,9 +128,9 @@ void main() {
 
     Future<void> typeCode(WidgetTester tester, String code) async {
       await tester.enterText(find.widgetWithText(TextField, 'Code'), code);
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Pair'));
+      await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Pair'));
       await tester.pump();
-      await tester.tap(find.widgetWithText(FilledButton, 'Pair'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Pair'));
       await settleApp(tester);
     }
 
@@ -145,7 +146,7 @@ void main() {
       await open(tester);
 
       expect(find.text('Scan the QR code'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(BuddyNavBar), findsNothing);
       expect(lock.prompts, 0);
       expect(backend.historyLoads, 0);
     });
@@ -176,13 +177,13 @@ void main() {
 
       expect(store.device!.key, 'new-device-key');
       expect(lock.prompts, 1);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(BuddyNavBar), findsNothing);
       expect(backend.historyLoads, 0);
 
       await tester.tap(find.text('Unlock'));
       await settleApp(tester);
 
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(BuddyNavBar), findsOneWidget);
       expect(backend.historyLoads, 1);
     });
 
@@ -193,7 +194,7 @@ void main() {
 
       expect(access.pairings.single.address, Uri.parse('https://laptop.tail1234.ts.net'));
       expect(access.pairings.single.code, 'ABCD-EFGH');
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(BuddyNavBar), findsOneWidget);
     });
 
     testWidgets('pairs only once when the camera sees the code again and again', (tester) async {
@@ -231,7 +232,7 @@ void main() {
       expect(find.textContaining('npm run pair'), findsWidgets);
       expect(find.textContaining("didn't work"), findsOneWidget);
       expect(store.device, isNull);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(BuddyNavBar), findsNothing);
     });
 
     testWidgets('explains when the laptop cannot be reached, then allows a retry', (tester) async {
@@ -242,12 +243,12 @@ void main() {
       expect(find.textContaining("couldn't reach your laptop"), findsOneWidget);
 
       access.pairError = null;
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Pair'));
+      await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Pair'));
       await tester.pump();
-      await tester.tap(find.widgetWithText(FilledButton, 'Pair'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Pair'));
       await settleApp(tester);
 
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(BuddyNavBar), findsOneWidget);
     });
 
     testWidgets('refuses an unencrypted address without sending the code', (tester) async {
@@ -275,13 +276,13 @@ void main() {
       final access = FakeBackendAccess(FakeBackend());
       await tester.pumpWidget(testApp(store: store, lock: FakeAppLock(), access: access));
       await settleApp(tester);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(BuddyNavBar), findsOneWidget);
 
       access.keyRefused!();
       await settleApp(tester);
 
       expect(store.device, isNull);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(BuddyNavBar), findsNothing);
       expect(find.text('Scan the QR code'), findsOneWidget);
       final notice = find.ancestor(
         of: find.textContaining('no longer paired'),
@@ -316,9 +317,9 @@ void main() {
       await settleApp(tester);
 
       await tester.enterText(find.widgetWithText(TextField, 'Code'), 'ABCD-EFGH');
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Pair'));
+      await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Pair'));
       await tester.pump();
-      await tester.tap(find.widgetWithText(FilledButton, 'Pair'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Pair'));
       await settleApp(tester);
 
       final note = find.ancestor(
@@ -340,9 +341,9 @@ void main() {
       await open(tester);
 
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Pair'));
+      await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Pair'));
       await tester.pump();
-      expect(find.widgetWithText(FilledButton, 'Pair').hitTestable(), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Pair').hitTestable(), findsOneWidget);
     });
 
     testWidgets('the scanner fits at twice the text size on a small phone', (tester) async {

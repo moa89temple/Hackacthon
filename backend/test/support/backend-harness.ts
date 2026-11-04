@@ -214,6 +214,12 @@ export class BackendHarness {
     return ((await response.json()) as { milestones: any[] }).milestones;
   }
 
+  /** What the Guidebook screen asks for. */
+  async guidebookItems(): Promise<any[]> {
+    const response = await fetch(`${this.url}/guidebook/items`, { headers: this.deviceHeaders });
+    return ((await response.json()) as { items: any[] }).items;
+  }
+
   /** The Student tapping Report on a card. */
   report(id: unknown, key: Record<string, string> = this.deviceHeaders): Promise<Response> {
     return fetch(`${this.url}/guidebook/items/${id}/report`, { method: "POST", headers: key });

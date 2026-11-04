@@ -61,6 +61,15 @@ class FakeBackend with FakeRoadmapCalls, FakeSendingCalls, FakeBriefingCalls, Fa
     return updated;
   }
 
+  List<GuidebookItem> guidebook = [];
+  Object? guidebookError;
+
+  @override
+  Future<List<GuidebookItem>> loadGuidebook() async {
+    if (guidebookError case final error?) throw error;
+    return [for (final item in guidebook) if (!reported.contains(item.id)) item];
+  }
+
   final List<int> reported = [];
   Object? reportError;
 

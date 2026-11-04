@@ -102,7 +102,7 @@ class ChatController extends ChangeNotifier {
 
   Future<void> send(String text) async {
     final studentMessageAt = items.length;
-    final sent = ChatMessage(isFromBuddy: false, text: text);
+    final sent = ChatMessage(isFromBuddy: false, text: text, sentAt: DateTime.now());
     items = [...items, sent];
     newestSent = sent;
     replyInProgress = '';
@@ -126,7 +126,7 @@ class ChatController extends ChangeNotifier {
       await for (final event in _backend.send(text)) {
         switch (event) {
           case ReplyHidden():
-            final kept = ChatMessage(isFromBuddy: false, text: event.text, hiddenNote: event.note);
+            final kept = ChatMessage(isFromBuddy: false, text: event.text, hiddenNote: event.note, sentAt: sent.sentAt);
             items = [...items]..[studentMessageAt] = kept;
             newestHidden = kept;
             _changed();

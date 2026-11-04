@@ -84,9 +84,8 @@ void main() {
       expect(find.text('Writing Center'), findsOneWidget);
       expect(find.text('Student writers help student writers.'), findsOneWidget);
       expect(find.text('Free'), findsOneWidget);
-      expect(find.text('Source: Writing Center | Student Success Center'), findsOneWidget);
-      expect(find.textContaining('Last seen'), findsOneWidget);
-      expect(find.textContaining('November 2, 2026'), findsOneWidget);
+      expect(find.text('Source: Writing Center'), findsOneWidget);
+      expect(find.text('Last seen Nov 2'), findsOneWidget);
     });
 
     testWidgets('leaves out what the Guidebook does not have', (tester) async {
@@ -121,7 +120,7 @@ void main() {
         return true;
       });
 
-      await tapThrough(tester, find.text('Source: Writing Center | Student Success Center'));
+      await tapThrough(tester, find.text('Source: Writing Center'));
 
       expect(opened, [Uri.parse(writingPage)]);
     });
@@ -179,7 +178,7 @@ void main() {
     testWidgets('says so when the phone could not open it', (tester) async {
       await showCard(tester, writingCenter(), openPhone: (address) async => false);
 
-      await tapThrough(tester, find.text('Source: Writing Center | Student Success Center'));
+      await tapThrough(tester, find.text('Source: Writing Center'));
 
       expect(find.textContaining("couldn't open that"), findsOneWidget);
     });
@@ -250,7 +249,7 @@ void main() {
   });
 
   group('during a reply', () {
-    testWidgets('a card appears as soon as it comes, and stays above the finished reply', (tester) async {
+    testWidgets('a card appears as soon as it comes, and sits under the finished reply', (tester) async {
       final backend = FakeBackend();
       tester.view
         ..physicalSize = const Size(412, 915)
@@ -269,7 +268,7 @@ void main() {
 
       final cardAt = tester.getTopLeft(find.text('Writing Center')).dy;
       final replyAt = tester.getTopLeft(find.text('Try this.')).dy;
-      expect(cardAt, lessThan(replyAt));
+      expect(cardAt, greaterThan(replyAt));
     });
 
     testWidgets('a screen reader hears a new card, but not one loaded from history', (tester) async {
@@ -333,6 +332,7 @@ void main() {
         tester,
         FakeBackend()
           ..history = [
+            student('Help?'),
             GuidebookCardItem(
               writingCenter(
                 cost: "There's a fee, but its Source doesn't say how much. Ask before you sign up.",

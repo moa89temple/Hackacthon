@@ -385,6 +385,8 @@ function isStoredId(id: string): boolean {
 
 /** A Report is a tap on a card, which never passes through the model, so that nothing Claude reads can hide an item. */
 function addGuidebookRoutes(app: FastifyInstance, guidebook: Guidebook): void {
+  app.get("/guidebook/items", async () => ({ items: guidebook.list() }));
+
   app.post<{ Params: { id: string } }>("/guidebook/items/:id/report", async (request, reply) => {
     const known = isStoredId(request.params.id) && guidebook.report(Number(request.params.id));
     return known ? reply.code(204).send() : reply.code(404).send({ error: "There's no such item" });

@@ -46,6 +46,8 @@ export interface GuidebookItem {
 export type ContactAddress = Pick<GuidebookItem, "name" | "email">;
 
 export interface Guidebook {
+  /** Everything in it, for the Student to browse: what costs nothing first, then by name. */
+  list(): GuidebookItem[];
   /** The best matches, with free Resources first and anything that costs money last. */
   search(query: string, options?: { kind?: GuidebookKind }): GuidebookItem[];
   /** Those of these items still in the Guidebook. A reported one never comes back from here. */
@@ -193,6 +195,10 @@ export function createGuidebook(deps: { store: Store; clock: Clock }): Guidebook
   const { store, clock } = deps;
 
   return {
+    list() {
+      return freeFirst(store.listGuidebookItems().map(asItem).toSorted((a, b) => a.name.localeCompare(b.name)));
+    },
+
     search(query, options = {}) {
       const queryStems = new Set(wordsIn(query).filter((word) => !FILLER.has(word)).map(stem));
       if (queryStems.size === 0) return [];

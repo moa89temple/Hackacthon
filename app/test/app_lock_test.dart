@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/device/app_lock.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -37,13 +38,13 @@ void main() {
       await open(tester);
 
       expect(find.text('Buddy is locked'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(BuddyNavBar), findsNothing);
       expect(backend.historyLoads, 0);
 
       lock.hold!.complete(UnlockResult.unlocked);
       await settleApp(tester);
 
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(BuddyNavBar), findsOneWidget);
     });
 
     testWidgets('stays locked after a cancel, without asking again until the Student taps', (tester) async {
@@ -113,18 +114,17 @@ void main() {
     testWidgets('asks again on the way back, and returns to where the Student was', (tester) async {
       await open(tester);
       await tester.enterText(find.byType(TextField), 'half a thought');
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Today')));
-      await tester.pump();
+      // Not Today, which is the first tab and so also where an app that had started over would be.
+      await goToTab(tester, 'Roadmap');
 
       await goToBackground(tester);
       await comeBack(tester);
 
       expect(lock.prompts, 2);
-      expect(find.byType(NavigationBar), findsOneWidget);
-      final selected = tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
-      expect(selected, 1);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
-      await tester.pump();
+      expect(find.byType(BuddyNavBar), findsOneWidget);
+      final selected = tester.widget<BuddyNavBar>(find.byType(BuddyNavBar)).selected;
+      expect(selected, 2);
+      await goToTab(tester, 'Buddy');
       expect(find.text('half a thought'), findsOneWidget);
     });
 
@@ -193,8 +193,8 @@ void main() {
         ..takeoverToStart = canvasTakeover
         ..connections = [canvasConnection(on: true)];
       await open(tester);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await tester.pumpAndSettle();
+      await openYouRow(tester, 'Connections');
+      await openRow(tester, 'Canvas');
       await tester.tap(find.text('Log in to Canvas'));
       await tester.pumpAndSettle();
       expect(find.textContaining('live view of'), findsOneWidget);

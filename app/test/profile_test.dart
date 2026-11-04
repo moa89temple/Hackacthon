@@ -13,20 +13,33 @@ ProfileFact fact(int id, String text, {bool edited = false}) => ProfileFact(
       wasEdited: edited,
     );
 
-Future<void> openYouTab(WidgetTester tester, FakeBackend backend) async {
+Future<void> openProfile(WidgetTester tester, FakeBackend backend) async {
   await openUnlockedApp(tester, backend);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-  await settleApp(tester);
+  await openYouRow(tester, 'Profile');
+}
+
+/// What can be done to a fact is in the menu at the end of its row.
+Future<void> openFactMenu(WidgetTester tester, String factText) async {
+  await tester.ensureVisible(find.byTooltip('Change or delete: $factText'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byTooltip('Change or delete: $factText'));
+  await tester.pumpAndSettle();
 }
 
 Future<void> openEditDialog(WidgetTester tester, String factText) async {
-  await tester.tap(find.bySemanticsLabel('Edit: $factText'));
+  await openFactMenu(tester, factText);
+  await tester.tap(find.text('Edit'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> openDeleteDialog(WidgetTester tester, String factText) async {
+  await openFactMenu(tester, factText);
+  await tester.tap(find.text('Delete'));
   await tester.pumpAndSettle();
 }
 
 Future<void> confirmDelete(WidgetTester tester, String factText) async {
-  await tester.tap(find.bySemanticsLabel('Delete: $factText'));
-  await tester.pumpAndSettle();
+  await openDeleteDialog(tester, factText);
   await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Delete')));
   await tester.pumpAndSettle();
 }
@@ -34,7 +47,7 @@ Future<void> confirmDelete(WidgetTester tester, String factText) async {
 void main() {
   group('the list of facts', () {
     testWidgets('shows each fact with where it came from', (tester) async {
-      await openYouTab(tester, FakeBackend()..facts = [fact(1, 'Is a junior.'), fact(2, 'Commutes.', edited: true)]);
+      await openProfile(tester, FakeBackend()..facts = [fact(1, 'Is a junior.'), fact(2, 'Commutes.', edited: true)]);
 
       expect(find.text('What Buddy knows about you'), findsOneWidget);
       expect(find.text('Is a junior.'), findsOneWidget);
@@ -43,14 +56,14 @@ void main() {
     });
 
     testWidgets('says so when Buddy knows nothing yet', (tester) async {
-      await openYouTab(tester, FakeBackend());
+      await openProfile(tester, FakeBackend());
 
       expect(find.textContaining('Nothing yet'), findsOneWidget);
     });
 
     testWidgets('offers a retry when it cannot be loaded', (tester) async {
       final backend = FakeBackend()..factsError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
 
       expect(find.textContaining("can't reach Buddy"), findsOneWidget);
 
@@ -65,14 +78,15 @@ void main() {
 
     testWidgets('picks up what Buddy saved when the Student comes back to the tab', (tester) async {
       final backend = FakeBackend();
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
       expect(find.textContaining('Nothing yet'), findsOneWidget);
 
       backend.facts = [fact(1, 'Is a junior.')];
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.tap(find.text('Back'));
+      await tester.pumpAndSettle();
+      await goToTab(tester, 'Buddy');
       await settleApp(tester);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await settleApp(tester);
+      await openYouRow(tester, 'Profile');
 
       expect(find.text('Is a junior.'), findsOneWidget);
     });
@@ -81,8 +95,7 @@ void main() {
       final backend = FakeBackend();
       await openUnlockedApp(tester, backend);
       await sendMessage(tester, "I'm a junior");
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await settleApp(tester);
+      await openYouRow(tester, 'Profile');
       expect(find.textContaining('Nothing yet'), findsOneWidget);
 
       backend.facts = [fact(1, 'Is a junior.')];
@@ -97,7 +110,7 @@ void main() {
   group('editing a fact', () {
     testWidgets('sends the new words and shows them', (tester) async {
       final backend = FakeBackend()..facts = [fact(1, 'Is a junior.')];
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
 
       await openEditDialog(tester, 'Is a junior.');
       await tester.enterText(find.widgetWithText(TextField, 'Is a junior.'), '  Is a senior.  ');
@@ -112,7 +125,7 @@ void main() {
 
     testWidgets('changes nothing on Cancel', (tester) async {
       final backend = FakeBackend()..facts = [fact(1, 'Is a junior.')];
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
 
       await openEditDialog(tester, 'Is a junior.');
       await tester.enterText(find.widgetWithText(TextField, 'Is a junior.'), 'Something else');
@@ -124,7 +137,7 @@ void main() {
     });
 
     testWidgets('cannot save an empty fact', (tester) async {
-      await openYouTab(tester, FakeBackend()..facts = [fact(1, 'Is a junior.')]);
+      await openProfile(tester, FakeBackend()..facts = [fact(1, 'Is a junior.')]);
 
       await openEditDialog(tester, 'Is a junior.');
       await tester.enterText(find.widgetWithText(TextField, 'Is a junior.'), '   ');
@@ -140,7 +153,7 @@ void main() {
           fact: fact(1, 'Card is [card number hidden]', edited: true),
           hiddenNote: 'Buddy hid what looks like a card number before saving this or sending it to the AI.',
         );
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
 
       await openEditDialog(tester, 'Is a junior.');
       await tester.enterText(find.widgetWithText(TextField, 'Is a junior.'), 'Card is 4111 1111 1111 1111');
@@ -156,7 +169,7 @@ void main() {
       final backend = FakeBackend()
         ..facts = [fact(1, 'Is a junior.')]
         ..changeError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
 
       await openEditDialog(tester, 'Is a junior.');
       await tester.enterText(find.widgetWithText(TextField, 'Is a junior.'), 'Is a senior.');
@@ -171,7 +184,7 @@ void main() {
   group('deleting a fact', () {
     testWidgets('asks first, then removes only that fact', (tester) async {
       final backend = FakeBackend()..facts = [fact(1, 'Is a junior.'), fact(2, 'Commutes.')];
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
 
       await confirmDelete(tester, 'Is a junior.');
 
@@ -182,10 +195,9 @@ void main() {
 
     testWidgets('does nothing on Cancel', (tester) async {
       final backend = FakeBackend()..facts = [fact(1, 'Is a junior.')];
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
 
-      await tester.tap(find.bySemanticsLabel('Delete: Is a junior.'));
-      await tester.pumpAndSettle();
+      await openDeleteDialog(tester, 'Is a junior.');
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
 
@@ -197,7 +209,7 @@ void main() {
       final backend = FakeBackend()
         ..facts = [fact(1, 'Is a junior.')]
         ..changeError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      await openProfile(tester, backend);
 
       await confirmDelete(tester, 'Is a junior.');
 
@@ -209,17 +221,23 @@ void main() {
   group('accessibility', () {
     testWidgets('a screen reader hears which fact each button is for', (tester) async {
       final handle = tester.ensureSemantics();
-      await openYouTab(tester, FakeBackend()..facts = [fact(1, 'Is a junior.'), fact(2, 'Commutes.')]);
+      await openProfile(tester, FakeBackend()..facts = [fact(1, 'Is a junior.'), fact(2, 'Commutes.')]);
 
-      for (final label in ['Edit: Is a junior.', 'Delete: Is a junior.', 'Edit: Commutes.', 'Delete: Commutes.']) {
-        expect(find.bySemanticsLabel(label), findsOneWidget, reason: label);
+      for (final fact in ['Is a junior.', 'Commutes.']) {
+        expect(tester.getSemantics(find.byTooltip('Change or delete: $fact')).getSemanticsData().tooltip, 'Change or delete: $fact');
+        await openFactMenu(tester, fact);
+        for (final label in ['Edit: $fact', 'Delete: $fact']) {
+          expect(find.bySemanticsLabel(label), findsOneWidget, reason: label);
+        }
+        await tester.tapAt(Offset.zero);
+        await tester.pumpAndSettle();
       }
       handle.dispose();
     });
 
     testWidgets('the result of a change is announced', (tester) async {
       final handle = tester.ensureSemantics();
-      await openYouTab(tester, FakeBackend()..facts = [fact(1, 'Is a junior.')]);
+      await openProfile(tester, FakeBackend()..facts = [fact(1, 'Is a junior.')]);
 
       await confirmDelete(tester, 'Is a junior.');
 
@@ -230,7 +248,7 @@ void main() {
 
     testWidgets('the list and the dialogs meet the tap target, label and contrast guidelines', (tester) async {
       final handle = tester.ensureSemantics();
-      await openYouTab(tester, FakeBackend()..facts = [fact(1, 'Is a junior.')]);
+      await openProfile(tester, FakeBackend()..facts = [fact(1, 'Is a junior.')]);
 
       Future<void> expectGuidelines() async {
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
@@ -239,12 +257,15 @@ void main() {
       }
 
       await expectGuidelines();
+      await openFactMenu(tester, 'Is a junior.');
+      await expectGuidelines();
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
       await openEditDialog(tester, 'Is a junior.');
       await expectGuidelines();
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      await tester.tap(find.bySemanticsLabel('Delete: Is a junior.'));
-      await tester.pumpAndSettle();
+      await openDeleteDialog(tester, 'Is a junior.');
       await expectGuidelines();
       handle.dispose();
     });
@@ -258,13 +279,11 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
       const longFact = 'Works twenty hours a week at a pharmacy near campus and needs Fridays off for it.';
-      await openYouTab(tester, FakeBackend()..facts = [fact(1, longFact)]);
+      await openProfile(tester, FakeBackend()..facts = [fact(1, longFact)]);
       expect(tester.takeException(), isNull, reason: 'overflow on the list');
 
-      // The Connections come first, so at this size the facts start below the screen.
-      await tester.scrollUntilVisible(find.text('Edit'), 200);
-      await tester.ensureVisible(find.text('Edit'));
-      await tester.pumpAndSettle();
+      await openFactMenu(tester, longFact);
+      expect(tester.takeException(), isNull, reason: 'overflow in the menu');
       await tester.tap(find.text('Edit'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: 'overflow in the edit dialog');
@@ -272,8 +291,7 @@ void main() {
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.text('Delete'));
-      await tester.pumpAndSettle();
+      await openFactMenu(tester, longFact);
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: 'overflow in the delete dialog');

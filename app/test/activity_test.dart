@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -37,12 +38,12 @@ ActivityEntry reply({
 
 Future<void> openActivity(WidgetTester tester, FakeBackend backend) async {
   await openUnlockedApp(tester, backend);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
+  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('You')));
   await settleApp(tester);
-  // The You tab builds only what's near the screen, so on a small phone the button isn't there yet.
-  await tester.dragUntilVisible(find.text('See your Activity'), find.byType(ListView).last, const Offset(0, -200));
+  // The You tab builds only what's near the screen, so on a small phone the row isn't there yet.
+  await tester.dragUntilVisible(find.text('Activity'), find.byType(ListView).last, const Offset(0, -200));
   await tester.pump();
-  await tester.tap(find.text('See your Activity'));
+  await tester.tap(find.text('Activity'));
   await tester.pumpAndSettle();
 }
 
@@ -67,7 +68,9 @@ void main() {
 
       expect(find.text('Buddy read Google Calendar'), findsOneWidget);
       expect(find.text('You tapped Read now.'), findsOneWidget);
-      expect(find.text('Monday, November 2, 2026 at 9:00 AM'), findsOneWidget);
+      // The day is over its group of entries, with only the time on the entry itself.
+      expect(find.text('MONDAY, NOVEMBER 2, 2026'), findsOneWidget);
+      expect(find.text('9:00 AM'), findsOneWidget);
     });
 
     testWidgets('shows an entry it has no special handling for, as later tickets will add', (tester) async {
@@ -99,6 +102,7 @@ void main() {
       await openActivity(tester, FakeBackend());
 
       expect(find.textContaining('Nothing yet'), findsOneWidget);
+      expect(find.byType(ChoiceChip), findsNothing);
     });
 
     testWidgets('offers a retry when it cannot be loaded', (tester) async {
@@ -124,7 +128,7 @@ void main() {
       backend.activity = [read()];
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tester.tap(find.text('See your Activity'));
+      await tester.tap(find.text('Activity'));
       await tester.pumpAndSettle();
 
       expect(find.text('Buddy read Google Calendar'), findsOneWidget);
@@ -208,6 +212,8 @@ void main() {
         ),
         findsOneWidget,
       );
+      // The day over the group is in capitals on the screen, which a screen reader shouldn't be spelling out.
+      expect(find.bySemanticsLabel('Monday, November 2, 2026'), findsOneWidget);
       handle.dispose();
     });
 
@@ -269,8 +275,10 @@ void main() {
       useSmallPhoneWithLargeText(tester);
       await openActivity(tester, FakeBackend()..activity = [reply(), read()]);
       expect(tester.takeException(), isNull, reason: 'overflow on the list');
-      await tester.ensureVisible(find.text('How Buddy decided'));
+      // The title and the choices of what to show come first, so with text this large the entries start further down.
+      await tester.scrollUntilVisible(find.text('How Buddy decided'), 100);
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'overflow on the entries');
       expect(find.text('How Buddy decided').hitTestable(), findsOneWidget);
 
       await openDecision(tester);

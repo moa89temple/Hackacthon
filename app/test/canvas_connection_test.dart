@@ -7,12 +7,35 @@ import 'support/test_app.dart';
 
 const warning = "Canvas's own rules forbid this.";
 
-Finder inTabs(String label) => find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
-
 Future<void> openTab(WidgetTester tester, FakeBackend backend, String tab) async {
   await openUnlockedApp(tester, backend);
-  await tester.tap(inTabs(tab));
+  await goToTab(tester, tab);
   await settleApp(tester);
+}
+
+/// Scrolls to something on a long screen, then taps it. What's further down isn't there to be found until then.
+Future<void> tapThrough(WidgetTester tester, String words) async {
+  await tester.scrollUntilVisible(find.text(words), 200, scrollable: find.byType(Scrollable).first);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(words));
+  await tester.pumpAndSettle();
+}
+
+/// The list of Connections, one row in from the You tab.
+Future<void> openConnections(WidgetTester tester, FakeBackend backend) async {
+  await openTab(tester, backend, 'You');
+  await tapThrough(tester, 'Connections');
+}
+
+/// A Connection's row opens its Read Permission card if it's off, and its own screen if it's on.
+Future<void> openConnection(WidgetTester tester, FakeBackend backend, {String name = 'Canvas'}) async {
+  await openConnections(tester, backend);
+  await tapThrough(tester, name);
+}
+
+Future<void> goBack(WidgetTester tester) async {
+  await tester.pageBack();
+  await tester.pumpAndSettle();
 }
 
 /// The size of an ordinary phone. The card is taller than the default test window.
@@ -68,11 +91,7 @@ void main() {
 
   group('the Read Permission card', () {
     testWidgets('shows what Buddy will read and warns about Canvas\'s own rules', (tester) async {
-      await openTab(tester, FakeBackend()..connections = [canvasConnection()], 'You');
-      await tester.ensureVisible(find.text('Connect'));
-      await tester.pump();
-      await tester.tap(find.text('Connect'));
-      await tester.pumpAndSettle();
+      await openConnection(tester, FakeBackend()..connections = [canvasConnection()]);
 
       expect(find.text('Let Buddy read Canvas?'), findsOneWidget);
       expect(find.text('Your courses this term.'), findsOneWidget);
@@ -84,38 +103,88 @@ void main() {
       final backend = FakeBackend()
         ..connections = [canvasConnection()]
         ..connectionAfterGive = canvasConnection(on: true, needsLogin: true, problem: 'Buddy needs you to log in to Canvas.');
-      await openTab(tester, backend, 'You');
-      await tester.ensureVisible(find.text('Connect'));
-      await tester.pump();
-      await tester.tap(find.text('Connect'));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Give Read Permission'));
-      await tester.pump();
-      await tester.tap(find.text('Give Read Permission'));
-      await tester.pumpAndSettle();
+      await openConnection(tester, backend);
+      await tapThrough(tester, 'Give Read Permission');
 
       expect(backend.gave, [('canvas', null)]);
-      expect(find.text('Canvas is connected. Log in so that Buddy can read it.'), findsOneWidget);
+      expect(find.text('Canvas is connected'), findsOneWidget);
+      expect(find.textContaining('One more step: log in so that Buddy can read it.'), findsOneWidget);
       expect(find.text('Log in to Canvas'), findsOneWidget);
+      expect(find.text('Not now'), findsOneWidget);
+    });
+
+    testWidgets('the login that comes next can wait, and the Connection stays on', (tester) async {
+      final backend = FakeBackend()
+        ..connections = [canvasConnection()]
+        ..connectionAfterGive = canvasConnection(on: true, needsLogin: true);
+      await openConnection(tester, backend);
+      await tapThrough(tester, 'Give Read Permission');
+      await tapThrough(tester, 'Not now');
+
+      expect(find.text('Canvas is connected'), findsNothing);
+      expect(find.text('Canvas is connected. Log in so that Buddy can read it.'), findsOneWidget);
+      expect(find.text('Needs you to log in'), findsOneWidget);
+    });
+
+    testWidgets('the login that comes next says so if it cannot start, and stays where it is', (tester) async {
+      final backend = FakeBackend()
+        ..connections = [canvasConnection()]
+        ..connectionAfterGive = canvasConnection(on: true, needsLogin: true)
+        ..startTakeoverError = const BackendException('503');
+      await openConnection(tester, backend);
+      await tapThrough(tester, 'Give Read Permission');
+      await tapThrough(tester, 'Log in to Canvas');
+
+      expect(find.textContaining("couldn't open its browser"), findsOneWidget);
+      expect(find.text('Canvas is connected'), findsOneWidget);
+    });
+
+    testWidgets('the login that comes next goes straight on to the live view, and closes when it worked', (tester) async {
+      final backend = FakeBackend()
+        ..connections = [canvasConnection()]
+        ..connectionAfterGive = canvasConnection(on: true, needsLogin: true)
+        ..connectionAfterRead = canvasConnection(on: true, lastReadAt: DateTime(2026, 11, 2, 7))
+        ..takeoverToStart = canvasTakeover
+        ..finished = const FinishedTakeover(siteName: 'Canvas', signedIn: true, title: 'Dashboard');
+      await openConnection(tester, backend);
+      await tapThrough(tester, 'Give Read Permission');
+      await tapThrough(tester, 'Log in to Canvas');
+
+      expect(find.text('live view of ${canvasTakeover.liveViewUrl}'), findsOneWidget);
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+
+      expect(backend.reads, ['canvas']);
+      expect(find.text('Canvas is connected'), findsNothing);
+      expect(find.text('On. Last read Monday, November 2, 2026 at 7:00 AM.'), findsOneWidget);
     });
   });
 
   group('logging in', () {
     testWidgets('is offered only once the Read Permission is given', (tester) async {
-      await openTab(tester, FakeBackend()..connections = [canvasConnection()], 'You');
+      await openConnections(tester, FakeBackend()..connections = [canvasConnection()]);
 
       expect(find.text('Log in to Canvas'), findsNothing);
-      expect(find.text('Connect'), findsOneWidget);
+
+      await tapThrough(tester, 'Canvas');
+      await tester.scrollUntilVisible(find.text('Give Read Permission'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.pump();
+
+      expect(find.text('Give Read Permission'), findsOneWidget);
+      expect(find.text('Log in to Canvas'), findsNothing);
     });
 
     testWidgets('is offered on a Connection that needs one, and not on one that has no login', (tester) async {
-      await openTab(
-        tester,
-        FakeBackend()..connections = [canvasConnection(on: true), canvasConnection(id: 'other', name: 'Other', on: true, logsIn: false)],
-        'You',
-      );
+      final backend = FakeBackend()..connections = [canvasConnection(on: true), canvasConnection(id: 'other', name: 'Other', on: true, logsIn: false)];
+      await openConnection(tester, backend);
 
       expect(find.text('Log in to Canvas'), findsOneWidget);
+
+      await goBack(tester);
+      await tapThrough(tester, 'Other');
+
+      expect(find.text('Read now'), findsOneWidget);
       expect(find.text('Log in to Other'), findsNothing);
     });
 
@@ -125,12 +194,9 @@ void main() {
         ..connectionAfterRead = canvasConnection(on: true, lastReadAt: DateTime(2026, 11, 2, 7))
         ..takeoverToStart = canvasTakeover
         ..finished = const FinishedTakeover(siteName: 'Canvas', signedIn: true, title: 'Dashboard');
-      await openTab(tester, backend, 'You');
+      await openConnection(tester, backend);
 
-      await tester.ensureVisible(find.text('Log in to Canvas'));
-      await tester.pump();
-      await tester.tap(find.text('Log in to Canvas'));
-      await tester.pumpAndSettle();
+      await tapThrough(tester, 'Log in to Canvas');
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
 
@@ -145,12 +211,9 @@ void main() {
         ..connections = [canvasConnection(on: true, needsLogin: true)]
         ..takeoverToStart = canvasTakeover
         ..finished = const FinishedTakeover(siteName: 'Canvas', signedIn: false);
-      await openTab(tester, backend, 'You');
+      await openConnection(tester, backend);
 
-      await tester.ensureVisible(find.text('Log in to Canvas'));
-      await tester.pump();
-      await tester.tap(find.text('Log in to Canvas'));
-      await tester.pumpAndSettle();
+      await tapThrough(tester, 'Log in to Canvas');
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
 
@@ -163,24 +226,40 @@ void main() {
         ..connections = [canvasConnection()]
         ..takeoverUnderWay = canvasTakeover
         ..takeoverToStart = canvasTakeover;
-      await openTab(tester, backend, 'You');
+      await openConnections(tester, backend);
+
+      expect(find.text('Needs you to log in'), findsOneWidget);
+
+      await tapThrough(tester, 'Canvas');
 
       expect(find.text('Continue logging in to Canvas'), findsOneWidget);
     });
   });
 
   group('when the login has expired', () {
+    const expiredWords = 'Buddy needs you to log in to Canvas before it can read it.';
+
     Connection expired() => canvasConnection(
           on: true,
           needsLogin: true,
-          problem: 'Buddy needs you to log in to Canvas before it can read it.',
+          problem: expiredWords,
           lastReadAt: DateTime(2026, 11, 2, 7),
         );
 
-    testWidgets('the You tab says so, with a button', (tester) async {
+    testWidgets('the You tab says so, on the way to a button', (tester) async {
       await openTab(tester, FakeBackend()..connections = [expired()], 'You');
 
-      expect(find.text('Buddy needs you to log in to Canvas before it can read it.'), findsOneWidget);
+      expect(find.text('Canvas needs login'), findsOneWidget);
+
+      await tapThrough(tester, 'Connections');
+
+      // Once on the row, not twice in different words.
+      expect(find.text('Needs you to log in'), findsOneWidget);
+      expect(find.text(expiredWords), findsNothing);
+
+      await tapThrough(tester, 'Canvas');
+
+      expect(find.text('Buddy needs you to log in before it can read this.'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Log in to Canvas'), findsOneWidget);
     });
 
@@ -192,7 +271,7 @@ void main() {
 
       expect(find.text('Canvas needs you to log in'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Log in to Canvas'));
+      await tester.tap(find.text('Log in to Canvas'));
       await tester.pumpAndSettle();
 
       expect(find.text('live view of ${canvasTakeover.liveViewUrl}'), findsOneWidget);
@@ -214,7 +293,7 @@ void main() {
 
       expect(find.text('Canvas needs you to log in'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Log in to Canvas'));
+      await tester.tap(find.text('Log in to Canvas'));
       await tester.pumpAndSettle();
 
       expect(find.text('live view of ${canvasTakeover.liveViewUrl}'), findsOneWidget);
@@ -227,29 +306,24 @@ void main() {
       await openUnlockedApp(tester, backend);
       await settleApp(tester);
 
-      expect(find.text('Canvas is connected. You can revoke this on the You tab.'), findsOneWidget);
+      expect(find.text('Canvas is connected. You can revoke this in You > Connections.'), findsOneWidget);
       expect(find.text('Log in to Canvas'), findsNothing);
     });
   });
 
   group('revoking', () {
-    Future<void> revoke(WidgetTester tester) async {
-      await tester.ensureVisible(find.text('Revoke'));
-      await tester.pump();
-      await tester.tap(find.text('Revoke'));
-      await tester.pumpAndSettle();
-    }
+    Finder inDialog(String words) => find.descendant(of: find.byType(AlertDialog), matching: find.text(words));
 
     testWidgets('says the login goes too, and that it did', (tester) async {
       final backend = FakeBackend()
         ..connections = [canvasConnection(on: true)]
         ..connectionAfterRevoke = canvasConnection();
-      await openTab(tester, backend, 'You');
-      await revoke(tester);
+      await openConnection(tester, backend);
+      await tapThrough(tester, 'Revoke');
 
       expect(find.textContaining('your login in Buddy\'s Browser'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(TextButton, 'Revoke').last);
+      await tester.tap(inDialog('Revoke'));
       await tester.pumpAndSettle();
 
       expect(backend.revoked, ['canvas']);
@@ -260,9 +334,9 @@ void main() {
       final backend = FakeBackend()
         ..connections = [canvasConnection(on: true)]
         ..connectionAfterRevoke = canvasConnection(loginNotDeletedYet: true);
-      await openTab(tester, backend, 'You');
-      await revoke(tester);
-      await tester.tap(find.widgetWithText(TextButton, 'Revoke').last);
+      await openConnection(tester, backend);
+      await tapThrough(tester, 'Revoke');
+      await tester.tap(inDialog('Revoke'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining("couldn't delete your login yet"), findsWidgets);
@@ -272,9 +346,10 @@ void main() {
       final backend = FakeBackend()
         ..connections = [canvasConnection(id: 'other', name: 'Other', on: true, logsIn: false)]
         ..connectionAfterRevoke = canvasConnection(id: 'other', name: 'Other', logsIn: false);
-      await openTab(tester, backend, 'You');
-      await revoke(tester);
+      await openConnection(tester, backend, name: 'Other');
+      await tapThrough(tester, 'Revoke');
 
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.textContaining('login'), findsNothing);
     });
   });
@@ -289,8 +364,10 @@ void main() {
         'Today',
       );
 
-      expect(find.bySemanticsLabel('Canvas needs you to log in'), findsOneWidget);
-      expect(tester.getSemantics(find.bySemanticsLabel('Canvas needs you to log in')).flagsCollection.isHeader, isTrue);
+      final request = find.bySemanticsLabel('Canvas needs you to log in');
+      expect(request, findsOneWidget);
+      expect(tester.getSemantics(request).flagsCollection.isHeader, isTrue);
+      expect(find.bySemanticsLabel(RegExp("^Buddy can't read Canvas until you do\\.")), findsOneWidget);
       expect(find.bySemanticsLabel('Log in to Canvas'), findsOneWidget);
       handle.dispose();
     });
@@ -298,26 +375,35 @@ void main() {
     testWidgets('the warning on the card is read out', (tester) async {
       useOrdinaryPhone(tester);
       final handle = tester.ensureSemantics();
-      await openTab(tester, FakeBackend()..connections = [canvasConnection()], 'You');
-      await tester.ensureVisible(find.text('Connect'));
-      await tester.pump();
-      await tester.tap(find.text('Connect'));
-      await tester.pumpAndSettle();
+      await openConnection(tester, FakeBackend()..connections = [canvasConnection()]);
 
       expect(find.bySemanticsLabel('Warning: $warning'), findsOneWidget);
       handle.dispose();
     });
 
-    testWidgets('the You tab, Today tab and card meet the tap target, label and contrast guidelines', (tester) async {
+    testWidgets('the You tab, Today tab, the way to a login and the card meet the tap target, label and contrast guidelines', (tester) async {
       useOrdinaryPhone(tester);
       final handle = tester.ensureSemantics();
       final backend = FakeBackend()
-        ..connections = [canvasConnection(on: true, needsLogin: true, problem: 'Buddy needs you to log in to Canvas.')];
+        ..connections = [
+          canvasConnection(on: true, needsLogin: true, problem: 'Buddy needs you to log in to Canvas.'),
+          canvasConnection(id: 'other', name: 'Other'),
+        ];
       await openTab(tester, backend, 'Today');
       await expectGuidelines(tester);
 
-      await tester.tap(inTabs('You'));
+      await goToTab(tester, 'You');
       await settleApp(tester);
+      await expectGuidelines(tester);
+
+      await tapThrough(tester, 'Connections');
+      await expectGuidelines(tester);
+
+      await tapThrough(tester, 'Canvas');
+      await expectGuidelines(tester);
+
+      await goBack(tester);
+      await tapThrough(tester, 'Other');
       await expectGuidelines(tester);
       handle.dispose();
     });
@@ -335,14 +421,20 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('the You tab fits at twice the text size on a small phone', (tester) async {
+    testWidgets('the You tab and the way to a login fit at twice the text size on a small phone', (tester) async {
       useSmallPhoneWithLargeText(tester);
       final backend = FakeBackend()
         ..connections = [canvasConnection(on: true, needsLogin: true, problem: 'Buddy needs you to log in to Canvas before it can read it.')];
       await openTab(tester, backend, 'You');
+      expect(tester.takeException(), isNull, reason: 'overflow on the You tab');
 
-      expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('Log in to Canvas'));
+      await tapThrough(tester, 'Connections');
+      expect(tester.takeException(), isNull, reason: 'overflow on the list of Connections');
+
+      await tapThrough(tester, 'Canvas');
+      expect(tester.takeException(), isNull, reason: "overflow on the Connection's own screen");
+
+      await tester.scrollUntilVisible(find.text('Log in to Canvas'), 200, scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
       expect(find.text('Log in to Canvas').hitTestable(), findsOneWidget);
     });
@@ -352,23 +444,19 @@ void main() {
       await openTab(tester, FakeBackend()..connections = [canvasConnection(on: true, needsLogin: true)], 'Today');
 
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('Log in to Canvas'));
+      await tester.scrollUntilVisible(find.text('Log in to Canvas'), 200, scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
       expect(find.text('Log in to Canvas').hitTestable(), findsOneWidget);
     });
 
     testWidgets('the card fits at twice the text size on a small phone, with its warning', (tester) async {
       useSmallPhoneWithLargeText(tester);
-      await openTab(tester, FakeBackend()..connections = [canvasConnection()], 'You');
-      await tester.ensureVisible(find.text('Connect'));
-      await tester.pump();
-      await tester.tap(find.text('Connect'));
-      await tester.pumpAndSettle();
+      await openConnection(tester, FakeBackend()..connections = [canvasConnection()]);
 
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('Give Read Permission'));
-      await tester.pump();
-      expect(find.text('Give Read Permission'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Give Read Permission'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Give Read Permission').hitTestable(), findsOneWidget);
     });
   });
 }

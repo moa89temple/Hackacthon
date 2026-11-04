@@ -171,6 +171,7 @@ class GuidebookSource {
 class GuidebookItem {
   const GuidebookItem({
     required this.id,
+    this.isContact = false,
     required this.name,
     required this.summary,
     this.cost,
@@ -184,6 +185,7 @@ class GuidebookItem {
 
   factory GuidebookItem.fromJson(Map<String, dynamic> json) => GuidebookItem(
         id: json['id'] as int,
+        isContact: json['kind'] == 'contact',
         name: json['name'] as String,
         summary: json['summary'] as String,
         cost: json['cost'] as String?,
@@ -198,6 +200,9 @@ class GuidebookItem {
       );
 
   final int id;
+
+  /// A Contact, as opposed to a Resource.
+  final bool isContact;
   final String name;
   final String summary;
   final String? cost;
@@ -372,16 +377,23 @@ class TaskCardItem extends ConversationItem {
 }
 
 class ChatMessage extends ConversationItem {
-  const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote});
+  const ChatMessage({required this.isFromBuddy, required this.text, this.hiddenNote, this.sentAt});
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
         isFromBuddy: json['role'] == 'buddy',
         text: json['text'] as String,
         hiddenNote: json['hiddenNote'] as String?,
+        sentAt: switch (json['sentAt']) {
+          final String at => DateTime.parse(at),
+          _ => null,
+        },
       );
 
   final bool isFromBuddy;
   final String text;
+
+  /// When it was sent. Buddy's opening has no time of its own.
+  final DateTime? sentAt;
 
   /// On a Student's message that had something hidden, what to tell them about it.
   final String? hiddenNote;
@@ -447,9 +459,10 @@ class AddressRequest {
 
 /// What the Read Permission card says.
 class ReadPermissionCardContent {
-  const ReadPermissionCardContent({required this.reads, required this.notes, this.warning, this.address});
+  const ReadPermissionCardContent({this.why, required this.reads, required this.notes, this.warning, this.address});
 
   factory ReadPermissionCardContent.fromJson(Map<String, dynamic> json) => ReadPermissionCardContent(
+        why: json['why'] as String?,
         reads: [for (final line in json['reads'] as List<dynamic>) line as String],
         notes: [for (final line in json['notes'] as List<dynamic>) line as String],
         warning: json['warning'] as String?,
@@ -458,6 +471,9 @@ class ReadPermissionCardContent {
           _ => null,
         },
       );
+
+  /// What the Student gets from saying yes, when Buddy's code has something specific to say.
+  final String? why;
 
   /// Exactly what Buddy will read.
   final List<String> reads;
@@ -593,9 +609,10 @@ class ReplyDecision {
 /// One thing in the Student's record of what Buddy read and did. All of it is in the backend's own
 /// words, so that an entry of a kind added later shows up without a new version of the app.
 class ActivityEntry {
-  const ActivityEntry({required this.title, this.detail, required this.at, this.decision});
+  const ActivityEntry({this.kind = '', required this.title, this.detail, required this.at, this.decision});
 
   factory ActivityEntry.fromJson(Map<String, dynamic> json) => ActivityEntry(
+        kind: json['kind'] as String? ?? '',
         title: json['title'] as String,
         detail: json['detail'] as String?,
         at: DateTime.parse(json['at'] as String),
@@ -605,6 +622,8 @@ class ActivityEntry {
         },
       );
 
+  /// What sort of thing it was, in the backend's terms. Only used to sort entries: the words are in [title].
+  final String kind;
   final String title;
   final String? detail;
   final DateTime at;
@@ -775,6 +794,9 @@ abstract interface class BuddyBackend implements RoadmapBackend, SendingBackend,
 
   /// Reads now. A read that fails shows in what comes back.
   Future<Connection> readConnection(String id);
+
+  /// Every Resource and Contact, what costs nothing first, then by name.
+  Future<List<GuidebookItem>> loadGuidebook();
 
   /// Hides the item for every Student. Also succeeds if the item has already gone.
   Future<void> reportGuidebookItem(int id);
@@ -977,6 +999,15 @@ class HttpBuddyBackend with HttpRoadmapCalls, HttpSendingCalls, HttpBriefingCall
     final response = await _client.post(_connectionUrl(id, 'read'), headers: _keyHeader);
     _check(response.statusCode, 'Reading a Connection');
     return _parseConnection(response);
+  }
+
+  @override
+  Future<List<GuidebookItem>> loadGuidebook() async {
+    final response = await _client.get(_baseUrl.resolve('/guidebook/items'), headers: _keyHeader);
+    _check(response.statusCode, 'Loading the Guidebook');
+    return [
+      for (final item in _decode(response)['items'] as List<dynamic>) GuidebookItem.fromJson(item as Map<String, dynamic>),
+    ];
   }
 
   @override

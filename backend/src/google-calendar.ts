@@ -29,6 +29,7 @@ export const googleCalendar: ConnectionType = {
   id: GOOGLE_CALENDAR_ID,
   name: "Google Calendar",
   card: {
+    why: "So Buddy can see when you're free when it helps you plan.",
     reads: [
       `The name, time and place of each event on this one calendar, for the next ${DAYS_AHEAD} days, and whether it's marked busy or free.`,
     ],

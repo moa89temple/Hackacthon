@@ -101,6 +101,7 @@ export const handshake: ConnectionType = {
   name: HANDSHAKE_NAME,
   logsIn: true,
   card: {
+    why: "So Buddy can find jobs and events that fit your Goals.",
     reads: [
       "Jobs and internships on Handshake's job list, and events on its events list: the first ones each list shows, and each one's own page.",
       "Those that fit your Goals and have a deadline or a date become Opportunities, each with its date, what it costs, and its Handshake page as its Source.",

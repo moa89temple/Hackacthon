@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
 import 'chat_controller.dart';
 import 'crisis_card.dart';
 
 const _couldNotOpen = "Your phone couldn't open that.";
 const _couldNotReport = "Buddy couldn't send your Report. Check that the backend is running, then try again.";
-const _mostSourcesShown = 3;
 
 /// A Resource or Contact from the Guidebook, with its Source. Everything on it comes from the
 /// backend's own record of the page, never from what Claude wrote.
-class GuidebookCard extends StatefulWidget {
+class GuidebookCard extends StatelessWidget {
   const GuidebookCard({super.key, required this.card, required this.chat, required this.openPhone, required this.announce});
 
   final GuidebookCardItem card;
@@ -21,10 +22,57 @@ class GuidebookCard extends StatefulWidget {
   final bool announce;
 
   @override
-  State<GuidebookCard> createState() => _GuidebookCardState();
+  Widget build(BuildContext context) {
+    final item = card.item;
+    if (item == null) return _Gone(reportedJustNow: card.reportedJustNow);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      // It holds several controls, so it's a set of separate nodes rather than one.
+      child: Card(
+        semanticContainer: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: GuidebookItemBody(item: item, openPhone: openPhone, report: chat.report, announce: announce, showsName: true),
+        ),
+      ),
+    );
+  }
 }
 
-class _GuidebookCardState extends State<GuidebookCard> {
+/// What's known about a Resource or Contact, and what can be done with it, wherever it's shown.
+class GuidebookItemBody extends StatefulWidget {
+  const GuidebookItemBody({
+    super.key,
+    required this.item,
+    required this.openPhone,
+    required this.report,
+    this.announce = false,
+    this.showsName = false,
+    this.largeActions = false,
+    this.onReported,
+    this.extraAction,
+  });
+
+  final GuidebookItem item;
+  final PhoneOpener openPhone;
+
+  /// Throws if the Report didn't get there.
+  final Future<void> Function(GuidebookItem item) report;
+  final bool announce;
+
+  /// On a screen, the name is already the title.
+  final bool showsName;
+
+  /// Calling or emailing is what the screen is for, so there they're full buttons.
+  final bool largeActions;
+  final VoidCallback? onReported;
+  final Widget? extraAction;
+
+  @override
+  State<GuidebookItemBody> createState() => _GuidebookItemBodyState();
+}
+
+class _GuidebookItemBodyState extends State<GuidebookItemBody> {
   String? _problem;
 
   Future<void> _open(Uri address) async {
@@ -37,7 +85,8 @@ class _GuidebookCardState extends State<GuidebookCard> {
     if (mounted) setState(() => _problem = opened ? null : _couldNotOpen);
   }
 
-  Future<void> _report(GuidebookItem item) async {
+  Future<void> _report() async {
+    final item = widget.item;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -48,51 +97,49 @@ class _GuidebookCardState extends State<GuidebookCard> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Report')),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: BuddyColors.problem),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Report'),
+          ),
         ],
       ),
     );
     if (confirmed != true) return;
     try {
-      await widget.chat.report(item);
+      await widget.report(item);
+      widget.onReported?.call();
     } on Exception {
       if (mounted) setState(() => _problem = _couldNotReport);
     }
   }
 
-  Widget _link(String label, {required String semanticsLabel, required VoidCallback? onPressed}) {
-    return TextButton(
-      style: TextButton.styleFrom(alignment: AlignmentDirectional.centerStart),
-      onPressed: onPressed,
-      child: Text(label, semanticsLabel: semanticsLabel),
-    );
-  }
-
-  Widget _source(BuildContext context, GuidebookSource source) {
-    final address = Uri.tryParse(source.url);
-    final lastSeen = MaterialLocalizations.of(context).formatFullDate(source.lastSeenAt.toLocal());
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _link(
-          'Source: ${source.title}',
-          semanticsLabel: 'Open Source: ${source.title}, last seen $lastSeen',
-          onPressed: address?.scheme == 'https' ? () => _open(address!) : null,
-        ),
-        ExcludeSemantics(child: Text('Last seen $lastSeen', style: Theme.of(context).textTheme.bodySmall)),
-      ],
+  Widget _action(String label, {required IconData icon, required String semanticsLabel, required VoidCallback onPressed, bool isFirst = false}) {
+    final words = Text(label, semanticsLabel: semanticsLabel);
+    if (widget.largeActions) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: isFirst
+            ? FilledButton.icon(icon: Icon(icon), label: words, onPressed: onPressed)
+            : OutlinedButton.icon(icon: Icon(icon), label: words, onPressed: onPressed),
+      );
+    }
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: TextButton.icon(
+        style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8)),
+        icon: Icon(icon, size: 20),
+        label: words,
+        onPressed: onPressed,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final item = widget.card.item;
-    if (item == null) return _Gone(reportedJustNow: widget.card.reportedJustNow);
-
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
+    final item = widget.item;
     final dial = item.phoneToDial;
-    final moreSources = item.sources.length - _mostSourcesShown;
     final lines = [
       item.summary,
       ?item.cost,
@@ -100,65 +147,53 @@ class _GuidebookCardState extends State<GuidebookCard> {
       if (item.place case final place?) 'Where: $place',
       if (item.hours case final hours?) 'When: $hours',
     ];
-    return Card(
-      // It holds several controls, so it's a set of separate nodes rather than one.
-      semanticContainer: false,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // One item, because on Android its lines otherwise run together with the buttons'.
-            Semantics(
-              container: true,
-              liveRegion: widget.announce,
-              label: 'Guidebook card: ${item.name}. ${lines.join('\n')}',
-              excludeSemantics: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.name, style: theme.textTheme.titleMedium),
-                  for (final line in lines) Padding(padding: const EdgeInsets.only(top: 4), child: Text(line)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            if (dial != null)
-              _link(
-                'Call ${item.phone}',
-                semanticsLabel: 'Call ${item.name} at ${item.phone}',
-                onPressed: () => _open(Uri.parse('tel:$dial')),
-              ),
-            if (item.email case final email?)
-              _link(
-                'Email $email',
-                semanticsLabel: 'Email ${item.name} at $email',
-                onPressed: () => _open(Uri(scheme: 'mailto', path: email)),
-              ),
-            for (final source in item.sources.take(_mostSourcesShown)) _source(context, source),
-            if (moreSources > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('Also on $moreSources more of its pages.', style: theme.textTheme.bodySmall),
-              ),
-            if (_problem case final problem?)
-              Semantics(
-                container: true,
-                liveRegion: true,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(problem, style: TextStyle(color: colors.error)),
-                ),
-              ),
-            _link(
-              'Report',
-              semanticsLabel: 'Report ${item.name} as wrong or out of date',
-              onPressed: () => _report(item),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // One item, because on Android its lines otherwise run together with the buttons'.
+        Semantics(
+          container: true,
+          liveRegion: widget.announce,
+          label: 'Guidebook card: ${item.name}. ${lines.join('\n')}',
+          excludeSemantics: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.showsName) Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(item.name, style: theme.textTheme.titleMedium)),
+              for (final (index, line) in lines.indexed) Padding(padding: EdgeInsets.only(top: index == 0 ? 0 : 4), child: Text(line)),
+            ],
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        if (dial != null)
+          _action(
+            'Call ${item.phone}',
+            icon: Icons.call_outlined,
+            isFirst: true,
+            semanticsLabel: 'Call ${item.name} at ${item.phone}',
+            onPressed: () => _open(Uri.parse('tel:$dial')),
+          ),
+        if (item.email case final email?)
+          _action(
+            'Email $email',
+            icon: Icons.mail_outline,
+            isFirst: dial == null,
+            semanticsLabel: 'Email ${item.name} at $email',
+            onPressed: () => _open(Uri(scheme: 'mailto', path: email)),
+          ),
+        if (widget.extraAction case final action?) Padding(padding: const EdgeInsets.only(top: 8), child: action),
+        const SizedBox(height: 4),
+        SourceLinks(sources: item.sources, open: _open),
+        if (_problem case final problem?) ProblemNote(problem),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton(
+            style: TextButton.styleFrom(foregroundColor: BuddyColors.inkSoft, padding: EdgeInsets.zero),
+            onPressed: _report,
+            child: Text('Report', semanticsLabel: 'Report ${item.name} as wrong or out of date'),
+          ),
+        ),
+      ],
     );
   }
 }

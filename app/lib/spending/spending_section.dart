@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design/parts.dart';
+import '../design/theme.dart';
 import 'spending_controller.dart';
 
 const _nanodollarsPerCent = 10000000;
@@ -31,65 +33,69 @@ String moneyAloud(int nanodollars) {
   ].join(' and ');
 }
 
-/// The You tab's section on what Buddy has spent on Claude. The backend does all the adding up.
-class SpendingSection extends StatelessWidget {
-  const SpendingSection({super.key, required this.spending});
+/// What Buddy has spent on Claude. The backend does all the adding up.
+class SpendingScreen extends StatelessWidget {
+  const SpendingScreen({super.key, required this.spending});
 
   final SpendingController spending;
 
+  Widget _amount(BuildContext context, String period, int nanodollars) {
+    final text = Theme.of(context).textTheme;
+    // Each its own stop for a screen reader, because on Android their lines otherwise run together.
+    return Semantics(
+      container: true,
+      label: '$period: ${moneyAloud(nanodollars)}',
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          spacing: 12,
+          children: [
+            Text(period, style: text.titleMedium),
+            Text('$period: ${moneyOnScreen(nanodollars)}'.substring(period.length + 2), style: text.titleLarge),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ListenableBuilder(
       listenable: spending,
       builder: (context, _) {
         final summary = spending.summary;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        return SubScreen(
+          title: 'What Buddy spent',
+          subtitle: "This is what Claude cost, for chat, Tasks and background work together. A day and a month go by Philadelphia's clock.",
           children: [
-            Semantics(
-              header: true,
-              child: Text('What Buddy spent', style: theme.textTheme.titleMedium),
-            ),
-            const SizedBox(height: 8),
-            if (spending.couldNotLoad) ...[
-              Semantics(
-                liveRegion: true,
-                child: const Text("The app can't reach Buddy right now. Check that the backend is running."),
-              ),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(onPressed: spending.load, child: const Text('Try again', semanticsLabel: 'Try loading what Buddy spent again')),
-              ),
-            ] else if (summary == null)
-              const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading what Buddy spent'))
+            if (spending.couldNotLoad)
+              EmptyState(
+                icon: Icons.layers_outlined,
+                isProblem: true,
+                words: "The app can't reach Buddy right now. Check that the backend is running.",
+                action: AppLink('Try again', semanticsLabel: 'Try loading what Buddy spent again', onPressed: spending.load),
+              )
+            else if (summary == null)
+              const LoadingBlock(label: 'Loading what Buddy spent')
             else ...[
-              // Each its own stop for a screen reader, because on Android their lines otherwise run together.
-              Semantics(
-                container: true,
-                child: Text(
-                  'Today: ${moneyOnScreen(summary.todayNanodollars)}',
-                  semanticsLabel: 'Today: ${moneyAloud(summary.todayNanodollars)}',
-                ),
+              RowGroup(
+                children: [
+                  _amount(context, 'Today', summary.todayNanodollars),
+                  _amount(context, 'This month', summary.thisMonthNanodollars),
+                ],
               ),
-              Semantics(
-                container: true,
-                child: Text(
-                  'This month: ${moneyOnScreen(summary.thisMonthNanodollars)}',
-                  semanticsLabel: 'This month: ${moneyAloud(summary.thisMonthNanodollars)}',
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text("This is what Claude cost, for chat, Tasks and background work together. A day and a month go by Philadelphia's clock."),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               if (summary.backgroundStoppedForToday)
                 Semantics(
                   container: true,
                   liveRegion: true,
-                  child: Text(
-                    'Background work has stopped for today, because it reached its limit of ${moneyOnScreen(summary.backgroundLimitNanodollars)}. '
-                    'It resumes tomorrow. Chat, Tasks and Briefings keep working.',
-                    semanticsLabel: 'Background work has stopped for today, because it reached its limit of ${moneyAloud(summary.backgroundLimitNanodollars)}. '
+                  label: 'Background work has stopped for today, because it reached its limit of ${moneyAloud(summary.backgroundLimitNanodollars)}. '
+                      'It resumes tomorrow. Chat, Tasks and Briefings keep working.',
+                  excludeSemantics: true,
+                  child: NoticeCard(
+                    words: 'Background work has stopped for today, because it reached its limit of ${moneyOnScreen(summary.backgroundLimitNanodollars)}. '
                         'It resumes tomorrow. Chat, Tasks and Briefings keep working.',
                   ),
                 )
@@ -99,6 +105,7 @@ class SpendingSection extends StatelessWidget {
                   child: Text(
                     'Background work stops for the day if it reaches ${moneyOnScreen(summary.backgroundLimitNanodollars)}. Chat has no limit.',
                     semanticsLabel: 'Background work stops for the day if it reaches ${moneyAloud(summary.backgroundLimitNanodollars)}. Chat has no limit.',
+                    style: const TextStyle(color: BuddyColors.inkSoft),
                   ),
                 ),
             ],

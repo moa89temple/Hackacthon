@@ -606,6 +606,58 @@ describe("a Report", () => {
   });
 });
 
+describe("browsing the Guidebook", () => {
+  const COUNSELING = {
+    name: "Tuttleman Counseling Services",
+    summary: "Counseling for students.",
+    search_terms: ["counseling"],
+    cost_quote: "Services are free to enrolled students.",
+    cost: "free" as const,
+  };
+
+  it("lists everything it has, with each item's kind and Sources", async () => {
+    await discover([WRITING_CENTER], [COUNSELING]);
+
+    const items = await backend.guidebookItems();
+
+    expect(items.map((item) => item.name).toSorted()).toEqual(["Tuttleman Counseling Services", "Writing Center"]);
+    const writingCenter = items.find((item) => item.name === "Writing Center")!;
+    expect(writingCenter.kind).toBe("resource");
+    expect(writingCenter.sources[0].url).toBe(WRITING_CENTER_PAGE);
+  });
+
+  it("puts what costs nothing first, then goes by name", async () => {
+    officeEdits(TUTTLEMAN_CONTACT_PAGE, "Services are free to enrolled students.");
+    await discover(
+      [{ ...WRITING_CENTER, name: "Zebra Tutoring" }, { ...WRITING_CENTER, name: "Algebra Tutoring" }],
+      [COUNSELING],
+    );
+
+    const costs = (await backend.guidebookItems()).map((item) => [item.name, item.cost === "Free"]);
+
+    const free = costs.filter(([, isFree]) => isFree).map(([name]) => name);
+    const rest = costs.filter(([, isFree]) => !isFree).map(([name]) => name);
+    expect(free).toEqual(["Tuttleman Counseling Services"]);
+    expect(rest).toEqual(["Algebra Tutoring", "Zebra Tutoring"]);
+    expect(costs.map(([name]) => name)).toEqual([...free, ...rest]);
+  });
+
+  it("leaves out what was reported", async () => {
+    await discover();
+    const [item] = await backend.guidebookItems();
+
+    await backend.report(item.id);
+
+    expect(await backend.guidebookItems()).toEqual([]);
+  });
+
+  it("needs a paired phone", async () => {
+    const response = await fetch(`${backend.url}/guidebook/items`);
+
+    expect(response.status).toBe(401);
+  });
+});
+
 describe("the daily schedule", () => {
   const countReads = () => backend.web.requests.length;
 

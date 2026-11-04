@@ -384,6 +384,7 @@ export const canvasAt = (home: string): ConnectionType => ({
   name: "Canvas",
   logsIn: true,
   card: {
+    why: "So Buddy can tell you what's due and how your courses are going.",
     reads: [
       "Your courses this term, and each course's term.",
       "Each course's assignments: the name, due dates, points, and whether it's submitted, late or missing.",

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
+import 'package:buddy/chat/action_card.dart';
 import 'package:buddy/chat/crisis_card.dart';
 import 'package:buddy/sending/sending_backend.dart';
 import 'package:flutter/material.dart';
@@ -76,7 +77,21 @@ Future<void> tapThrough(WidgetTester tester, Finder target) async {
   await tester.pumpAndSettle();
 }
 
+/// Lets a tap or a scroll finish while Buddy has written nothing yet. pumpAndSettle would never return then, because
+/// the writing dots don't stop moving.
+Future<void> letFinish(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
+
 Future<void> openForm(WidgetTester tester) => tapThrough(tester, find.text(offerTitle));
+
+Future<void> openFormDuringReply(WidgetTester tester) async {
+  await tester.ensureVisible(find.text(offerTitle));
+  await letFinish(tester);
+  await tester.tap(find.text(offerTitle));
+  await letFinish(tester);
+}
 
 Finder field(String label) => find.widgetWithText(TextField, label);
 
@@ -94,7 +109,7 @@ Future<void> expectEveryResourceReachable(WidgetTester tester) async {
     final button = find.text(label, skipOffstage: false);
     expect(button, findsWidgets, reason: label);
     await tester.ensureVisible(button.first);
-    await tester.pumpAndSettle();
+    await letFinish(tester);
     expect(find.text(label).first.hitTestable(), findsOneWidget, reason: label);
   }
 }
@@ -115,13 +130,19 @@ void main() {
     });
 
     testWidgets("leaves a short reply on an ordinary phone's screen, along with the whole card", (tester) async {
-      useOrdinaryPhone(tester);
+      // An ordinary phone's height. It's twice as wide because the letters of the test font are square, about twice as
+      // wide as a phone's own, and here it's how many lines the words take that counts. With real Roboto at 412 wide,
+      // everything lands where it does here.
+      tester.view
+        ..physicalSize = const Size(824, 915)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final backend = FakeBackend();
       await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'I want to kill myself');
 
       backend.reply.add(const ReplyCrisisCard());
-      await tester.pumpAndSettle();
+      await letFinish(tester);
       backend.reply.add(ReplyDone(buddy('I am here.')));
       await backend.reply.close();
       await tester.pumpAndSettle();
@@ -139,7 +160,7 @@ void main() {
       await sendMessage(tester, 'I want to kill myself');
 
       backend.reply.add(const ReplyCrisisCard());
-      await tester.pumpAndSettle();
+      await letFinish(tester);
       for (var chunk = 0; chunk < 40; chunk++) {
         backend.reply.add(const ReplyText('I am really glad you told me. '));
         await tester.pump();
@@ -160,7 +181,7 @@ void main() {
       await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'I want to kill myself');
       backend.reply.add(const ReplyCrisisCard());
-      await tester.pumpAndSettle();
+      await letFinish(tester);
       for (var chunk = 0; chunk < 20; chunk++) {
         backend.reply.add(const ReplyText('I am really glad you told me. '));
         await tester.pump();
@@ -229,11 +250,11 @@ void main() {
       await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'I want to kill myself');
       backend.reply.add(const ReplyCrisisCard());
-      await tester.pumpAndSettle();
+      await letFinish(tester);
 
-      await openForm(tester);
+      await openFormDuringReply(tester);
       await tester.ensureVisible(field('Their email address'));
-      await tester.pumpAndSettle();
+      await letFinish(tester);
       final before = tester.getTopLeft(field('Their email address')).dy;
       backend.reply.add(const ReplyText('I am really glad you told me. '));
       await tester.pumpAndSettle();
@@ -251,7 +272,7 @@ void main() {
       await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'I want to kill myself');
       backend.reply.add(const ReplyCrisisCard());
-      await tester.pumpAndSettle();
+      await letFinish(tester);
       backend.reply.add(ReplyDone(buddy('I am here.')));
       await backend.reply.close();
       await tester.pumpAndSettle();
@@ -264,7 +285,7 @@ void main() {
 
       backend.nextReply();
       await sendMessage(tester, 'Thanks. What is a hold?');
-      await tester.pumpAndSettle();
+      await letFinish(tester);
       for (var chunk = 0; chunk < 8; chunk++) {
         backend.reply.add(const ReplyText('A hold stops you registering. '));
         await tester.pump();
@@ -328,7 +349,7 @@ void main() {
         await openUnlockedApp(tester, backend);
         await sendMessage(tester, 'I want to kill myself');
         backend.reply.add(const ReplyCrisisCard());
-        await tester.pumpAndSettle();
+        await letFinish(tester);
         await tester.ensureVisible(find.textContaining("can't go out yet"));
         await tester.pump();
 
@@ -399,11 +420,11 @@ void main() {
     testWidgets('looks again when the Student comes back from the You tab', (tester) async {
       final backend = FakeBackend()..crisisOffer = offer(whyNotYet: notConnected);
       await showCrisisCard(tester, backend);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
+      await goToTab(tester, 'You');
       await settleApp(tester);
 
       backend.crisisOffer = offer();
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await goToTab(tester, 'Buddy');
       await tester.pumpAndSettle();
 
       expect(find.text(notConnected), findsNothing);
@@ -602,7 +623,7 @@ void main() {
       await tapThrough(tester, find.text('Show me the email'));
     }
 
-    Finder onActionCard(String text) => find.descendant(of: find.byType(Card), matching: find.widgetWithText(OutlinedButton, text));
+    Finder onActionCard(String text) => find.descendant(of: find.byType(ActionCardView), matching: find.widgetWithText(OutlinedButton, text));
 
     testWidgets('the card it makes comes into view by itself, on the very turn the Crisis card came', (tester) async {
       useOrdinaryPhone(tester);
@@ -610,7 +631,7 @@ void main() {
       await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'I want to kill myself');
       backend.reply.add(const ReplyCrisisCard());
-      await tester.pumpAndSettle();
+      await letFinish(tester);
       backend.reply.add(ReplyDone(buddy('I am really glad you told me. ' * 12)));
       await backend.reply.close();
       await tester.pumpAndSettle();
@@ -701,13 +722,12 @@ void main() {
         ..sending = const SendingSettings(isLive: true, ownAddress: ownAddress);
       await showCrisisCard(tester, backend);
       await openForm(tester);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await settleApp(tester);
+      await openYouRow(tester, 'Email Buddy sends');
 
       backend.crisisOffer = offer();
-      await tester.dragUntilVisible(find.text('Back to Practice mode'), find.byType(ListView).last, const Offset(0, -200));
       await tapThrough(tester, find.text('Back to Practice mode'));
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tapThrough(tester, find.text('Back'));
+      await goToTab(tester, 'Buddy');
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Practice mode is on, so this email will go to you', skipOffstage: false), findsOneWidget);
@@ -731,10 +751,12 @@ void main() {
 
       await tapThrough(tester, onActionCard('Switch to Live'));
       await tapThrough(tester, inDialog('Switch to Live'));
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
+      await goToTab(tester, 'You');
       await settleApp(tester);
 
-      expect(find.textContaining('Live is on', skipOffstage: false), findsOneWidget);
+      expect(find.text('Live'), findsOneWidget);
+      await openYouRow(tester, 'Email Buddy sends');
+      expect(find.textContaining('Live is on'), findsOneWidget);
     });
 
     testWidgets('says why when the new card can\'t be made', (tester) async {
@@ -786,7 +808,7 @@ void main() {
       await fillIn(tester, 'Their email address', friendAddress);
       await tapThrough(tester, find.text('Show me the email'));
 
-      await tapThrough(tester, find.descendant(of: find.byType(Card), matching: find.text('Call 988')));
+      await tapThrough(tester, find.descendant(of: find.byType(ActionCardView), matching: find.text('Call 988')));
 
       expect(opened, [Uri.parse('tel:988')]);
       expect(backend.approvals, isEmpty);
@@ -894,7 +916,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       for (final label in ['Approve', 'Decline', 'Switch to Live', 'Call 988']) {
-        final onCard = find.descendant(of: find.byType(Card), matching: find.text(label, skipOffstage: false), skipOffstage: false);
+        final onCard = find.descendant(of: find.byType(ActionCardView), matching: find.text(label, skipOffstage: false), skipOffstage: false);
         await tester.ensureVisible(onCard);
         await tester.pumpAndSettle();
         expect(onCard.hitTestable(), findsOneWidget, reason: label);

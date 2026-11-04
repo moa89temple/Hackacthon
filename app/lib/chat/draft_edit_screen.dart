@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
+import '../design/parts.dart';
 
 const _couldNotSave = "Buddy couldn't save your changes. Check that the backend is running, then try again.";
 
@@ -58,72 +59,45 @@ class _DraftEditScreenState extends State<DraftEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Semantics(header: true, child: const Text('Edit Draft')),
+    return SubScreen(
+      title: 'Edit Draft',
+      // Outside the list, so that it stays above the keyboard however long the message is.
+      bottom: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_saveFailed) const ProblemNote(_couldNotSave),
+          const SizedBox(height: 4),
+          ValueListenableBuilder(
+            valueListenable: _message,
+            builder: (context, value, _) => FilledButton(
+              onPressed: value.text.trim().isEmpty || _saving ? null : _save,
+              child: const Text('Save'),
+            ),
+          ),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        ],
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  TextField(
-                    controller: _subject,
-                    keyboardType: TextInputType.text,
-                    textCapitalization: TextCapitalization.sentences,
-                    maxLines: null,
-                    decoration: const InputDecoration(labelText: 'Subject', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _message,
-                    minLines: 8,
-                    maxLines: null,
-                    keyboardType: TextInputType.multiline,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(labelText: 'Message', border: OutlineInputBorder(), alignLabelWithHint: true),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('If the last line says Buddy helped write this, you can delete it.'),
-                ],
-              ),
-            ),
-            // Outside the list, so that it stays above the keyboard however long the message is.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_saveFailed)
-                    Semantics(
-                      container: true,
-                      liveRegion: true,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(_couldNotSave, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                      ),
-                    ),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      ValueListenableBuilder(
-                        valueListenable: _message,
-                        builder: (context, value, _) => FilledButton(
-                          onPressed: value.text.trim().isEmpty || _saving ? null : _save,
-                          child: const Text('Save'),
-                        ),
-                      ),
-                      TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+      children: [
+        TextField(
+          controller: _subject,
+          keyboardType: TextInputType.text,
+          textCapitalization: TextCapitalization.sentences,
+          maxLines: null,
+          decoration: const InputDecoration(labelText: 'Subject'),
         ),
-      ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _message,
+          minLines: 8,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(labelText: 'Message', alignLabelWithHint: true),
+        ),
+        const SizedBox(height: 8),
+        const Text('If the last line says Buddy helped write this, you can delete it.'),
+      ],
     );
   }
 }

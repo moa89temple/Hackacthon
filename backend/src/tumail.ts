@@ -339,6 +339,7 @@ export const tumailAt = (home: string, appHosts: string[] = [new URL(home).hostn
   name: "TUmail",
   logsIn: true,
   card: {
+    why: "So Buddy can answer your questions about email from Temple.",
     reads: [
       "The list of recent messages in your TUmail inbox, which shows who each is from, its subject, its first words, when it came and whether it's unread. Buddy's code uses this to choose what to open. For anything not from a temple.edu address or a Contact, it keeps only how many there were, and nothing about who sent them or what they say.",
       "The messages from temple.edu addresses, such as @temple.edu and @tuhs.temple.edu, and from Contacts in Buddy's Guidebook: who sent each one, its subject, when it came and the first 1,500 characters of its words. Buddy keeps each of these while it's in the list, and for up to 30 days after it first saw it, or until it has 40 newer ones.",

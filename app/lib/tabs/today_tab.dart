@@ -4,20 +4,43 @@ import '../briefings/briefing_part.dart';
 import '../briefings/briefings_controller.dart';
 import '../chat/crisis_card.dart';
 import '../connections/connections_controller.dart';
+import '../connections/connections_section.dart';
 import '../connections/login_request.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
+import '../guidebook/guidebook_controller.dart';
+import '../guidebook/guidebook_screen.dart';
 import '../milestones/milestone_card.dart';
 import '../milestones/milestones_controller.dart';
 import '../opportunities/opportunities_controller.dart';
-import '../opportunities/opportunities_screen.dart';
 import '../opportunities/opportunity_card.dart';
+import '../roadmap/roadmap_controller.dart';
+import '../tasks/task_backend.dart';
 import '../tasks/task_card.dart';
 import '../tasks/tasks_controller.dart';
 
-const _shownAtATime = 10;
+const _shownAtATime = 5;
+const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/// The latest Briefing, the Student's Tasks, what they saved, then the Standard Milestones coming up, soonest first, each from its Source.
+/// What needs the Student today: what's waiting on them, then the latest Briefing, their Tasks, what they saved,
+/// and the dates coming up, each from its Source.
 class TodayTab extends StatefulWidget {
-  const TodayTab({super.key, required this.briefings, required this.milestones, required this.opportunities, required this.tasks, required this.connections, required this.openPhone});
+  const TodayTab({
+    super.key,
+    required this.briefings,
+    required this.milestones,
+    required this.opportunities,
+    required this.tasks,
+    required this.connections,
+    required this.roadmap,
+    required this.guidebook,
+    required this.openPhone,
+    required this.askBuddy,
+    required this.openConversation,
+    required this.openRoadmap,
+    required this.refresh,
+  });
 
   final BriefingsController briefings;
   final MilestonesController milestones;
@@ -26,7 +49,13 @@ class TodayTab extends StatefulWidget {
 
   /// Buddy asks here for any login it needs, because this is the tab the Student looks at each day.
   final ConnectionsController connections;
+  final RoadmapController roadmap;
+  final GuidebookController guidebook;
   final PhoneOpener openPhone;
+  final void Function(String words) askBuddy;
+  final VoidCallback openConversation;
+  final VoidCallback openRoadmap;
+  final Future<void> Function() refresh;
 
   @override
   State<TodayTab> createState() => _TodayTabState();
@@ -57,140 +86,221 @@ class _TodayTabState extends State<TodayTab> {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
-  Widget _message(BuildContext context, String words, {Widget? action, bool isProblem = false}) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ExcludeSemantics(child: Icon(Icons.today, size: 48, color: Theme.of(context).colorScheme.primary)),
-          const SizedBox(height: 16),
-          Semantics(container: true, liveRegion: isProblem, child: Text(words, textAlign: TextAlign.center)),
-          ?action,
-        ],
-      ),
-    );
-  }
-
-  void _openOpportunities() {
+  void _openGuidebook({GuidebookShelf shelf = GuidebookShelf.resources}) {
+    widget.guidebook.load();
     widget.opportunities.load();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => OpportunitiesScreen(opportunities: widget.opportunities, openPhone: widget.openPhone),
+        builder: (context) => GuidebookScreen(
+          guidebook: widget.guidebook,
+          opportunities: widget.opportunities,
+          openPhone: widget.openPhone,
+          askBuddy: widget.askBuddy,
+          shelf: shelf,
+        ),
       ),
     );
   }
 
-  /// There whatever has become of the dates, because what the Student saved doesn't depend on them.
-  List<Widget> _topParts(BuildContext context) {
-    final saved = widget.opportunities.saved;
-    final tasks = widget.tasks.onToday;
+  void _openTask(Task task) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => TaskScreen(
+          id: task.id,
+          tasks: widget.tasks,
+          openPhone: widget.openPhone,
+          openConversation: widget.openConversation,
+        ),
+      ),
+    );
+  }
+
+  void _openConnections() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => ConnectionsScreen(connections: widget.connections)),
+    );
+  }
+
+  String get _dateLine {
+    final now = philadelphiaNow(DateTime.now());
+    return '${_weekdays[now.weekday - 1]}, ${_months[now.month - 1]} ${now.day} · Philadelphia time';
+  }
+
+  /// A Task waiting on the Student comes before everything else that doesn't have a clock on it.
+  List<Widget> _waitingTasks() {
     return [
-      if (tasks.isNotEmpty) ...[
-        Semantics(
-          header: true,
-          child: Text('Tasks', style: Theme.of(context).textTheme.titleLarge),
-        ),
-        const SizedBox(height: 6),
-        for (final task in tasks)
-          TaskCard(
-            // Keeps each card's state with its own Task as the list changes around it.
-            key: ValueKey('task ${task.id}'),
-            task: task,
-            tasks: widget.tasks,
-            openPhone: widget.openPhone,
+      for (final task in widget.tasks.onToday.where((task) => task.state == 'needs_student')) ...[
+        NoticeCard(
+          icon: Icons.pending_actions,
+          title: task.title,
+          words: task.stateText,
+          action: OutlinedButton(
+            style: OutlinedButton.styleFrom(foregroundColor: BuddyColors.cherry, side: const BorderSide(color: BuddyColors.cherry)),
+            onPressed: () => _openTask(task),
+            child: Text('See what it needs', semanticsLabel: 'See what this Task needs: ${task.title}'),
           ),
+        ),
+        const SizedBox(height: 12),
       ],
+    ];
+  }
+
+  List<Widget> _tasksPart(BuildContext context) {
+    final tasks = widget.tasks.onToday.where((task) => task.state != 'needs_student').toList();
+    if (tasks.isEmpty) return const [];
+    return [
+      const SectionTitle('Tasks'),
+      RowGroup(children: [for (final task in tasks) TaskRow(key: ValueKey('task ${task.id}'), task: task, onTap: () => _openTask(task))]),
+      const SizedBox(height: 24),
+    ];
+  }
+
+  List<Widget> _savedPart(BuildContext context) {
+    final saved = widget.opportunities.saved;
+    return [
       if (saved.isNotEmpty) ...[
-        Semantics(
-          header: true,
-          child: Text('Saved Opportunities', style: Theme.of(context).textTheme.titleLarge),
+        const SectionTitle('Saved Opportunities'),
+        RowGroup(
+          children: [
+            for (final opportunity in saved)
+              OpportunityCard(
+                // Keeps each card's state with its own Opportunity as the list changes around it.
+                key: ValueKey('opportunity ${opportunity.id}'),
+                opportunity: opportunity,
+                opportunities: widget.opportunities,
+                openPhone: widget.openPhone,
+                inGroup: true,
+              ),
+          ],
         ),
-        const SizedBox(height: 6),
-        for (final opportunity in saved)
-          OpportunityCard(
-            // Keeps each card's state with its own Opportunity as the list changes around it.
-            key: ValueKey('opportunity ${opportunity.id}'),
-            opportunity: opportunity,
-            opportunities: widget.opportunities,
-            openPhone: widget.openPhone,
-          ),
+        const SizedBox(height: 4),
       ],
       Align(
         alignment: AlignmentDirectional.centerStart,
-        child: TextButton(onPressed: _openOpportunities, child: const Text('See Opportunities')),
+        child: AppLink('See Opportunities', onPressed: () => _openGuidebook(shelf: GuidebookShelf.opportunities)),
       ),
+      const SizedBox(height: 20),
+    ];
+  }
+
+  /// What's left of setting Buddy up, in the place it's needed. Each one goes once it's done, and so does the group.
+  List<Widget> _startPart(BuildContext context) {
+    final goals = widget.roadmap.goals;
+    final milestones = widget.roadmap.milestones;
+    final connections = widget.connections.connections;
+    if (goals == null || milestones == null || connections == null) return const [];
+    final rows = [
+      if (goals.isEmpty)
+        NavRow(
+          icon: Icons.flag_outlined,
+          title: 'Choose a Goal',
+          subtitle: 'Tell Buddy what you want from your time at Temple.',
+          onTap: () => widget.askBuddy('Help me choose a Goal.'),
+        ),
+      if (!connections.any((connection) => connection.on))
+        NavRow(
+          icon: Icons.link,
+          title: 'Connect a Temple system',
+          subtitle: 'So Buddy can tell you what is due. Nothing is read until you say yes.',
+          onTap: _openConnections,
+        ),
+      if (goals.isNotEmpty && milestones.isEmpty)
+        NavRow(
+          icon: Icons.map_outlined,
+          title: 'Build your Roadmap',
+          subtitle: 'Buddy proposes one from your Goals, and you decide.',
+          onTap: widget.openRoadmap,
+        ),
+    ];
+    if (rows.isEmpty) return const [];
+    return [
+      const SectionTitle('Get started'),
+      RowGroup(children: rows),
+      const SizedBox(height: 24),
+    ];
+  }
+
+  List<Widget> _comingUp(BuildContext context) {
+    if (widget.milestones.couldNotLoad) {
+      return [
+        EmptyState(
+          icon: Icons.calendar_today_outlined,
+          words: "Buddy couldn't load what's coming up. Check that the backend is running.",
+          isProblem: true,
+          action: AppLink('Try again', onPressed: widget.milestones.load),
+        ),
+      ];
+    }
+    final upcoming = widget.milestones.upcoming;
+    if (upcoming == null) return const [LoadingBlock()];
+    if (upcoming.isEmpty) {
+      return const [
+        EmptyState(
+          icon: Icons.calendar_today_outlined,
+          words: "No dates to show yet. Buddy reads Temple's calendar and deadline pages each day, and what's coming up will show here.",
+        ),
+      ];
+    }
+    final shown = upcoming.take(_shown).toList();
+    final more = upcoming.length - shown.length;
+    final nextBatch = more < _shownAtATime ? more : _shownAtATime;
+    return [
+      const SectionTitle('Coming up'),
+      const Text('Dates every Temple Student faces, from the registrar and Student Financial Services.'),
+      const SizedBox(height: 12),
+      RowGroup(
+        children: [
+          for (final milestone in shown)
+            // Keeps each card's state with its own date as the list changes around it.
+            MilestoneCard(key: ValueKey(milestone.id), milestone: milestone, openPhone: widget.openPhone, inGroup: true),
+        ],
+      ),
+      if (more > 0)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: AppLink(
+            'Show $nextBatch more',
+            semanticsLabel: 'Show $nextBatch more ${nextBatch == 1 ? 'date' : 'dates'}',
+            onPressed: () => setState(() => _shown += _shownAtATime),
+          ),
+        ),
     ];
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        LoginRequests(connections: widget.connections),
-        Expanded(child: _comingUp(context)),
-      ],
-    );
-  }
-
-  Widget _comingUp(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([widget.briefings, widget.milestones, widget.opportunities, widget.tasks]),
-      builder: (context, _) {
-        final upcoming = widget.milestones.upcoming;
-        final topParts = [
-          ...briefingPart(context, briefings: widget.briefings, opportunities: widget.opportunities, openPhone: widget.openPhone),
-          ..._topParts(context),
-        ];
-        Widget withTopParts(Widget below) => ListView(controller: _scroll, padding: const EdgeInsets.all(12), children: [...topParts, below]);
-        if (widget.milestones.couldNotLoad) {
-          return withTopParts(_message(
-            context,
-            "Buddy couldn't load what's coming up. Check that the backend is running.",
-            isProblem: true,
-            action: TextButton(onPressed: widget.milestones.load, child: const Text('Try again')),
-          ));
-        }
-        if (upcoming == null) return withTopParts(const Center(child: CircularProgressIndicator()));
-        if (upcoming.isEmpty) {
-          return withTopParts(_message(
-            context,
-            "No dates to show yet. Buddy reads Temple's calendar and deadline pages each day, and what's coming up will show here.",
-          ));
-        }
-
-        final shown = upcoming.take(_shown).toList();
-        final more = upcoming.length - shown.length;
-        final nextBatch = more < _shownAtATime ? more : _shownAtATime;
-        return ListView(
+      listenable: Listenable.merge([widget.briefings, widget.milestones, widget.opportunities, widget.tasks, widget.roadmap, widget.connections]),
+      builder: (context, _) => RefreshIndicator(
+        color: BuddyColors.cherry,
+        onRefresh: widget.refresh,
+        child: ListView(
           controller: _scroll,
-          padding: const EdgeInsets.all(12),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 16, BuddySizes.pageEdge, 24),
           children: [
-            ...topParts,
-            Semantics(
-              header: true,
-              child: Text('Coming up', style: Theme.of(context).textTheme.titleLarge),
+            PageTitle(
+              'Today',
+              subtitle: _dateLine,
+              trailing: AppLink('Guidebook', icon: Icons.menu_book_outlined, onPressed: _openGuidebook),
             ),
-            const SizedBox(height: 4),
-            const Text("Dates every Temple Student faces, from the registrar and Student Financial Services."),
-            const SizedBox(height: 6),
-            for (final milestone in shown)
-              // Keeps each card's state with its own date as the list changes around it.
-              MilestoneCard(key: ValueKey(milestone.id), milestone: milestone, openPhone: widget.openPhone),
-            if (more > 0)
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  onPressed: () => setState(() => _shown += _shownAtATime),
-                  child: Text(
-                    'Show $nextBatch more',
-                    semanticsLabel: 'Show $nextBatch more ${nextBatch == 1 ? 'date' : 'dates'}',
-                  ),
-                ),
-              ),
+            const SizedBox(height: 20),
+            LoginRequests(connections: widget.connections),
+            ..._waitingTasks(),
+            ...briefingPart(
+              context,
+              briefings: widget.briefings,
+              opportunities: widget.opportunities,
+              openPhone: widget.openPhone,
+              openRoadmap: widget.openRoadmap,
+            ),
+            ..._tasksPart(context),
+            ..._savedPart(context),
+            ..._startPart(context),
+            ..._comingUp(context),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }

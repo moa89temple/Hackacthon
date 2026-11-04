@@ -278,6 +278,7 @@ export const darsAt = (origin: string): ConnectionType => ({
   name: "DARS",
   logsIn: true,
   card: {
+    why: "So Buddy can see which requirements you have left, and keep your Roadmap in step.",
     reads: [
       "Your newest DARS degree audit: which requirements are complete, missing, in progress or planned, and which parts of a missing one are left.",
       "When that audit was made and which program it's for.",

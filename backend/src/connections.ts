@@ -30,6 +30,8 @@ import type { Web } from "./web.ts";
  * Student asked for: its name and its domain, once checked, are shown so that they can see what they're approving.
  */
 export interface ReadPermissionCard {
+  /** What the Student gets from saying yes, in a sentence, when Buddy's code has something specific to say. */
+  why?: string;
   /** Exactly what Buddy will read. */
   reads: string[];
   /** What else the Student should know before they tap. */

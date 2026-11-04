@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
 import '../chat/crisis_card.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
 import 'opportunities_controller.dart';
 
 const outsideTempleLabel = 'Outside Temple';
 const _couldNotOpen = "Your phone couldn't open that.";
 const _couldNotSave = "Buddy couldn't change that. Check that the backend is running, then try again.";
 const _couldNotReport = "Buddy couldn't send your Report. Check that the backend is running, then try again.";
-const _mostSourcesShown = 3;
 
 /// An Opportunity with its date, its cost and its Source, wherever it shows. Everything on it comes from the
 /// backend's own record of the page, never from what Claude wrote.
@@ -19,6 +20,7 @@ class OpportunityCard extends StatefulWidget {
     required this.opportunities,
     required this.openPhone,
     this.announce = false,
+    this.inGroup = false,
   });
 
   final Opportunity opportunity;
@@ -27,6 +29,9 @@ class OpportunityCard extends StatefulWidget {
 
   /// True when it has just appeared, so it should be read out.
   final bool announce;
+
+  /// A row in a group, which has its own outline.
+  final bool inGroup;
 
   @override
   State<OpportunityCard> createState() => _OpportunityCardState();
@@ -65,7 +70,11 @@ class _OpportunityCardState extends State<OpportunityCard> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Report')),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: BuddyColors.problem),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Report'),
+          ),
         ],
       ),
     );
@@ -77,22 +86,6 @@ class _OpportunityCardState extends State<OpportunityCard> {
     }
   }
 
-  Widget _source(BuildContext context, GuidebookSource source) {
-    final address = Uri.tryParse(source.url);
-    final lastSeen = MaterialLocalizations.of(context).formatFullDate(source.lastSeenAt.toLocal());
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextButton(
-          style: TextButton.styleFrom(alignment: AlignmentDirectional.centerStart),
-          onPressed: address?.scheme == 'https' ? () => _open(address!) : null,
-          child: Text('Source: ${source.title}', semanticsLabel: 'Open Source: ${source.title}, last seen $lastSeen'),
-        ),
-        ExcludeSemantics(child: Text('Last seen $lastSeen', style: Theme.of(context).textTheme.bodySmall)),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(listenable: widget.opportunities, builder: (context, _) => _card(context));
@@ -100,11 +93,14 @@ class _OpportunityCardState extends State<OpportunityCard> {
 
   Widget _card(BuildContext context) {
     final opportunity = widget.opportunity;
-    if (widget.opportunities.wasReported(opportunity)) return const GoneOpportunityNote(reportedJustNow: true);
+    if (widget.opportunities.wasReported(opportunity)) {
+      return widget.inGroup
+          ? const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: GoneOpportunityNote(reportedJustNow: true))
+          : const GoneOpportunityNote(reportedJustNow: true);
+    }
 
     final theme = Theme.of(context);
     final saved = widget.opportunities.isSaved(opportunity);
-    final moreSources = opportunity.sources.length - _mostSourcesShown;
     final lines = [
       opportunity.summary,
       opportunity.when,
@@ -118,67 +114,77 @@ class _OpportunityCardState extends State<OpportunityCard> {
       ...lines,
       if (saved) 'Saved',
     ].map((line) => line.endsWith('.') ? line : '$line.').join(' ');
-    return Card(
-      // It holds several controls, so it's a set of separate nodes rather than one.
-      semanticContainer: false,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // One item, because on Android its lines otherwise run together with the buttons'.
-            Semantics(
-              container: true,
-              liveRegion: widget.announce,
-              label: 'Opportunity: ${opportunity.name}. $spoken',
-              excludeSemantics: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (opportunity.outsideTemple)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(outsideTempleLabel, style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
-                    ),
-                  Text(opportunity.name, style: theme.textTheme.titleMedium),
-                  for (final line in lines) Padding(padding: const EdgeInsets.only(top: 4), child: Text(line)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            TextButton.icon(
-              style: TextButton.styleFrom(alignment: AlignmentDirectional.centerStart),
-              onPressed: () => _setSaved(!saved),
-              icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border),
-              label: Text(
-                saved ? 'Saved. Tap to remove' : 'Save',
-                semanticsLabel: saved ? 'Remove ${opportunity.name} from what you saved' : 'Save ${opportunity.name}',
-              ),
-            ),
-            for (final source in opportunity.sources.take(_mostSourcesShown)) _source(context, source),
-            if (moreSources > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('Also on $moreSources more of its pages.', style: theme.textTheme.bodySmall),
-              ),
-            if (_problem case final problem?)
-              Semantics(
-                container: true,
-                liveRegion: true,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const ExcludeSemantics(child: Icon(Icons.work_outline, size: 24, color: BuddyColors.ink)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // One item, because on Android its lines otherwise run together with the buttons'.
+                Semantics(
+                  container: true,
+                  liveRegion: widget.announce,
+                  label: 'Opportunity: ${opportunity.name}. $spoken',
+                  excludeSemantics: true,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (opportunity.outsideTemple)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Pill(outsideTempleLabel, tone: PillTone.warning),
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text('OPPORTUNITY', style: theme.textTheme.labelMedium),
+                        ),
+                      Text(opportunity.name, style: theme.textTheme.titleMedium),
+                      for (final line in lines) Padding(padding: const EdgeInsets.only(top: 2), child: Text(line)),
+                    ],
+                  ),
                 ),
-              ),
-            TextButton(
-              style: TextButton.styleFrom(alignment: AlignmentDirectional.centerStart),
-              onPressed: _report,
-              child: Text('Report', semanticsLabel: 'Report ${opportunity.name} as wrong or out of date'),
+                const SizedBox(height: 2),
+                SourceLinks(sources: opportunity.sources, open: _open),
+                if (_problem case final problem?) ProblemNote(problem),
+                // Wraps, so that large text puts these on separate lines rather than off the card.
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  children: [
+                    TextButton.icon(
+                      style: TextButton.styleFrom(foregroundColor: BuddyColors.cherry, padding: EdgeInsets.zero),
+                      onPressed: () => _setSaved(!saved),
+                      icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border),
+                      label: Text(
+                        saved ? 'Saved. Tap to remove' : 'Save',
+                        semanticsLabel: saved ? 'Remove ${opportunity.name} from what you saved' : 'Save ${opportunity.name}',
+                      ),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(foregroundColor: BuddyColors.inkSoft),
+                      onPressed: _report,
+                      child: Text('Report', semanticsLabel: 'Report ${opportunity.name} as wrong or out of date'),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+    if (widget.inGroup) return content;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      // It holds several controls, so it's a set of separate nodes rather than one.
+      child: Card(semanticContainer: false, child: content),
     );
   }
 }

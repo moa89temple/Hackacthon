@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
 import '../sending/sending_section.dart';
 import 'chat_controller.dart';
 import 'crisis_card.dart';
@@ -8,9 +10,12 @@ import 'crisis_card.dart';
 const _couldNotApprove =
     "The app couldn't reach Buddy, so it may or may not have started. It's safe to tap Approve again: Buddy won't do it twice.";
 const _couldNotReach = "The app couldn't reach Buddy. Check that the backend is running, then try again.";
-const _couldNotSwitch = "The app couldn't reach Buddy, so it may or may not have switched. Check on the You tab, then try again.";
+const _couldNotSwitch = "The app couldn't reach Buddy, so it may or may not have switched. Check in You > Email Buddy sends, then try again.";
 const _needSomeoneNow = "Need someone right now? You don't have to wait for this email.";
 const _couldNotCall = "Your phone couldn't open that. Dial 988 yourself, or use another phone if you can.";
+const _modeLabels = {'Practice mode', 'Live'};
+const _message = 'Message';
+const _aiLine = 'Drafted with help from Buddy, an AI assistant';
 
 /// Shows exactly what will happen, and asks for the Student's tap. What it says will happen comes from the
 /// backend's own record of the card, never from what Claude wrote in the chat, and Approve is the only
@@ -72,109 +77,175 @@ class _ActionCardViewState extends State<ActionCardView> {
     if (mounted) setState(() => _problem = opened ? null : _couldNotCall);
   }
 
+  /// The icon that goes with where the card stands. The words beside it are always the backend's.
+  (IconData, Color) get _statusLook => switch (widget.card.status) {
+        'waiting' => (Icons.schedule, BuddyColors.ink),
+        'running' => (Icons.sync, BuddyColors.ink),
+        'done' => (Icons.check_circle_outline, BuddyColors.good),
+        'unknown' => (Icons.warning_amber_rounded, BuddyColors.warningInk),
+        _ => (Icons.block, BuddyColors.inkSoft),
+      };
+
+  Widget _messageBlock(ThemeData theme, String words) {
+    // The line Buddy adds is set apart, so it's easy to spot and delete. The words themselves are exactly as they'll go.
+    final endsWithAiLine = words.trimRight().endsWith(_aiLine);
+    final body = endsWithAiLine ? words.trimRight().substring(0, words.trimRight().length - _aiLine.length).trimRight() : words;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_message, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text(body),
+          if (endsWithAiLine)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(_aiLine, style: const TextStyle(fontStyle: FontStyle.italic)),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final card = widget.card;
     final chat = widget.chat;
     final busy = chat.isBeingDecided(card);
     final lines = [for (final line in card.shows) '${line.label}: ${line.value}', ?card.note];
-    return Card(
-      // It holds several controls, so it's a set of separate nodes rather than one.
-      semanticContainer: false,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
+    final (statusIcon, statusColor) = _statusLook;
+    final mode = card.shows.where((line) => _modeLabels.contains(line.label)).firstOrNull;
+    final isLive = mode?.label == 'Live';
+    final details = card.shows.where((line) => !_modeLabels.contains(line.label)).toList();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Material(
+        color: BuddyColors.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(BuddySizes.cardRadius),
+          side: const BorderSide(color: BuddyColors.hairline),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // One item, because on Android its lines otherwise run together with the buttons'.
-            Semantics(
-              container: true,
-              liveRegion: widget.announce,
-              label: 'Action card: ${card.title}.\n${lines.join('\n')}',
-              excludeSemantics: true,
+            // Only a card that's waiting for a tap asks for attention.
+            if (card.canDecide) const SizedBox(height: 5, child: ColoredBox(color: BuddyColors.cherry)),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(card.title, style: theme.textTheme.titleMedium),
-                  for (final line in card.shows)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(line.label, style: theme.textTheme.labelMedium),
-                          Text(line.value),
+                  // One item, because on Android its lines otherwise run together with the buttons'.
+                  Semantics(
+                    container: true,
+                    liveRegion: widget.announce,
+                    label: 'Action card: ${card.title}.\n${lines.join('\n')}',
+                    excludeSemantics: true,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(card.title, style: theme.textTheme.headlineSmall),
+                        if (mode != null) ...[
+                          const SizedBox(height: 8),
+                          Pill(
+                            mode.label,
+                            tone: isLive ? PillTone.solidCherry : PillTone.cherry,
+                            icon: isLive ? Icons.send : null,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(mode.value),
                         ],
+                        const SizedBox(height: 12),
+                        const Divider(),
+                        for (final line in details)
+                          if (line.label == _message)
+                            _messageBlock(theme, line.value)
+                          else
+                            LabelledLine(label: line.label, value: line.value),
+                        const SizedBox(height: 12),
+                        const Divider(),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Semantics(
+                    container: true,
+                    liveRegion: _tapped,
+                    // Not knowing is neither a success nor a failure, and the Student has something to check.
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: card.status == 'unknown' ? BuddyColors.warningTint : null,
+                        borderRadius: BorderRadius.circular(BuddySizes.controlRadius),
+                      ),
+                      child: Padding(
+                        padding: card.status == 'unknown' ? const EdgeInsets.all(12) : EdgeInsets.zero,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ExcludeSemantics(child: Icon(statusIcon, size: 24, color: statusColor)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(card.statusText, style: theme.textTheme.titleMedium),
+                                  if (card.outcome case final outcome?) Padding(padding: const EdgeInsets.only(top: 2), child: Text(outcome)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
+                  ),
                   if (card.note case final note?)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(note, style: theme.textTheme.bodySmall),
+                      child: ExcludeSemantics(child: Text(note, style: theme.textTheme.bodyMedium?.copyWith(color: BuddyColors.inkSoft))),
                     ),
+                  if (_problem case final problem?) ProblemNote(problem),
+                  if (card.canDecide) ...[
+                    const SizedBox(height: 14),
+                    // Stacked, because side by side they'd have no room on a small phone with large text.
+                    FilledButton(
+                      onPressed: busy ? null : () => _tap(() => chat.approve(card), _couldNotApprove),
+                      child: Text('Approve', semanticsLabel: 'Approve: ${card.title}'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: busy ? null : () => _tap(() => chat.decline(card), _couldNotReach),
+                      child: Text('Decline', semanticsLabel: 'Decline: ${card.title}'),
+                    ),
+                    if (card.offersLive) ...[
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed: busy ? null : _switchToLive,
+                        child: Text('Switch to Live', semanticsLabel: 'Switch to Live: ${card.title}'),
+                      ),
+                    ],
+                  ],
+                  if (card.isRunning) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () => _tap(() async {
+                        await chat.checkCard(card);
+                        return null;
+                      }, _couldNotReach),
+                      child: Text('Check again', semanticsLabel: 'Check again: ${card.title}'),
+                    ),
+                  ],
+                  if (card.isCrisisEmail) ...[
+                    const SizedBox(height: 14),
+                    Semantics(container: true, child: Text(_needSomeoneNow, style: theme.textTheme.bodySmall)),
+                    const SizedBox(height: 6),
+                    FilledButton.icon(icon: const Icon(Icons.call), label: const Text('Call 988'), onPressed: _call988),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            Semantics(
-              container: true,
-              liveRegion: _tapped,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(card.statusText),
-                  if (card.outcome case final outcome?) Text(outcome),
-                ],
-              ),
-            ),
-            if (_problem case final problem?)
-              Semantics(
-                container: true,
-                liveRegion: true,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(problem, style: TextStyle(color: colors.error)),
-                ),
-              ),
-            if (card.canDecide) ...[
-              const SizedBox(height: 8),
-              // Stacked, because side by side they'd have no room on a small phone with large text.
-              FilledButton(
-                onPressed: busy ? null : () => _tap(() => chat.approve(card), _couldNotApprove),
-                child: Text('Approve', semanticsLabel: 'Approve: ${card.title}'),
-              ),
-              const SizedBox(height: 4),
-              OutlinedButton(
-                onPressed: busy ? null : () => _tap(() => chat.decline(card), _couldNotReach),
-                child: Text('Decline', semanticsLabel: 'Decline: ${card.title}'),
-              ),
-              if (card.offersLive) ...[
-                const SizedBox(height: 4),
-                OutlinedButton(
-                  onPressed: busy ? null : _switchToLive,
-                  child: Text('Switch to Live', semanticsLabel: 'Switch to Live: ${card.title}'),
-                ),
-              ],
-            ],
-            if (card.isRunning) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: () => _tap(() async {
-                  await chat.checkCard(card);
-                  return null;
-                }, _couldNotReach),
-                child: Text('Check again', semanticsLabel: 'Check again: ${card.title}'),
-              ),
-            ],
-            if (card.isCrisisEmail) ...[
-              const SizedBox(height: 12),
-              Semantics(container: true, child: Text(_needSomeoneNow, style: theme.textTheme.bodySmall)),
-              const SizedBox(height: 4),
-              FilledButton.icon(icon: const Icon(Icons.call), label: const Text('Call 988'), onPressed: _call988),
-            ],
           ],
         ),
       ),

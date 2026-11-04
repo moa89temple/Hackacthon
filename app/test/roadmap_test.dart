@@ -16,9 +16,21 @@ import 'support/test_app.dart';
 
 Future<void> openTab(WidgetTester tester, FakeBackend backend, String name, {PhoneOpener openPhone = pretendToOpenPhone}) async {
   await openUnlockedApp(tester, backend, openPhone: openPhone);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(name)));
+  await goToTab(tester, name);
   await tester.pumpAndSettle();
 }
+
+/// The Goals have a screen of their own, one row in from the You tab.
+Future<void> openGoals(WidgetTester tester, FakeBackend backend) async {
+  await openUnlockedApp(tester, backend);
+  await openYouRow(tester, 'Your Goals');
+}
+
+Future<void> openGoalMenu(WidgetTester tester, String goal) => tapThrough(tester, find.byTooltip('Change or remove Goal: $goal'));
+
+/// A Milestone's box on the Roadmap tab. By the widget, because a lone row's semantics label is found on the whole row,
+/// where a tap opens the Milestone instead.
+Finder doneBox(String name) => find.byWidgetPredicate((widget) => widget is Checkbox && widget.semanticLabel == 'Done: $name');
 
 void useSmallPhoneWithLargeText(WidgetTester tester) {
   tester.view
@@ -36,6 +48,16 @@ Future<void> tapThrough(WidgetTester tester, Finder target) async {
   await tester.pumpAndSettle();
 }
 
+/// A tap that starts a reply. Waiting for everything to stop would never end, because the writing dots don't stop until
+/// Buddy's first words come.
+Future<void> tapToAskBuddy(WidgetTester tester, Finder target) async {
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
+  await tester.tap(target);
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
+
 /// A chat with a Roadmap card in it, from the Student's latest message.
 Future<void> openChatWithCard(WidgetTester tester, FakeBackend backend, {PhoneOpener openPhone = pretendToOpenPhone}) async {
   await openUnlockedApp(tester, backend, openPhone: openPhone);
@@ -45,11 +67,11 @@ Future<void> openChatWithCard(WidgetTester tester, FakeBackend backend, {PhoneOp
 Finder get acceptButton => find.widgetWithText(FilledButton, 'Accept');
 
 void main() {
-  group('the Goals on the You tab', () {
+  group('the Goals, from the You tab', () {
     testWidgets('shows each of several Goals', (tester) async {
       final backend = FakeBackend()..goals = [paSchool, const Goal(id: 2, text: 'Graduate in four years')];
 
-      await openTab(tester, backend, 'You');
+      await openGoals(tester, backend);
 
       expect(find.text('Your Goals'), findsOneWidget);
       expect(find.text('Get into PA school'), findsOneWidget);
@@ -57,14 +79,14 @@ void main() {
     });
 
     testWidgets('says Buddy can help when there are none', (tester) async {
-      await openTab(tester, FakeBackend(), 'You');
+      await openGoals(tester, FakeBackend());
 
       expect(find.textContaining('Buddy can help you choose one'), findsOneWidget);
     });
 
     testWidgets('lets the Student add one', (tester) async {
       final backend = FakeBackend();
-      await openTab(tester, backend, 'You');
+      await openGoals(tester, backend);
 
       await tapThrough(tester, find.text('Add a Goal'));
       await tester.enterText(find.widgetWithText(TextField, 'Goal'), 'Study abroad');
@@ -77,8 +99,9 @@ void main() {
 
     testWidgets('lets the Student change one', (tester) async {
       final backend = FakeBackend()..goals = [paSchool];
-      await openTab(tester, backend, 'You');
+      await openGoals(tester, backend);
 
+      await openGoalMenu(tester, 'Get into PA school');
       await tapThrough(tester, find.bySemanticsLabel('Edit Goal: Get into PA school'));
       await tester.enterText(find.widgetWithText(TextField, 'Goal'), 'Become a PA');
       await tester.pump();
@@ -91,8 +114,9 @@ void main() {
       final backend = FakeBackend()
         ..goals = [paSchool]
         ..milestones = [planTerm(), unwrittenRule()];
-      await openTab(tester, backend, 'You');
+      await openGoals(tester, backend);
 
+      await openGoalMenu(tester, 'Get into PA school');
       await tapThrough(tester, find.bySemanticsLabel('Remove Goal: Get into PA school'));
 
       expect(find.textContaining('1 Milestone on your Roadmap goes with it'), findsOneWidget);
@@ -107,9 +131,10 @@ void main() {
       final backend = FakeBackend()
         ..goals = [paSchool]
         ..roadmapChangeError = Exception('no connection');
-      await openTab(tester, backend, 'You');
+      await openGoals(tester, backend);
       final handle = tester.ensureSemantics();
 
+      await openGoalMenu(tester, 'Get into PA school');
       await tapThrough(tester, find.bySemanticsLabel('Remove Goal: Get into PA school'));
       await tapThrough(tester, find.descendant(of: find.byType(AlertDialog), matching: find.text('Remove')));
 
@@ -124,8 +149,7 @@ void main() {
       await openUnlockedApp(tester, backend);
       backend.goals = [paSchool];
 
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await tester.pumpAndSettle();
+      await openYouRow(tester, 'Your Goals');
 
       expect(find.text('Get into PA school'), findsOneWidget);
     });
@@ -144,7 +168,7 @@ void main() {
       expect(find.text('By the end of Fall 2026'), findsOneWidget);
       expect(find.text('Standard Milestone'), findsOneWidget);
       expect(find.text('From: $bulletinTitle'), findsOneWidget);
-      expect(find.text('Source: $bulletinTitle'), findsOneWidget);
+      expect(find.text('Source: Biology BS'), findsOneWidget);
       expect(find.text('General college advice from Buddy, not from a Temple page.'), findsOneWidget);
       expect(acceptButton, findsOneWidget);
       expect(find.text('Not now'), findsOneWidget);
@@ -169,7 +193,7 @@ void main() {
       await openChatWithCard(tester, backend);
 
       await tapThrough(tester, acceptButton);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Roadmap')));
+      await goToTab(tester, 'Roadmap');
       await tester.pumpAndSettle();
 
       expect(find.text('Finish your Year 2 Fall courses'), findsOneWidget);
@@ -223,7 +247,7 @@ void main() {
       expect(acceptButton, findsNothing);
 
       backend.history = [student('Hello'), RoadmapCardItem(firstCard())];
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await goToTab(tester, 'Buddy');
       await tester.pumpAndSettle();
 
       expect(acceptButton, findsOneWidget);
@@ -236,7 +260,7 @@ void main() {
       await openTab(tester, backend, 'You');
 
       backend.history = [student('Hello'), RoadmapCardItem(firstCard(status: RoadmapCardStatus.outOfDate))];
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await goToTab(tester, 'Buddy');
       await tester.pumpAndSettle();
 
       expect(acceptButton, findsNothing);
@@ -247,7 +271,7 @@ void main() {
       await openTab(tester, backend, 'You');
 
       backend.history = [student('Something that would only show if the list were swapped')];
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await goToTab(tester, 'Buddy');
       await tester.pumpAndSettle();
 
       expect(find.text('Hello'), findsOneWidget);
@@ -332,7 +356,7 @@ void main() {
         },
       );
 
-      await tapThrough(tester, find.text('Source: $bulletinTitle'));
+      await tapThrough(tester, find.text('Source: Biology BS'));
 
       expect(opened, [Uri.parse(bulletinPage)]);
     });
@@ -376,7 +400,8 @@ void main() {
       await tester.pump();
 
       await tester.dragUntilVisible(find.text('Your first Roadmap'), find.byType(ListView).first, const Offset(0, 200));
-      await tester.pumpAndSettle();
+      // The writing dots above the card keep moving, so this can't wait for everything to stop.
+      await tester.pump(const Duration(seconds: 1));
       final titleAt = tester.getTopLeft(find.text('Your first Roadmap')).dy;
 
       backend.reply.add(const ReplyText('Here it is.'));
@@ -389,7 +414,7 @@ void main() {
 
       final titleNow = find.text('Your first Roadmap');
       expect(titleNow.hitTestable(), findsOneWidget);
-      // The reply below it pushes it up by the reply's height at most: nothing jumps it off the screen.
+      // The reply goes above it, and the list holds on to its bottom, so nothing moves the card off the screen.
       expect(tester.getTopLeft(titleNow).dy, lessThanOrEqualTo(titleAt));
       expect(tester.takeException(), isNull);
     });
@@ -423,7 +448,7 @@ void main() {
       await openTab(tester, backend, 'Roadmap');
 
       expect(find.textContaining("You don't have a Roadmap yet"), findsOneWidget);
-      await tapThrough(tester, find.text('Choose a Goal with Buddy'));
+      await tapToAskBuddy(tester, find.text('Choose a Goal with Buddy'));
 
       expect(backend.sent, ['Help me choose a Goal.']);
       expect(find.text('Message Buddy'), findsOneWidget);
@@ -433,7 +458,7 @@ void main() {
       final backend = FakeBackend()..goals = [paSchool];
       await openTab(tester, backend, 'Roadmap');
 
-      await tapThrough(tester, find.text('Ask Buddy for your Roadmap'));
+      await tapToAskBuddy(tester, find.text('Ask Buddy for your Roadmap'));
 
       expect(backend.sent, ['Please make me a Roadmap.']);
     });
@@ -445,12 +470,16 @@ void main() {
       await openTab(tester, backend, 'Roadmap');
 
       expect(tester.getTopLeft(find.text('Finish your Year 2 Fall courses')).dy, lessThan(tester.getTopLeft(find.text('Go to office hours in your first few weeks of class')).dy));
-      expect(find.text('Goal: Get into PA school'), findsOneWidget);
+      expect(find.text('Get into PA school'), findsOneWidget);
       expect(find.text('Standard Milestone'), findsOneWidget);
       expect(find.text('By the end of Fall 2026'), findsOneWidget);
       expect(find.text('Early in Spring 2027'), findsOneWidget);
-      expect(find.text('Source: $bulletinTitle'), findsOneWidget);
       expect(find.text('General college advice from Buddy, not from a Temple page.'), findsOneWidget);
+
+      await openRow(tester, 'Finish your Year 2 Fall courses');
+      expect(find.text('Get into PA school'), findsOneWidget);
+      expect(find.text('By the end of Fall 2026'), findsOneWidget);
+      expect(find.text('Source: Biology BS'), findsOneWidget);
     });
 
     testWidgets('says when a date has left its Source', (tester) async {
@@ -469,24 +498,50 @@ void main() {
         ];
       await openTab(tester, backend, 'Roadmap');
 
+      await openRow(tester, 'Priority registration');
+
       expect(find.textContaining('gone from its Source'), findsOneWidget);
     });
 
     testWidgets('marks a Milestone done and back', (tester) async {
       final backend = FakeBackend()..milestones = [planTerm()];
       await openTab(tester, backend, 'Roadmap');
+      const name = 'Finish your Year 2 Fall courses';
 
-      await tapThrough(tester, find.bySemanticsLabel('Done: Finish your Year 2 Fall courses'));
+      await tapThrough(tester, doneBox(name));
+      expect(backend.milestones.single.done, isTrue);
+      expect(find.text('Completed'), findsOneWidget);
+      expect(doneBox(name), findsNothing);
+
+      await tapThrough(tester, find.text('Completed'));
+      expect(tester.widget<Checkbox>(doneBox(name)).value, isTrue);
+
+      await tapThrough(tester, doneBox(name));
+      expect(backend.milestones.single.done, isFalse);
+      expect(find.text('Completed'), findsNothing);
+      expect(tester.widget<Checkbox>(doneBox(name)).value, isFalse);
+    });
+
+    testWidgets('marks a Milestone done and back on its own screen', (tester) async {
+      final backend = FakeBackend()..milestones = [planTerm()];
+      await openTab(tester, backend, 'Roadmap');
+
+      await openRow(tester, 'Finish your Year 2 Fall courses');
+      expect(find.text('Done'), findsNothing);
+
+      await tapThrough(tester, find.text('Mark as done'));
       expect(backend.milestones.single.done, isTrue);
       expect(find.text('Done'), findsOneWidget);
 
-      await tapThrough(tester, find.bySemanticsLabel('Done: Finish your Year 2 Fall courses'));
+      await tapThrough(tester, find.text('Mark as not done'));
       expect(backend.milestones.single.done, isFalse);
+      expect(find.text('Done'), findsNothing);
     });
 
     testWidgets('reorders them, and neither end moves past the end', (tester) async {
       final backend = FakeBackend()..milestones = [planTerm(id: 1, name: 'First'), planTerm(id: 2, name: 'Second')];
       await openTab(tester, backend, 'Roadmap');
+      await openRow(tester, 'Organize');
 
       await tapThrough(tester, find.byTooltip('Move down: First'));
 
@@ -495,11 +550,29 @@ void main() {
       ]);
       expect(tester.getTopLeft(find.text('Second')).dy, lessThan(tester.getTopLeft(find.text('First')).dy));
       expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.arrow_upward).first).onPressed, isNull);
+      expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.arrow_downward).last).onPressed, isNull);
     });
 
     testWidgets('removes one after asking, which it does not undo', (tester) async {
       final backend = FakeBackend()..milestones = [planTerm()];
       await openTab(tester, backend, 'Roadmap');
+      await openRow(tester, 'Finish your Year 2 Fall courses');
+
+      await tapThrough(tester, find.text('Remove from your Roadmap'));
+      await tapThrough(tester, find.text('Cancel'));
+      expect(backend.milestones, hasLength(1));
+
+      await tapThrough(tester, find.text('Remove from your Roadmap'));
+      await tapThrough(tester, find.widgetWithText(TextButton, 'Remove'));
+
+      expect(backend.milestones, isEmpty);
+      expect(find.text('Finish your Year 2 Fall courses'), findsNothing);
+    });
+
+    testWidgets('removes one from Organize too, after asking', (tester) async {
+      final backend = FakeBackend()..milestones = [planTerm()];
+      await openTab(tester, backend, 'Roadmap');
+      await openRow(tester, 'Organize');
 
       await tapThrough(tester, find.byTooltip('Remove: Finish your Year 2 Fall courses'));
       await tapThrough(tester, find.text('Cancel'));
@@ -557,6 +630,7 @@ void main() {
           return true;
         },
       );
+      await openRow(tester, 'Finish your Year 2 Fall courses');
       expect(opened, isEmpty);
 
       await tapThrough(tester, find.text('Add to Google Calendar'));
@@ -580,13 +654,17 @@ void main() {
         },
       );
 
-      expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Add to Google Calendar')).onPressed, isNull);
+      await openRow(tester, 'Odd');
+
+      final button = find.ancestor(of: find.text('Add to Google Calendar'), matching: find.byWidgetPredicate((widget) => widget is OutlinedButton));
+      expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
       expect(opened, isEmpty);
     });
 
     testWidgets('says so when the phone cannot open a link', (tester) async {
       final backend = FakeBackend()..milestones = [planTerm()];
       await openTab(tester, backend, 'Roadmap', openPhone: (address) async => false);
+      await openRow(tester, 'Finish your Year 2 Fall courses');
 
       await tapThrough(tester, find.text('Add to Google Calendar'));
 
@@ -612,11 +690,12 @@ void main() {
         ..roadmapChangeError = Exception('no connection');
       await openTab(tester, backend, 'Roadmap');
 
-      await tapThrough(tester, find.bySemanticsLabel('Done: Finish your Year 2 Fall courses'));
+      await tapThrough(tester, doneBox('Finish your Year 2 Fall courses'));
 
       expect(find.textContaining('so nothing changed'), findsOneWidget);
       expect(find.text('Finish your Year 2 Fall courses'), findsOneWidget);
-      expect(find.text('Done'), findsNothing);
+      expect(find.text('Completed'), findsNothing);
+      expect(tester.widget<Checkbox>(doneBox('Finish your Year 2 Fall courses')).value, isFalse);
     });
 
     testWidgets('shows a problem even when the Student has scrolled far down the list', (tester) async {
@@ -626,8 +705,8 @@ void main() {
         ..roadmapChangeError = Exception('no connection');
       await openTab(tester, backend, 'Roadmap');
 
-      await tester.scrollUntilVisible(find.byTooltip('Remove: Milestone number 5'), 300);
-      await tapThrough(tester, find.bySemanticsLabel('Done: Milestone number 5'));
+      await tester.scrollUntilVisible(doneBox('Milestone number 5'), 300, scrollable: find.byType(Scrollable).first);
+      await tapThrough(tester, doneBox('Milestone number 5'));
 
       final problem = find.textContaining('so nothing changed');
       expect(problem, findsOneWidget);
@@ -640,7 +719,7 @@ void main() {
       await openUnlockedApp(tester, backend);
       backend.milestones = [planTerm()];
 
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Roadmap')));
+      await goToTab(tester, 'Roadmap');
       await tester.pumpAndSettle();
 
       expect(find.text('Finish your Year 2 Fall courses'), findsOneWidget);
@@ -651,11 +730,17 @@ void main() {
         final handle = tester.ensureSemantics();
         await openTab(tester, FakeBackend()..milestones = [planTerm(done: true), unwrittenRule()], 'Roadmap');
 
+        await tapThrough(tester, find.text('Completed'));
         expect(
-          find.bySemanticsLabel(RegExp(r'^Milestone 1 of 2: Finish your Year 2 Fall courses\. Goal: Get into PA school\. By the end of Fall 2026\. Done\.')),
+          find.bySemanticsLabel(RegExp(r'^Milestone: Finish your Year 2 Fall courses\. Goal: Get into PA school\. By the end of Fall 2026\. Done\.')),
           findsOneWidget,
         );
-        expect(find.bySemanticsLabel(RegExp(r'^Milestone 2 of 2: Go to office hours .*\. Standard Milestone\. Early in Spring 2027\.')), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp(r'^Milestone: Go to office hours .*\. Standard Milestone\. Early in Spring 2027\.')), findsOneWidget);
+
+        // Its place is where the Student puts them in order.
+        await openRow(tester, 'Organize');
+        expect(find.bySemanticsLabel(RegExp(r'^Milestone 1 of 2: Finish your Year 2 Fall courses\. By the end of Fall 2026\. Done\.')), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp(r'^Milestone 2 of 2: Go to office hours .*\. Early in Spring 2027\.')), findsOneWidget);
         handle.dispose();
       });
 
@@ -665,11 +750,18 @@ void main() {
         final name = 'Finish your Year 2 Fall courses';
 
         expect(find.bySemanticsLabel('Done: $name'), findsOneWidget);
+
+        await openRow(tester, name);
+        expect(find.bySemanticsLabel('Mark as done: $name'), findsOneWidget);
+        expect(find.bySemanticsLabel('Remove: $name'), findsOneWidget);
+        expect(find.bySemanticsLabel('Add to Google Calendar: $name'), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp('^Open Source: $bulletinTitle')), findsOneWidget);
+
+        await tapThrough(tester, find.text('Back'));
+        await openRow(tester, 'Organize');
         expect(find.byTooltip('Remove: $name'), findsOneWidget);
         expect(find.byTooltip('Move up: $name'), findsOneWidget);
         expect(find.byTooltip('Move down: $name'), findsOneWidget);
-        expect(find.bySemanticsLabel('Add to Google Calendar: $name'), findsOneWidget);
-        expect(find.bySemanticsLabel(RegExp('^Open Source: $bulletinTitle')), findsOneWidget);
         handle.dispose();
       });
 
@@ -677,16 +769,29 @@ void main() {
         final handle = tester.ensureSemantics();
         await openTab(tester, FakeBackend()..milestones = [planTerm(), unwrittenRule()], 'Roadmap');
 
+        Future<void> expectGuidelines() async {
+          await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+          await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+          await expectLater(tester, meetsGuideline(textContrastGuideline));
+        }
+
         expect(tester.getSemantics(find.text('Your Roadmap')).flagsCollection.isHeader, isTrue);
-        await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-        await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-        await expectLater(tester, meetsGuideline(textContrastGuideline));
+        await expectGuidelines();
+
+        await openRow(tester, 'Finish your Year 2 Fall courses');
+        expect(tester.getSemantics(find.text('Finish your Year 2 Fall courses')).flagsCollection.isHeader, isTrue);
+        await expectGuidelines();
+
+        await tapThrough(tester, find.text('Back'));
+        await openRow(tester, 'Organize');
+        expect(tester.getSemantics(find.text('Organize')).flagsCollection.isHeader, isTrue);
+        await expectGuidelines();
         handle.dispose();
       });
 
-      testWidgets('the Goals on the You tab do too', (tester) async {
+      testWidgets('the Goals do too', (tester) async {
         final handle = tester.ensureSemantics();
-        await openTab(tester, FakeBackend()..goals = [paSchool], 'You');
+        await openGoals(tester, FakeBackend()..goals = [paSchool]);
 
         expect(tester.getSemantics(find.text('Your Goals')).flagsCollection.isHeader, isTrue);
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
@@ -701,14 +806,42 @@ void main() {
         final backend = FakeBackend()..milestones = [planTerm(), unwrittenRule()];
         await openTab(tester, backend, 'Roadmap');
         expect(tester.takeException(), isNull);
+        const name = 'Finish your Year 2 Fall courses';
 
-        await tester.scrollUntilVisible(find.byTooltip('Remove: Finish your Year 2 Fall courses'), 200);
-        await tapThrough(tester, find.byTooltip('Remove: Finish your Year 2 Fall courses'));
+        await tester.scrollUntilVisible(doneBox(name), 200, scrollable: find.byType(Scrollable).first);
+        expect(doneBox(name).hitTestable(), findsOneWidget);
+
+        await tester.scrollUntilVisible(find.text(name), 200, scrollable: find.byType(Scrollable).first);
+        await openRow(tester, name);
+        expect(tester.takeException(), isNull);
+
+        // The words are large enough that the list hasn't built the end of this screen yet.
+        Future<void> scrollToAndTap(Finder target) async {
+          await tester.scrollUntilVisible(target, 200, scrollable: find.byType(Scrollable).first);
+          await tapThrough(tester, target);
+        }
+
+        await scrollToAndTap(find.text('Mark as done'));
+        expect(tester.takeException(), isNull);
+        await scrollToAndTap(find.text('Mark as not done'));
+
+        await scrollToAndTap(find.text('Add to Google Calendar'));
+        expect(tester.takeException(), isNull);
+
+        await scrollToAndTap(find.text('Remove from your Roadmap'));
         expect(tester.takeException(), isNull);
         await tapThrough(tester, find.text('Cancel'));
 
-        await tester.scrollUntilVisible(find.text('Add to Google Calendar').first, 200);
-        await tapThrough(tester, find.text('Add to Google Calendar').first);
+        await tapThrough(tester, find.text('Back'));
+        await tester.scrollUntilVisible(find.text('Organize'), -200, scrollable: find.byType(Scrollable).first);
+        await openRow(tester, 'Organize');
+        expect(tester.takeException(), isNull);
+
+        await tapThrough(tester, find.byTooltip('Remove: $name'));
+        expect(tester.takeException(), isNull);
+        await tapThrough(tester, find.text('Cancel'));
+
+        await tapThrough(tester, find.byTooltip('Move down: $name'));
         expect(tester.takeException(), isNull);
       });
 
@@ -724,9 +857,9 @@ void main() {
         expect(find.widgetWithText(FilledButton, 'Save').hitTestable(), findsOneWidget);
       });
 
-      testWidgets('the Goals on the You tab fit too', (tester) async {
+      testWidgets('the Goals fit too', (tester) async {
         useSmallPhoneWithLargeText(tester);
-        await openTab(tester, FakeBackend()..goals = [paSchool], 'You');
+        await openGoals(tester, FakeBackend()..goals = [paSchool]);
 
         expect(tester.takeException(), isNull);
       });

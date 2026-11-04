@@ -83,7 +83,7 @@ class ConnectionsController extends ChangeNotifier {
   /// Says which Takeover it is and where its Done is, because the screen with the Done on it has been left.
   String get _stillInControl {
     final name = _takeoverSiteName ?? 'another Connection';
-    return "You're still in control of Buddy's Browser for $name, so Buddy can't read anything. On the You tab, tap Continue logging in to $name, then Done.";
+    return "You're still in control of Buddy's Browser for $name, so Buddy can't read anything. In You > Connections, tap Continue logging in to $name, then Done.";
   }
 
   /// The Student logging in through a Takeover. A login that worked gets read straight away.

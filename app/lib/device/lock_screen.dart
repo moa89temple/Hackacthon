@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design/parts.dart';
+import '../design/theme.dart';
 import '../widgets/buddy_avatar.dart';
 import 'app_lock.dart';
 
@@ -30,29 +32,22 @@ class LockScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 48),
-              const Center(child: BuddyAvatar(radius: 32)),
+              const SizedBox(height: 64),
+              const Center(child: BuddyAvatar(radius: 40)),
               const SizedBox(height: 24),
               Semantics(
                 header: true,
-                child: Text('Buddy is locked', textAlign: TextAlign.center, style: theme.textTheme.headlineSmall),
+                child: Text('Buddy is locked', textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 "Use your fingerprint, face or your phone's screen lock to open Buddy.",
                 textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(color: BuddyColors.inkSoft),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               FilledButton(onPressed: asking ? null : onUnlock, child: const Text('Unlock')),
-              if (problem != null)
-                Semantics(
-                  container: true,
-                  liveRegion: true,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Text(problem, style: TextStyle(color: theme.colorScheme.error)),
-                  ),
-                ),
+              if (problem != null) Padding(padding: const EdgeInsets.only(top: 8), child: ProblemNote(problem)),
             ],
           ),
         ),

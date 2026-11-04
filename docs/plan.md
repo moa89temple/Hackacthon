@@ -162,12 +162,14 @@ It never acts without the Student's tap, and it doesn't replace advisors.
 - **Spending:**
   - Background work stops for the day after $2 of Claude usage.
   - Chat has no cap, and the $2 doesn't stop Tasks, which have their own $1 pause.
-  - The You tab shows what Buddy spent today and this month.
+  - You > What Buddy spent shows what Buddy spent today and this month.
   - As a backstop, you set a $50 monthly limit in the Anthropic Console.
 
 ## Look and feel
 
-- **Tabs:** four of them: Buddy (chat with cards), Today, Roadmap and You.
+- **Tabs:** four of them: Today, Buddy (chat with cards), Roadmap and You. The app opens on Today, except for a Student who hasn't written anything yet, who starts in the conversation.
+- **You tab:** rows, one screen deep, each saying how that part stands: Your Goals, Profile, Connections, Nudges, Email Buddy sends, Activity, What Buddy spent, and a way to the crisis Resources.
+- **Guidebook:** a screen of its own, reached from Today, with Resources, Opportunities and Contacts to browse and search.
 - **Style:**
   - Temple cherry red as the accent color.
   - A round, friendly avatar.

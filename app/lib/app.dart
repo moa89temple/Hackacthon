@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'backend/buddy_backend.dart';
 import 'briefings/briefings_controller.dart';
@@ -11,12 +12,14 @@ import 'chat/chat_controller.dart';
 import 'chat/crisis_card.dart';
 import 'chat/outlook.dart';
 import 'connections/connections_controller.dart';
+import 'design/theme.dart';
 import 'device/app_lock.dart';
 import 'device/device_store.dart';
 import 'device/lock_screen.dart';
 import 'device/pairing_details.dart';
 import 'device/pairing_screen.dart';
 import 'device/qr_scanner.dart';
+import 'guidebook/guidebook_controller.dart';
 import 'milestones/milestones_controller.dart';
 import 'opportunities/opportunities_controller.dart';
 import 'profile/profile_controller.dart';
@@ -31,10 +34,8 @@ import 'tasks/tasks_controller.dart';
 import 'tabs/you_tab.dart';
 import 'takeover/live_view.dart';
 import 'takeover/takeover_screen.dart';
-import 'widgets/buddy_avatar.dart';
+import 'widgets/buddy_nav_bar.dart';
 import 'widgets/work_in_progress.dart';
-
-const templeCherry = Color(0xFF9D2235);
 
 class BuddyApp extends StatefulWidget {
   const BuddyApp({
@@ -201,26 +202,32 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
       // A new pairing starts over, including anything left open on the old one.
       key: ValueKey(_device),
       title: 'Buddy',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: templeCherry).copyWith(
-          primary: templeCherry,
-          onPrimary: Colors.white,
-        ),
-      ),
+      debugShowCheckedModeBanner: false,
+      theme: buddyTheme(),
       home: _home,
       // Sits above the navigator, so that it covers every screen and they're all still there after.
-      builder: (context, navigator) => Stack(
-        fit: StackFit.expand,
-        children: [
-          Offstage(
-            offstage: hidden,
-            child: ExcludeFocus(excluding: hidden, child: navigator!),
-          ),
-          if (locked)
-            LockScreen(asking: _asking, lastResult: _lastResult, onUnlock: _unlock)
-          else if (hidden)
-            const Scaffold(),
-        ],
+      builder: (context, navigator) => AnnotatedRegion<SystemUiOverlayStyle>(
+        // The tabs have no bar across the top to say this, and the phone's own icons need to show up on white.
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+          systemNavigationBarColor: BuddyColors.surface,
+          systemNavigationBarIconBrightness: Brightness.dark,
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Offstage(
+              offstage: hidden,
+              child: ExcludeFocus(excluding: hidden, child: navigator!),
+            ),
+            if (locked)
+              LockScreen(asking: _asking, lastResult: _lastResult, onUnlock: _unlock)
+            else if (hidden)
+              const Scaffold(),
+          ],
+        ),
       ),
     );
   }
@@ -240,9 +247,8 @@ class _Tabs extends StatefulWidget {
 }
 
 class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
-  static const _titles = ['Buddy', 'Today', 'Roadmap', 'You'];
-  static const _buddyTab = 0;
-  static const _todayTab = 1;
+  static const _todayTab = 0;
+  static const _buddyTab = 1;
   static const _roadmapTab = 2;
   static const _youTab = 3;
 
@@ -250,7 +256,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     ..onSendingChanged = (() => _sending.load())
     ..loadHistory()
     ..addListener(_showNewCrisisCard)
-    ..addListener(_refreshProfileAfterTurn);
+    ..addListener(_refreshProfileAfterTurn)
+    ..addListener(_startInTheConversationTheFirstTime);
   late final ProfileController _profile = ProfileController(widget.backend)..load();
   late final ConnectionsController _connections = ConnectionsController(
     widget.backend,
@@ -267,6 +274,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   late final TasksController _tasks = TasksController(widget.backend, onWantsTheStudent: _taskWantsTheStudent)..start();
   late final SpendingController _spending = SpendingController(widget.backend)..load();
   late final BriefingsController _briefings = BriefingsController(widget.backend)..load();
+  late final GuidebookController _guidebook = GuidebookController(widget.backend, report: _chat.report);
   late final PhoneNotificationsController _phoneNotifications = PhoneNotificationsController(
     widget.backend,
     widget.phoneNotifications,
@@ -276,7 +284,8 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   );
   CrisisCardItem? _cardShown;
   bool _wasReplying = false;
-  int _selected = 0;
+  int _selected = _todayTab;
+  bool _hasChosenATab = false;
 
   @override
   void initState() {
@@ -355,7 +364,18 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _wasReplying = replying;
   }
 
+  /// Today is what a Student comes back to, but it has little to say to someone who's just arrived. Buddy's own
+  /// first words are in the conversation, so that's where they start, until they've written something there.
+  void _startInTheConversationTheFirstTime() {
+    if (_chat.isLoading) return;
+    _chat.removeListener(_startInTheConversationTheFirstTime);
+    if (_chat.couldNotLoad || _hasChosenATab) return;
+    final hasWritten = _chat.items.any((item) => item is ChatMessage && !item.isFromBuddy);
+    if (!hasWritten) setState(() => _selected = _buddyTab);
+  }
+
   void _selectTab(int index) {
+    _hasChosenATab = true;
     setState(() => _selected = index);
     if (index == _buddyTab) {
       _chat.pickUpRoadmapCards();
@@ -363,14 +383,19 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     }
     if (index == _youTab) _refreshYouTab();
     if (index == _roadmapTab) _roadmap.load();
-    if (index == _todayTab) {
-      _briefings.load();
-      _milestones.load();
-      _opportunities.load();
-      _tasks.load();
+    if (index == _todayTab) _refreshToday();
+  }
+
+  Future<void> _refreshToday() async {
+    await Future.wait([
+      _briefings.load(),
+      _milestones.load(),
+      _opportunities.load(),
+      _tasks.load(),
       // A read since the last look may have found that a login expired.
-      _connections.load();
-    }
+      _connections.load(),
+      _roadmap.load(),
+    ]);
   }
 
   /// The whole screen is the live view until the Student taps Done or leaves.
@@ -397,18 +422,27 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _phoneNotifications.check();
   }
 
-  /// The Roadmap tab's way into the conversation. If Buddy is still replying, the Student is shown that instead.
+  /// The way into the conversation from anywhere else. If Buddy is still replying, the Student is shown that instead.
   void _askBuddy(String words) {
-    setState(() => _selected = 0);
+    _openConversation();
     if (_chat.canSend) _chat.send(words);
   }
 
-  /// A Crisis card can arrive while the Student is on another tab, and they mustn't miss it.
+  void _openConversation() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    _hasChosenATab = true;
+    setState(() => _selected = _buddyTab);
+  }
+
+  /// A Crisis card can arrive while the Student is on another tab or screen, and they mustn't miss it. Nothing they were
+  /// in the middle of comes before it.
   void _showNewCrisisCard() {
     final card = _chat.newestCard;
     if (card == null || identical(card, _cardShown)) return;
     _cardShown = card;
-    setState(() => _selected = 0);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    _hasChosenATab = true;
+    setState(() => _selected = _buddyTab);
   }
 
   @override
@@ -423,6 +457,7 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     _sending.dispose();
     _spending.dispose();
     _briefings.dispose();
+    _guidebook.dispose();
     _tasks.dispose();
     _phoneNotifications.dispose();
     super.dispose();
@@ -431,37 +466,52 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: const Center(child: BuddyAvatar(radius: 18)),
-        title: Text(_titles[_selected]),
+      // Each tab has its own title, so there's no bar across the top to fill.
+      body: SafeArea(
+        bottom: false,
+        // An IndexedStack keeps each tab alive, along with what the Student was typing.
+        child: IndexedStack(
+          index: _selected,
+          children: [
+            TodayTab(
+              briefings: _briefings,
+              milestones: _milestones,
+              opportunities: _opportunities,
+              tasks: _tasks,
+              connections: _connections,
+              roadmap: _roadmap,
+              guidebook: _guidebook,
+              openPhone: widget.openPhone,
+              askBuddy: _askBuddy,
+              openConversation: _openConversation,
+              openRoadmap: () => _selectTab(_roadmapTab),
+              refresh: _refreshToday,
+            ),
+            BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, opportunities: _opportunities, tasks: _tasks, openPhone: widget.openPhone, openDraft: widget.openDraft),
+            RoadmapTab(roadmap: _roadmap, openPhone: widget.openPhone, askBuddy: _askBuddy),
+            YouTab(
+              backend: widget.backend,
+              profile: _profile,
+              connections: _connections,
+              roadmap: _roadmap,
+              sending: _sending,
+              spending: _spending,
+              briefings: _briefings,
+              phoneNotifications: _phoneNotifications,
+              openPhone: widget.openPhone,
+              askBuddy: _askBuddy,
+            ),
+          ],
+        ),
       ),
-      // An IndexedStack keeps each tab alive, along with what the Student was typing.
-      body: IndexedStack(
-        index: _selected,
-        children: [
-          BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, opportunities: _opportunities, tasks: _tasks, openPhone: widget.openPhone, openDraft: widget.openDraft),
-          TodayTab(briefings: _briefings, milestones: _milestones, opportunities: _opportunities, tasks: _tasks, connections: _connections, openPhone: widget.openPhone),
-          RoadmapTab(roadmap: _roadmap, openPhone: widget.openPhone, askBuddy: _askBuddy),
-          YouTab(
-            backend: widget.backend,
-            profile: _profile,
-            connections: _connections,
-            roadmap: _roadmap,
-            sending: _sending,
-            spending: _spending,
-            briefings: _briefings,
-            phoneNotifications: _phoneNotifications,
-          ),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selected,
-        onDestinationSelected: _selectTab,
+      bottomNavigationBar: BuddyNavBar(
+        selected: _selected,
+        onSelected: _selectTab,
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.chat_bubble_outline), selectedIcon: Icon(Icons.chat_bubble), label: 'Buddy'),
-          NavigationDestination(icon: Icon(Icons.today_outlined), selectedIcon: Icon(Icons.today), label: 'Today'),
-          NavigationDestination(icon: Icon(Icons.map_outlined), selectedIcon: Icon(Icons.map), label: 'Roadmap'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'You'),
+          NavDestination(label: 'Today', icon: Icons.calendar_today_outlined, selectedIcon: Icons.calendar_today),
+          NavDestination(label: 'Buddy', icon: Icons.chat_bubble_outline, selectedIcon: Icons.chat_bubble),
+          NavDestination(label: 'Roadmap', icon: Icons.map_outlined, selectedIcon: Icons.map),
+          NavDestination(label: 'You', icon: Icons.person_outline, selectedIcon: Icons.person),
         ],
       ),
     );

@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../design/parts.dart';
+import '../design/theme.dart';
 import 'roadmap_backend.dart';
 import 'roadmap_controller.dart';
-import 'roadmap_parts.dart';
 
-/// The You tab's list of what the Student wants to achieve, with their controls over each one.
-class GoalsSection extends StatelessWidget {
-  const GoalsSection({super.key, required this.roadmap});
+/// What the Student wants to achieve, with their controls over each one.
+class GoalsScreen extends StatelessWidget {
+  const GoalsScreen({super.key, required this.roadmap, required this.askBuddy});
 
   final RoadmapController roadmap;
+  final void Function(String words) askBuddy;
 
   Future<void> _add(BuildContext context) async {
     final text = await showDialog<String>(context: context, builder: (context) => const _GoalDialog(title: 'Add a Goal', text: ''));
@@ -21,17 +23,20 @@ class GoalsSection extends StatelessWidget {
       listenable: roadmap,
       builder: (context, _) {
         final goals = roadmap.goals;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        return SubScreen(
+          title: 'Your Goals',
+          subtitle: 'What you want from your time at Temple. Your Roadmap is built from these.',
           children: [
-            Semantics(header: true, child: Text('Your Goals', style: Theme.of(context).textTheme.titleMedium)),
-            const SizedBox(height: 8),
             if (goals == null || goals.isEmpty)
-              const Text("You haven't set a Goal yet. Buddy can help you choose one.")
+              EmptyState(
+                icon: Icons.track_changes,
+                words: "You haven't set a Goal yet. Buddy can help you choose one.",
+                action: OutlinedButton(onPressed: () => askBuddy('Help me choose a Goal.'), child: const Text('Choose a Goal with Buddy')),
+              )
             else
-              for (final goal in goals) _GoalRow(goal: goal, roadmap: roadmap),
-            const SizedBox(height: 8),
-            OutlinedButton(onPressed: () => _add(context), child: const Text('Add a Goal')),
+              RowGroup(children: [for (final goal in goals) _GoalRow(key: ValueKey('goal ${goal.id}'), goal: goal, roadmap: roadmap)]),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(onPressed: () => _add(context), icon: const Icon(Icons.add), label: const Text('Add a Goal')),
             if (roadmap.problem case final problem?) ProblemNote(problem),
           ],
         );
@@ -41,7 +46,7 @@ class GoalsSection extends StatelessWidget {
 }
 
 class _GoalRow extends StatelessWidget {
-  const _GoalRow({required this.goal, required this.roadmap});
+  const _GoalRow({super.key, required this.goal, required this.roadmap});
 
   final Goal goal;
   final RoadmapController roadmap;
@@ -69,7 +74,11 @@ class _GoalRow extends StatelessWidget {
         content: Text(_whatGoesWithIt),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Remove')),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: BuddyColors.problem),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove'),
+          ),
         ],
       ),
     );
@@ -79,15 +88,22 @@ class _GoalRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
+      padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Semantics(container: true, child: Text(goal.text)),
-          Wrap(
-            children: [
-              TextButton(onPressed: roadmap.isChanging ? null : () => _edit(context), child: Text('Edit', semanticsLabel: 'Edit Goal: ${goal.text}')),
-              TextButton(onPressed: roadmap.isChanging ? null : () => _remove(context), child: Text('Remove', semanticsLabel: 'Remove Goal: ${goal.text}')),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Semantics(container: true, child: Text(goal.text, style: Theme.of(context).textTheme.titleMedium)),
+            ),
+          ),
+          RowMenu(
+            tooltip: 'Change or remove Goal: ${goal.text}',
+            enabled: !roadmap.isChanging,
+            items: [
+              RowMenuItem('Edit', semanticsLabel: 'Edit Goal: ${goal.text}', onSelected: () => _edit(context)),
+              RowMenuItem('Remove', semanticsLabel: 'Remove Goal: ${goal.text}', onSelected: () => _remove(context)),
             ],
           ),
         ],
@@ -126,7 +142,7 @@ class _GoalDialogState extends State<_GoalDialog> {
         minLines: 1,
         maxLines: 3,
         textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(labelText: 'Goal', border: OutlineInputBorder()),
+        decoration: const InputDecoration(labelText: 'Goal'),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),

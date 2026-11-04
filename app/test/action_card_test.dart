@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
+import 'package:buddy/chat/action_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -169,7 +170,7 @@ void main() {
 
       await tester.tap(
         find.descendant(
-          of: find.widgetWithText(Card, 'Second card'),
+          of: find.widgetWithText(ActionCardView, 'Second card'),
           matching: find.widgetWithText(FilledButton, 'Approve'),
         ),
       );
@@ -386,6 +387,7 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       final backend = FakeBackend()
         ..history = [
+          student('Send it'),
           ActionCardItem(
             ActionCard(
               id: 7,

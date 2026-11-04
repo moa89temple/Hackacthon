@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../backend/buddy_backend.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
 import 'chat_controller.dart';
 import 'crisis_email_offer.dart';
 
@@ -48,6 +50,76 @@ const _crisisResources = [
   ]),
 ];
 
+/// The crisis Resources, in order, each a large button that opens the phone's own dialer or messaging app. They're here
+/// in the app's own words, and they need nothing from the backend.
+class CrisisResources extends StatefulWidget {
+  const CrisisResources({super.key, required this.openPhone});
+
+  final PhoneOpener openPhone;
+
+  @override
+  State<CrisisResources> createState() => _CrisisResourcesState();
+}
+
+class _CrisisResourcesState extends State<CrisisResources> {
+  bool _couldNotOpenLast = false;
+
+  Future<void> _open(_Action action) async {
+    bool opened;
+    try {
+      opened = await widget.openPhone(Uri.parse(action.address));
+    } on Exception {
+      opened = false;
+    }
+    if (mounted) setState(() => _couldNotOpenLast = !opened);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final resource in _crisisResources) ...[
+          const SizedBox(height: 14),
+          Text(resource.name, style: theme.textTheme.titleSmall),
+          for (final action in resource.actions)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: FilledButton.icon(
+                icon: Icon(action.icon),
+                label: Text(action.label),
+                onPressed: () => _open(action),
+              ),
+            ),
+        ],
+        if (_couldNotOpenLast) ...[
+          const SizedBox(height: 4),
+          const ProblemNote(_couldNotOpen),
+        ],
+      ],
+    );
+  }
+}
+
+/// The same Resources, always one screen away, for a Student who comes looking for them rather than typing anything.
+class CrisisHelpScreen extends StatelessWidget {
+  const CrisisHelpScreen({super.key, required this.openPhone});
+
+  final PhoneOpener openPhone;
+
+  @override
+  Widget build(BuildContext context) {
+    return SubScreen(
+      title: _title,
+      subtitle: _intro,
+      children: [
+        CrisisResources(openPhone: openPhone),
+      ],
+    );
+  }
+}
+
 class CrisisCard extends StatefulWidget {
   const CrisisCard({super.key, required this.item, required this.chat, required this.announce, required this.openPhone});
 
@@ -63,8 +135,6 @@ class CrisisCard extends StatefulWidget {
 }
 
 class _CrisisCardState extends State<CrisisCard> {
-  bool _couldNotOpenLast = false;
-
   /// True while this card's turn is still arriving and the Student hasn't scrolled themselves.
   bool _keepingInView = false;
   ScrollPosition? _position;
@@ -126,16 +196,6 @@ class _CrisisCardState extends State<CrisisCard> {
     _position?.isScrollingNotifier.removeListener(_stopIfStudentScrolled);
   }
 
-  Future<void> _open(_Action action) async {
-    bool opened;
-    try {
-      opened = await widget.openPhone(Uri.parse(action.address));
-    } on Exception {
-      opened = false;
-    }
-    if (mounted) setState(() => _couldNotOpenLast = !opened);
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -145,11 +205,11 @@ class _CrisisCardState extends State<CrisisCard> {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colors.surface,
-          border: Border.all(color: colors.primary, width: 2),
-          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: colors.primary, width: 2.5),
+          borderRadius: BorderRadius.circular(BuddySizes.cardRadius),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -161,32 +221,13 @@ class _CrisisCardState extends State<CrisisCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_title, style: theme.textTheme.titleMedium?.copyWith(color: colors.primary)),
+                    Text(_title, style: theme.textTheme.headlineSmall?.copyWith(color: colors.primary)),
                     const SizedBox(height: 4),
                     const Text(_intro),
                   ],
                 ),
               ),
-              for (final resource in _crisisResources) ...[
-                const SizedBox(height: 12),
-                Text(resource.name, style: theme.textTheme.labelLarge),
-                for (final action in resource.actions)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: FilledButton.icon(
-                      icon: Icon(action.icon),
-                      label: Text(action.label),
-                      onPressed: () => _open(action),
-                    ),
-                  ),
-              ],
-              if (_couldNotOpenLast) ...[
-                const SizedBox(height: 12),
-                Semantics(
-                  liveRegion: true,
-                  child: Text(_couldNotOpen, style: TextStyle(color: colors.error)),
-                ),
-              ],
+              CrisisResources(openPhone: widget.openPhone),
               // Last, and on its own, so that none of it can come before or hold up the Resources above.
               CrisisEmailOfferView(
                 words: widget.item.emailWords,

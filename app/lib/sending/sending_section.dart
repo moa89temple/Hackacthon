@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../design/parts.dart';
 import 'sending_controller.dart';
 
 /// Asks before the switch to Live, wherever the Student started it. True only if they said yes.
@@ -13,6 +14,7 @@ Future<bool> askToSwitchToLive(BuildContext context, {String goesTo = 'the Conta
         "What you approve will really go to $goesTo, from your TUmail, and it can't be taken back. "
         'Buddy still sends nothing without your Approve tap. $cardsStopping, and you can switch back at any time.',
       ),
+      actionsOverflowButtonSpacing: 4,
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Stay in Practice mode')),
         FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Switch to Live')),
@@ -22,18 +24,18 @@ Future<bool> askToSwitchToLive(BuildContext context, {String goesTo = 'the Conta
   return confirmed == true;
 }
 
-/// The You tab's control over where what Buddy sends goes. The only other ways to Live are the Student's
+/// The Student's control over where what Buddy sends goes. The only other ways to Live are the Student's
 /// taps on the Crisis card's offer and on the Action card it makes, and nothing Buddy reads or writes can reach any of them.
-class SendingSection extends StatefulWidget {
-  const SendingSection({super.key, required this.sending});
+class SendingScreen extends StatefulWidget {
+  const SendingScreen({super.key, required this.sending});
 
   final SendingController sending;
 
   @override
-  State<SendingSection> createState() => _SendingSectionState();
+  State<SendingScreen> createState() => _SendingScreenState();
 }
 
-class _SendingSectionState extends State<SendingSection> {
+class _SendingScreenState extends State<SendingScreen> {
   final _address = TextEditingController();
 
   /// Fills the field once, and never over what the Student is typing.
@@ -51,7 +53,6 @@ class _SendingSectionState extends State<SendingSection> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ListenableBuilder(
       listenable: widget.sending,
       builder: (context, _) {
@@ -61,26 +62,26 @@ class _SendingSectionState extends State<SendingSection> {
           _filledIn = true;
           _address.text = settings.ownAddress ?? '';
         }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        return SubScreen(
+          title: 'Email Buddy sends',
           children: [
-            Semantics(
-              header: true,
-              child: Text('Email Buddy sends', style: theme.textTheme.titleMedium),
-            ),
-            const SizedBox(height: 8),
-            if (sending.couldNotLoad) ...[
-              Semantics(
-                liveRegion: true,
-                child: const Text("The app can't reach Buddy right now. Check that the backend is running."),
-              ),
+            if (sending.couldNotLoad)
+              EmptyState(
+                icon: Icons.mail_outline,
+                isProblem: true,
+                words: "The app can't reach Buddy right now. Check that the backend is running.",
+                action: AppLink('Try again', semanticsLabel: 'Try loading sending again', onPressed: sending.load),
+              )
+            else if (settings == null)
+              const LoadingBlock(label: 'Loading where Buddy sends email')
+            else ...[
               Align(
                 alignment: AlignmentDirectional.centerStart,
-                child: TextButton(onPressed: sending.load, child: const Text('Try again', semanticsLabel: 'Try loading sending again')),
+                child: settings.isLive
+                    ? const Pill('Live', tone: PillTone.solidCherry, icon: Icons.send)
+                    : const Pill('Practice mode'),
               ),
-            ] else if (settings == null)
-              const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading where Buddy sends email'))
-            else ...[
+              const SizedBox(height: 8),
               Semantics(
                 container: true,
                 liveRegion: true,
@@ -91,24 +92,6 @@ class _SendingSectionState extends State<SendingSection> {
                 ),
               ),
               const SizedBox(height: 12),
-              if (settings.ownAddress case final address?)
-                Text('Practice emails go to $address. Check that this is really yours, because Buddy sends real email there.')
-              else
-                const Text("Buddy doesn't know your TUmail address yet, so it can't send anything in Practice mode."),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _address,
-                keyboardType: TextInputType.emailAddress,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: const InputDecoration(labelText: 'Your TUmail address', hintText: 'you@temple.edu'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: sending.isChanging ? null : () => sending.saveOwnAddress(_address.text),
-                child: const Text('Save your address'),
-              ),
-              const SizedBox(height: 8),
               if (settings.isLive)
                 OutlinedButton(
                   onPressed: sending.isChanging ? null : sending.switchToPractice,
@@ -119,15 +102,30 @@ class _SendingSectionState extends State<SendingSection> {
                   onPressed: sending.isChanging ? null : _askAboutLive,
                   child: const Text('Switch to Live'),
                 ),
-              if (sending.problem case final problem?)
-                Semantics(
-                  container: true,
-                  liveRegion: true,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+              const SizedBox(height: 28),
+              ScreenSection(
+                title: 'Your TUmail address',
+                children: [
+                  if (settings.ownAddress case final address?)
+                    Text('Practice emails go to $address. Check that this is really yours, because Buddy sends real email there.')
+                  else
+                    const Text("Buddy doesn't know your TUmail address yet, so it can't send anything in Practice mode."),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _address,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: const InputDecoration(labelText: 'Your TUmail address', hintText: 'you@temple.edu'),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: sending.isChanging ? null : () => sending.saveOwnAddress(_address.text),
+                    child: const Text('Save your address'),
+                  ),
+                ],
+              ),
+              if (sending.problem case final problem?) ProblemNote(problem),
             ],
           ],
         );

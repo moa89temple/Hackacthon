@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/chat/crisis_card.dart';
+import 'package:buddy/milestones/milestone_card.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -31,9 +33,21 @@ StandardMilestone withdrawal({
           [GuidebookSource(url: calendarPage, title: calendarTitle, lastSeenAt: DateTime.utc(2026, 11, 2, 14))],
     );
 
+/// Today's list ends with the dates, below whatever else needs the Student, so this brings them onto the screen.
 Future<void> openToday(WidgetTester tester, FakeBackend backend, {PhoneOpener openPhone = pretendToOpenPhone}) async {
   await openUnlockedApp(tester, backend, openPhone: openPhone);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Today')));
+  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
+  await tester.pumpAndSettle();
+  await scrollToTheEnd(tester);
+}
+
+Future<void> scrollToTheEnd(WidgetTester tester) async {
+  final list = tester.state<ScrollableState>(find.byType(Scrollable));
+  // The list only knows how long it is once it has built what's near the end, so this can take more than one go.
+  while (list.position.pixels < list.position.maxScrollExtent) {
+    list.position.jumpTo(list.position.maxScrollExtent);
+    await tester.pump();
+  }
   await tester.pumpAndSettle();
 }
 
@@ -78,6 +92,8 @@ void main() {
     testWidgets('leaves out a term the page does not give', (tester) async {
       await openToday(tester, FakeBackend()..upcoming = [withdrawal(term: null)]);
 
+      // The card itself is there, so the term isn't just out of sight.
+      expect(find.text('Monday, December 7, 2026'), findsOneWidget);
       expect(find.text('Fall 2026'), findsNothing);
     });
 
@@ -85,29 +101,29 @@ void main() {
       await openToday(tester, FakeBackend());
 
       expect(find.textContaining("Buddy reads Temple's calendar"), findsOneWidget);
-      expect(find.byType(Card), findsNothing);
+      expect(find.byType(MilestoneCard), findsNothing);
     });
 
-    testWidgets('shows the first ten, and more when asked', (tester) async {
-      await openToday(tester, FakeBackend()..upcoming = dates(12));
+    testWidgets('shows the first five, and more when asked', (tester) async {
+      await openToday(tester, FakeBackend()..upcoming = dates(7));
 
-      await tester.scrollUntilVisible(find.text('Date number 10'), 200);
-      expect(find.text('Date number 11'), findsNothing);
+      await tester.scrollUntilVisible(find.text('Date number 5'), 200);
+      expect(find.text('Date number 6'), findsNothing);
 
       await tester.scrollUntilVisible(find.text('Show 2 more'), 200);
       await tapThrough(tester, find.text('Show 2 more'));
 
-      await tester.scrollUntilVisible(find.text('Date number 12'), 200);
-      expect(find.text('Date number 12'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Date number 7'), 200);
+      expect(find.text('Date number 7'), findsOneWidget);
       expect(find.textContaining('more'), findsNothing);
     });
 
-    testWidgets('says how many more it will show, at most ten at a time', (tester) async {
+    testWidgets('says how many more it will show, at most five at a time', (tester) async {
       await openToday(tester, FakeBackend()..upcoming = dates(35));
 
-      await tester.scrollUntilVisible(find.text('Show 10 more'), 200);
+      await tester.scrollUntilVisible(find.text('Show 5 more'), 200);
 
-      expect(find.text('Show 10 more'), findsOneWidget);
+      expect(find.text('Show 5 more'), findsOneWidget);
     });
 
     testWidgets('reads the dates again each time the Student comes back to it', (tester) async {
@@ -116,9 +132,9 @@ void main() {
       expect(find.text('Old date'), findsOneWidget);
 
       backend.upcoming = [withdrawal(name: 'New date')];
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Buddy')));
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Today')));
+      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
       await tester.pumpAndSettle();
 
       expect(find.text('New date'), findsOneWidget);
@@ -148,9 +164,9 @@ void main() {
       await openToday(tester, backend);
 
       backend.upcomingError = Exception('off');
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Buddy')));
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Today')));
+      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
       await tester.pumpAndSettle();
 
       expect(find.text('Monday, December 7, 2026'), findsOneWidget);
@@ -235,7 +251,7 @@ void main() {
 
     testWidgets('says how many more the button will show, and of what', (tester) async {
       final handle = tester.ensureSemantics();
-      await openToday(tester, FakeBackend()..upcoming = dates(11));
+      await openToday(tester, FakeBackend()..upcoming = dates(6));
 
       await tester.scrollUntilVisible(find.text('Show 1 more'), 200);
 
@@ -244,8 +260,9 @@ void main() {
     });
 
     testWidgets('the list meets the tap target, label and contrast guidelines', (tester) async {
+      // Tall enough to have all of the list on the screen at once, from its links and rows down to the dates.
       tester.view
-        ..physicalSize = const Size(412, 915)
+        ..physicalSize = const Size(412, 2000)
         ..devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final handle = tester.ensureSemantics();
@@ -280,7 +297,7 @@ void main() {
   group('with larger text on a small phone', () {
     testWidgets('nothing overflows, and every control can be reached', (tester) async {
       useSmallPhoneWithLargeText(tester);
-      await openToday(tester, FakeBackend()..upcoming = dates(11));
+      await openToday(tester, FakeBackend()..upcoming = dates(6));
 
       expect(tester.takeException(), isNull);
       await tester.scrollUntilVisible(find.text('Show 1 more'), 200);

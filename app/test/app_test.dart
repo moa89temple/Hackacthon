@@ -1,4 +1,5 @@
 import 'package:buddy/backend/buddy_backend.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -6,31 +7,31 @@ import 'support/fake_backend.dart';
 import 'support/test_app.dart';
 
 VoidCallback? sendButtonAction(WidgetTester tester) =>
-    tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send)).onPressed;
+    tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.arrow_upward)).onPressed;
 
 void main() {
   group('the four tabs', () {
-    testWidgets('are Buddy, Today, Roadmap and You', (tester) async {
+    testWidgets('are Today, Buddy, Roadmap and You', (tester) async {
       await openUnlockedApp(tester, FakeBackend());
 
-      final bar = find.byType(NavigationBar);
-      for (final label in ['Buddy', 'Today', 'Roadmap', 'You']) {
+      final bar = find.byType(BuddyNavBar);
+      for (final label in ['Today', 'Buddy', 'Roadmap', 'You']) {
         expect(find.descendant(of: bar, matching: find.text(label)), findsOneWidget);
       }
-      expect(find.byType(NavigationDestination), findsNWidgets(4));
+      expect(tester.widget<BuddyNavBar>(bar).destinations.map((destination) => destination.label), ['Today', 'Buddy', 'Roadmap', 'You']);
     });
 
     testWidgets('use Temple cherry red as the accent color', (tester) async {
       await openUnlockedApp(tester, FakeBackend());
 
-      final context = tester.element(find.byType(NavigationBar));
+      final context = tester.element(find.byType(BuddyNavBar));
       expect(Theme.of(context).colorScheme.primary, const Color(0xFF9D2235));
     });
 
     testWidgets('the You tab carries the prototype note', (tester) async {
       await openUnlockedApp(tester, FakeBackend());
 
-      await tester.tap(find.text('You'));
+      await goToTab(tester, 'You');
       await tester.pump();
       await tester.dragUntilVisible(
         find.text('Hackathon prototype, not an official Temple University service'),
@@ -51,11 +52,11 @@ void main() {
       backend.reply.add(const ReplyText('Hi '));
       await tester.pump();
 
-      await tester.tap(find.text('Today'));
+      await goToTab(tester, 'Today');
       await tester.pump();
       backend.reply.add(const ReplyText('there'));
       await tester.pump();
-      await tester.tap(find.widgetWithText(NavigationDestination, 'Buddy'));
+      await goToTab(tester, 'Buddy');
       await tester.pump();
 
       expect(find.text('Hi there'), findsOneWidget);
@@ -245,7 +246,7 @@ void main() {
       await openUnlockedApp(tester, FakeBackend(history: [student('Hello'), buddy('Hi there.')]));
 
       for (final label in ['Buddy', 'Today', 'Roadmap', 'You']) {
-        await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)));
+        await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text(label)));
         await tester.pump();
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
         await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
@@ -268,7 +269,7 @@ void main() {
       );
 
       for (final label in ['Buddy', 'Today', 'Roadmap', 'You']) {
-        await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)));
+        await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text(label)));
         await tester.pump();
         expect(tester.takeException(), isNull, reason: 'overflow on the $label tab');
       }

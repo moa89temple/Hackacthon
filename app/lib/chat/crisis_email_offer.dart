@@ -17,7 +17,7 @@ const _writeAddress = 'Write the email address of who should get this, then tap 
 // It can stay on screen after the card has been approved, so it has to stay true then.
 const _cardMade = 'Buddy made a card further down the conversation. It shows what would go, and nothing goes until you tap Approve on it.';
 const _couldNotAsk = "The app couldn't reach Buddy, so it made no card. Check that the backend is running, then try again. The numbers above don't need Buddy.";
-const _couldNotSwitch = "The app couldn't reach Buddy, so it may or may not have switched. Check on the You tab, then try again.";
+const _couldNotSwitch = "The app couldn't reach Buddy, so it may or may not have switched. Check in You > Email Buddy sends, then try again.";
 const _couldNotCheck = "The app couldn't reach Buddy, so it couldn't check. Try again in a moment. The numbers above don't need Buddy.";
 
 // Plain words the Student can change, written here so that they're there whatever the model does.
@@ -150,14 +150,14 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
     if (offer.isLive) return 'Live is on, so this email will really go to the person you choose, from your TUmail.';
     final own = offer.ownAddress;
     if (own == null) {
-      return "Practice mode is on, so this email would go to you, not to the person you choose, and Buddy doesn't know your TUmail address yet. Add it on the You tab, or switch to Live.";
+      return "Practice mode is on, so this email would go to you, not to the person you choose, and Buddy doesn't know your TUmail address yet. Add it in You > Email Buddy sends, or switch to Live.";
     }
     return 'Practice mode is on, so this email will go to you at $own, not to the person you choose.';
   }
 
   List<Widget> _form(ThemeData theme, CrisisEmailOffer? offer) {
     return [
-      _spaced(Semantics(header: true, child: Text(_asksWhom, style: theme.textTheme.titleSmall))),
+      _spaced(Semantics(header: true, container: true, child: Text(_asksWhom, style: theme.textTheme.titleSmall))),
       _spaced(Semantics(container: true, child: const Text(_whatHappens))),
       if (offer != null) ...[
         _spaced(Semantics(container: true, liveRegion: _tapped, child: Text(_whereItGoes(offer)))),
@@ -214,7 +214,7 @@ class _CrisisEmailOfferViewState extends State<CrisisEmailOfferView> {
                 widget.onOpened();
                 setState(() => widget.words.isOpen = true);
               },
-              child: const Text(_wantsSomeone),
+              child: const Text(_wantsSomeone, textAlign: TextAlign.center),
             ),
           ),
         if (_status case final status?)

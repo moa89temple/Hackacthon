@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/chat/crisis_card.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -40,15 +41,18 @@ Opportunity nursingCamp({int id = 8, bool saved = false}) => Opportunity(
 
 Future<void> openToday(WidgetTester tester, FakeBackend backend, {PhoneOpener openPhone = pretendToOpenPhone}) async {
   await openUnlockedApp(tester, backend, openPhone: openPhone);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Today')));
+  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
   await tester.pumpAndSettle();
 }
 
 Future<void> openOpportunities(WidgetTester tester, FakeBackend backend, {PhoneOpener openPhone = pretendToOpenPhone}) async {
   await openToday(tester, backend, openPhone: openPhone);
-  await tester.tap(find.text('See Opportunities'));
-  await tester.pumpAndSettle();
+  await tester.scrollUntilVisible(find.text('See Opportunities'), 200);
+  await tapThrough(tester, find.text('See Opportunities'));
 }
+
+/// The Guidebook's own list. Its search field scrolls as well, so a test has to say which.
+final guidebookList = find.byType(Scrollable).first;
 
 void useSmallPhoneWithLargeText(WidgetTester tester) {
   tester.view
@@ -134,10 +138,10 @@ void main() {
         FakeBackend()..opportunities = [for (var id = 1; id <= 11; id++) fluClinic(id: id, name: 'Event number $id')],
       );
 
-      await tester.scrollUntilVisible(find.text('Show 1 more'), 300);
+      await tester.scrollUntilVisible(find.text('Show 1 more'), 300, scrollable: guidebookList);
       expect(find.text('Event number 11'), findsNothing);
       await tapThrough(tester, find.text('Show 1 more'));
-      await tester.scrollUntilVisible(find.text('Event number 11'), 300);
+      await tester.scrollUntilVisible(find.text('Event number 11'), 300, scrollable: guidebookList);
       expect(find.text('Event number 11'), findsOneWidget);
       expect(find.textContaining('more'), findsNothing);
     });
@@ -150,7 +154,7 @@ void main() {
         return true;
       });
 
-      await tester.tap(find.text('Source: $eventTitle'));
+      await tester.tap(find.text('Source: Flu Shot Clinic'));
       await tester.pumpAndSettle();
 
       expect(opened, [Uri.parse(eventPage)]);
@@ -160,7 +164,7 @@ void main() {
       useTallPhone(tester);
       await openOpportunities(tester, FakeBackend()..opportunities = [fluClinic()], openPhone: (address) async => false);
 
-      await tester.tap(find.text('Source: $eventTitle'));
+      await tester.tap(find.text('Source: Flu Shot Clinic'));
       await tester.pumpAndSettle();
 
       expect(find.text("Your phone couldn't open that."), findsOneWidget);
@@ -176,8 +180,8 @@ void main() {
           ],
       );
 
-      final button = tester.widget<TextButton>(find.ancestor(of: find.text('Source: Plain'), matching: find.byType(TextButton)));
-      expect(button.onPressed, isNull);
+      final link = tester.widget<InkWell>(find.ancestor(of: find.text('Source: Plain'), matching: find.byType(InkWell)));
+      expect(link.onTap, isNull);
     });
   });
 
@@ -221,6 +225,7 @@ void main() {
       );
 
       expect(find.text('Flu Shot Clinic'), findsOneWidget);
+      await tester.scrollUntilVisible(find.textContaining("couldn't load what's coming up"), 200);
       expect(find.textContaining("couldn't load what's coming up"), findsOneWidget);
     });
 
@@ -297,7 +302,7 @@ void main() {
       useTallPhone(tester);
       await openUnlockedApp(tester, FakeBackend(history: [OpportunityCardItem(fluClinic()), OpportunityCardItem(null)]));
 
-      expect(find.text('Source: $eventTitle'), findsOneWidget);
+      expect(find.text('Source: Flu Shot Clinic'), findsOneWidget);
       expect(find.textContaining('Buddy no longer shows this'), findsOneWidget);
     });
 
@@ -396,7 +401,7 @@ void main() {
       await openOpportunities(tester, FakeBackend()..opportunities = [fluClinic(place: 'Conwell Hall / 1801 N. Broad Street / Philadelphia / PA / 19122'), nursingCamp()]);
       expect(tester.takeException(), isNull);
 
-      await tester.scrollUntilVisible(find.text('Summer Nursing Camp'), 200);
+      await tester.scrollUntilVisible(find.text('Summer Nursing Camp'), 200, scrollable: guidebookList);
       expect(tester.takeException(), isNull);
       await tapThrough(tester, find.text('Save').last);
       expect(tester.takeException(), isNull);
@@ -412,6 +417,7 @@ void main() {
       expect(tester.takeException(), isNull);
       await tapThrough(tester, find.text('See Opportunities'));
       expect(tester.takeException(), isNull);
+      await tester.scrollUntilVisible(find.text('At Temple'), 200, scrollable: guidebookList);
       expect(find.text('At Temple'), findsOneWidget);
     });
   });

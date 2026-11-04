@@ -58,27 +58,36 @@ Future<void> tapThrough(WidgetTester tester, Finder target) async {
   await tester.pumpAndSettle();
 }
 
-Future<void> openYouTab(WidgetTester tester, FakeBackend backend, {Size size = const Size(412, 2400)}) async {
+/// The You tab, then the row for sending. On a small phone the row has to be scrolled to first.
+Future<void> goToSendingScreen(WidgetTester tester) async {
+  await goToTab(tester, 'You');
+  await settleApp(tester);
+  await tester.scrollUntilVisible(find.text('Email Buddy sends'), 200, scrollable: find.byType(Scrollable).first);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Email Buddy sends'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> openSending(WidgetTester tester, FakeBackend backend, {Size size = const Size(412, 2400)}) async {
   tester.view
     ..physicalSize = size
     ..devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await openUnlockedApp(tester, backend);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-  await settleApp(tester);
+  await goToSendingScreen(tester);
 }
 
 Finder get _switchToLive => find.widgetWithText(OutlinedButton, 'Switch to Live');
 Finder get _backToPractice => find.widgetWithText(OutlinedButton, 'Back to Practice mode');
 Finder get _addressField => find.widgetWithText(TextField, 'Your TUmail address');
-Finder get _saveAddress => find.widgetWithText(OutlinedButton, 'Save your address');
+Finder get _saveAddress => find.widgetWithText(FilledButton, 'Save your address');
 Finder inDialog(String text) => find.descendant(of: find.byType(AlertDialog), matching: find.text(text));
 
 void main() {
   group('Buddy sends it on a Draft card', () {
     testWidgets('is there when Buddy has an address for the Contact', (tester) async {
       await showDraft(tester, FakeBackend(), contact: advising());
-      expect(find.widgetWithText(TextButton, 'Buddy sends it'), findsOneWidget);
+      expect(find.text('Buddy sends it'), findsOneWidget);
     });
 
     testWidgets("isn't there when Buddy has no address, or the Contact has gone", (tester) async {
@@ -167,10 +176,36 @@ void main() {
     });
   });
 
-  group('sending on the You tab', () {
-    testWidgets('starts in Practice mode, and says Buddy needs the address', (tester) async {
-      await openYouTab(tester, FakeBackend());
+  group('the row on the You tab', () {
+    testWidgets('says which mode is on, and claims none until it has heard', (tester) async {
+      final backend = FakeBackend()..sendingError = http.ClientException('no route');
+      await openUnlockedApp(tester, backend);
+      await goToTab(tester, 'You');
+      await settleApp(tester);
 
+      expect(find.text('Email Buddy sends'), findsOneWidget);
+      expect(find.text('Practice mode'), findsNothing);
+      expect(find.text('Live'), findsNothing);
+
+      backend.sendingError = null;
+      await goToTab(tester, 'You');
+      await settleApp(tester);
+      expect(find.text('Practice mode'), findsOneWidget);
+      expect(find.text('Live'), findsNothing);
+
+      backend.sending = const SendingSettings(isLive: true, ownAddress: ownAddress);
+      await goToTab(tester, 'You');
+      await settleApp(tester);
+      expect(find.text('Live'), findsOneWidget);
+      expect(find.text('Practice mode'), findsNothing);
+    });
+  });
+
+  group('the screen for sending', () {
+    testWidgets('starts in Practice mode, and says Buddy needs the address', (tester) async {
+      await openSending(tester, FakeBackend());
+
+      expect(find.text('Practice mode'), findsOneWidget);
       expect(find.textContaining('Practice mode is on'), findsOneWidget);
       expect(find.textContaining("doesn't know your TUmail address yet"), findsOneWidget);
       expect(_switchToLive, findsOneWidget);
@@ -178,7 +213,7 @@ void main() {
 
     testWidgets('saves the address and says where practice emails go', (tester) async {
       final backend = FakeBackend();
-      await openYouTab(tester, backend);
+      await openSending(tester, backend);
 
       await tester.enterText(_addressField, ownAddress);
       await tapThrough(tester, _saveAddress);
@@ -189,7 +224,7 @@ void main() {
 
     testWidgets('says why when the backend refuses the address', (tester) async {
       final backend = FakeBackend()..ownAddressRefusal = "That doesn't look like a temple.edu address.";
-      await openYouTab(tester, backend);
+      await openSending(tester, backend);
 
       await tester.enterText(_addressField, 'someone@elsewhere.test');
       await tapThrough(tester, _saveAddress);
@@ -200,7 +235,7 @@ void main() {
 
     testWidgets('going Live asks first, and staying in Practice changes nothing', (tester) async {
       final backend = FakeBackend();
-      await openYouTab(tester, backend);
+      await openSending(tester, backend);
 
       await tapThrough(tester, _switchToLive);
 
@@ -211,9 +246,9 @@ void main() {
       expect(find.textContaining('Practice mode is on'), findsOneWidget);
     });
 
-    testWidgets('only that tap goes Live, and the tab then says so', (tester) async {
+    testWidgets('only that tap goes Live, and the screen then says so', (tester) async {
       final backend = FakeBackend();
-      await openYouTab(tester, backend);
+      await openSending(tester, backend);
 
       await tapThrough(tester, _switchToLive);
       await tapThrough(tester, inDialog('Switch to Live'));
@@ -225,7 +260,7 @@ void main() {
 
     testWidgets('going back to Practice needs no asking', (tester) async {
       final backend = FakeBackend()..sending = const SendingSettings(isLive: true, ownAddress: ownAddress);
-      await openYouTab(tester, backend);
+      await openSending(tester, backend);
 
       await tapThrough(tester, _backToPractice);
 
@@ -235,7 +270,7 @@ void main() {
 
     testWidgets('says so when a change fails, and stays as it was', (tester) async {
       final backend = FakeBackend()..sendingChangeError = http.ClientException('no route');
-      await openYouTab(tester, backend);
+      await openSending(tester, backend);
 
       await tapThrough(tester, _switchToLive);
       await tapThrough(tester, inDialog('Switch to Live'));
@@ -246,7 +281,7 @@ void main() {
 
     testWidgets("doesn't claim a mode when it can't load, and can try again", (tester) async {
       final backend = FakeBackend()..sendingError = http.ClientException('no route');
-      await openYouTab(tester, backend);
+      await openSending(tester, backend);
 
       expect(find.textContaining('Practice mode is on'), findsNothing);
       expect(_switchToLive, findsNothing);
@@ -263,12 +298,13 @@ void main() {
         ..cardWhenChecked = sendCard(status: 'invalid', statusText: 'This card no longer matches.', canDecide: false, outcome: 'You switched to Live.');
       await showDraft(tester, backend, contact: advising());
       await tapThrough(tester, find.text('Buddy sends it'));
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await settleApp(tester);
+      await goToSendingScreen(tester);
 
       await tapThrough(tester, _switchToLive);
       await tapThrough(tester, inDialog('Switch to Live'));
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await goToTab(tester, 'Buddy');
       await settleApp(tester);
 
       expect(find.text('You switched to Live.'), findsOneWidget);
@@ -291,9 +327,9 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('the sending section meets the guidelines, with a heading and named controls', (tester) async {
+    testWidgets('the screen for sending meets the guidelines, with a heading and named controls', (tester) async {
       final handle = tester.ensureSemantics();
-      await openYouTab(tester, FakeBackend());
+      await openSending(tester, FakeBackend());
 
       expect(tester.getSemantics(find.text('Email Buddy sends')).flagsCollection.isHeader, isTrue);
       expect(tester.getSemantics(_addressField).label, contains('Your TUmail address'));
@@ -306,7 +342,7 @@ void main() {
     testWidgets('what becomes of a change is read out', (tester) async {
       final handle = tester.ensureSemantics();
       final backend = FakeBackend()..ownAddressRefusal = 'That address is no good.';
-      await openYouTab(tester, backend);
+      await openSending(tester, backend);
 
       await tester.enterText(_addressField, 'x');
       await tapThrough(tester, _saveAddress);
@@ -335,11 +371,11 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('the sending section and the question about Live fit at twice the size on a small phone', (tester) async {
+    testWidgets('the screen for sending and the question about Live fit at twice the size on a small phone', (tester) async {
       useLargeText(tester);
-      await openYouTab(tester, FakeBackend(), size: const Size(320, 640));
+      await openSending(tester, FakeBackend(), size: const Size(320, 640));
 
-      await tester.scrollUntilVisible(_switchToLive, 200, scrollable: find.byType(Scrollable).last);
+      await tester.scrollUntilVisible(_switchToLive, 200, scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 

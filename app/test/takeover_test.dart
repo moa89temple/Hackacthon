@@ -1,26 +1,32 @@
 import 'package:buddy/backend/buddy_backend.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_backend.dart';
 import 'support/test_app.dart';
 
-Future<void> openYouTab(WidgetTester tester, FakeBackend backend) async {
+/// A Connection's own screen, which is where its login is.
+Future<void> openConnectionScreen(WidgetTester tester, {String name = 'Canvas'}) async {
+  await openYouRow(tester, 'Connections');
+  await openRow(tester, name);
+}
+
+Future<void> openCanvas(WidgetTester tester, FakeBackend backend) async {
   // The Read Permission comes first, so that's the only way to the button.
   backend.connections = [canvasConnection(on: true)];
   await openUnlockedApp(tester, backend);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-  await tester.pump();
+  await openConnectionScreen(tester);
 }
 
-Future<void> openLiveView(WidgetTester tester) async {
-  // Logins come after the Profile on the You tab, so with large text they may need scrolling to.
-  await tester.scrollUntilVisible(find.text('Log in to Canvas'), 100);
-  await tester.ensureVisible(find.text('Log in to Canvas'));
+Future<void> tapThrough(WidgetTester tester, String words) async {
+  await tester.ensureVisible(find.text(words));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Log in to Canvas'));
+  await tester.tap(find.text(words));
   await tester.pumpAndSettle();
 }
+
+Future<void> openLiveView(WidgetTester tester) => tapThrough(tester, 'Log in to Canvas');
 
 void main() {
   group('starting a Takeover', () {
@@ -46,8 +52,7 @@ void main() {
         ),
       );
       await settleApp(tester);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await tester.pump();
+      await openConnectionScreen(tester);
 
       await openLiveView(tester);
 
@@ -56,7 +61,7 @@ void main() {
 
     testWidgets('opens a full-screen live view through the address the backend gave', (tester) async {
       final backend = FakeBackend()..takeoverToStart = canvasTakeover;
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
 
       await openLiveView(tester);
 
@@ -64,12 +69,12 @@ void main() {
       expect(find.text('live view of ${canvasTakeover.liveViewUrl}'), findsOneWidget);
       expect(find.text("You're in control. Buddy can't see this screen."), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Done'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(BuddyNavBar), findsNothing);
     });
 
     testWidgets("explains when Buddy's Browser is not running", (tester) async {
       final backend = FakeBackend()..startTakeoverError = const BackendException('503');
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
 
       await openLiveView(tester);
 
@@ -83,14 +88,9 @@ void main() {
         ..takeoverUnderWay = canvasTakeover
         ..startTakeoverError = const BackendException('409');
       await openUnlockedApp(tester, backend);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await tester.pump();
+      await openConnectionScreen(tester, name: 'Navigate360');
 
-      await tester.scrollUntilVisible(find.text('Log in to Navigate360'), 100);
-      await tester.ensureVisible(find.text('Log in to Navigate360'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Log in to Navigate360'));
-      await tester.pumpAndSettle();
+      await tapThrough(tester, 'Log in to Navigate360');
 
       expect(find.textContaining('tap Continue logging in to Canvas, then Done'), findsOneWidget);
       expect(find.textContaining("couldn't open its browser"), findsNothing);
@@ -98,7 +98,7 @@ void main() {
 
     testWidgets("says the Takeover's still open when the Student leaves without tapping Done", (tester) async {
       final backend = FakeBackend()..takeoverToStart = canvasTakeover;
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
       backend.takeoverUnderWay = canvasTakeover;
 
@@ -112,13 +112,9 @@ void main() {
       final backend = FakeBackend()
         ..takeoverUnderWay = canvasTakeover
         ..connectionAfterRead = canvasConnection(on: true, problem: 'A Takeover is open.');
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
 
-      await tester.scrollUntilVisible(find.text('Read now'), 100);
-      await tester.ensureVisible(find.text('Read now'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Read now'));
-      await tester.pumpAndSettle();
+      await tapThrough(tester, 'Read now');
 
       expect(find.textContaining('tap Continue logging in to Canvas, then Done'), findsOneWidget);
     });
@@ -127,7 +123,7 @@ void main() {
       final backend = FakeBackend()
         ..takeoverUnderWay = canvasTakeover
         ..takeoverToStart = canvasTakeover;
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
 
       await tester.tap(find.text('Continue logging in to Canvas'));
       await tester.pumpAndSettle();
@@ -141,7 +137,7 @@ void main() {
       final backend = FakeBackend()
         ..takeoverToStart = canvasTakeover
         ..finished = const FinishedTakeover(siteName: 'Canvas', signedIn: true, title: 'Dashboard');
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
 
       await tester.tap(find.text('Done'));
@@ -150,14 +146,20 @@ void main() {
       expect(backend.finishCount, 1);
       expect(find.textContaining('live view of'), findsNothing);
       expect(find.text('You\'re logged in to Canvas. Buddy opened "Dashboard" to check.'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsOneWidget);
+
+      // The live view took the whole screen, and the rest of the app is still there behind it.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(BuddyNavBar), findsOneWidget);
     });
 
     testWidgets('says so when Buddy could not confirm the login', (tester) async {
       final backend = FakeBackend()
         ..takeoverToStart = canvasTakeover
         ..finished = const FinishedTakeover(siteName: 'Canvas', signedIn: false);
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
 
       await tester.tap(find.text('Done'));
@@ -171,7 +173,7 @@ void main() {
       final backend = FakeBackend()
         ..takeoverToStart = canvasTakeover
         ..finishError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
 
       await tester.tap(find.text('Done'));
@@ -194,7 +196,7 @@ void main() {
 
     testWidgets('closes the live view when the Takeover had already ended', (tester) async {
       final backend = FakeBackend()..takeoverToStart = canvasTakeover;
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
 
       await tester.tap(find.text('Done'));
@@ -209,7 +211,7 @@ void main() {
         ..takeoverToStart = canvasTakeover
         ..finished = const FinishedTakeover(siteName: 'Canvas', signedIn: true, title: 'Dashboard')
         ..holdFinish = true;
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
 
       await tester.tap(find.text('Done'));
@@ -226,7 +228,7 @@ void main() {
   group('leaving without tapping Done', () {
     testWidgets('leaves the Takeover under way, so Buddy stays out and the Student can return', (tester) async {
       final backend = FakeBackend()..takeoverToStart = canvasTakeover;
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
       backend.takeoverUnderWay = canvasTakeover;
 
@@ -242,7 +244,7 @@ void main() {
     testWidgets('a screen reader hears who is in control, the live view and Done', (tester) async {
       final handle = tester.ensureSemantics();
       final backend = FakeBackend()..takeoverToStart = canvasTakeover;
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
 
       final control = find.bySemanticsLabel("You're in control. Buddy can't see this screen.");
@@ -257,7 +259,7 @@ void main() {
       final backend = FakeBackend()
         ..takeoverToStart = canvasTakeover
         ..finished = const FinishedTakeover(siteName: 'Canvas', signedIn: true, title: 'Dashboard');
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
 
       await tester.tap(find.text('Done'));
@@ -271,7 +273,7 @@ void main() {
     testWidgets('the live view screen meets the tap target, label and contrast guidelines', (tester) async {
       final handle = tester.ensureSemantics();
       final backend = FakeBackend()..takeoverToStart = canvasTakeover;
-      await openYouTab(tester, backend);
+      await openCanvas(tester, backend);
       await openLiveView(tester);
 
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
@@ -280,7 +282,7 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('the You tab and the live view screen fit at twice the text size on a small phone', (tester) async {
+    testWidgets('the way to a login and the live view screen fit at twice the text size on a small phone', (tester) async {
       tester.view
         ..physicalSize = const Size(320, 640)
         ..devicePixelRatio = 1;
@@ -291,8 +293,19 @@ void main() {
       final backend = FakeBackend()
         ..takeoverToStart = canvasTakeover
         ..finishError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      backend.connections = [canvasConnection(on: true)];
+      await openUnlockedApp(tester, backend);
+      await goToTab(tester, 'You');
+      await settleApp(tester);
       expect(tester.takeException(), isNull, reason: 'overflow on the You tab');
+
+      await openYouRow(tester, 'Connections');
+      expect(tester.takeException(), isNull, reason: 'overflow on the list of Connections');
+
+      await tester.scrollUntilVisible(find.text('Canvas'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.pump();
+      await openRow(tester, 'Canvas');
+      expect(tester.takeException(), isNull, reason: "overflow on the Connection's own screen");
 
       await openLiveView(tester);
       await tester.tap(find.text('Done'));

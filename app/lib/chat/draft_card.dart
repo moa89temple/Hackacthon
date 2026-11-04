@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../backend/buddy_backend.dart';
+import '../design/parts.dart';
 import '../widgets/work_in_progress.dart';
 import 'chat_controller.dart';
 import 'draft_edit_screen.dart';
@@ -108,10 +109,6 @@ class _DraftCardState extends State<DraftCard> {
     }
   }
 
-  Widget _button(String label, {required String semanticsLabel, required VoidCallback onPressed}) {
-    return TextButton(onPressed: onPressed, child: Text(label, semanticsLabel: semanticsLabel));
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -125,66 +122,71 @@ class _DraftCardState extends State<DraftCard> {
       if (draft.why case final why?) 'Why them: $why',
       'Subject: ${draft.subject}',
     ];
-    return Card(
-      // It holds several controls, so it's a set of separate nodes rather than one.
-      semanticContainer: false,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // One item, because on Android its lines otherwise run together with the buttons'.
-            Semantics(
-              container: true,
-              liveRegion: widget.announce,
-              label: '$title. ${[...details, draft.body].join('\n')}',
-              excludeSemantics: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final openInOutlook = Text('Open in Outlook', semanticsLabel: 'Open $theDraft in Outlook');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Card(
+        // It holds several controls, so it's a set of separate nodes rather than one.
+        semanticContainer: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // One item, because on Android its lines otherwise run together with the buttons'.
+              Semantics(
+                container: true,
+                liveRegion: widget.announce,
+                label: '$title. ${[...details, draft.body].join('\n')}',
+                excludeSemantics: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.titleLarge),
+                    for (final line in details) Padding(padding: const EdgeInsets.only(top: 4), child: Text(line)),
+                    const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                    Text(draft.body),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // What sends it comes first, stacked so that large text never squeezes them.
+              if (email != null) ...[
+                FilledButton(
+                  onPressed: _askBuddyToSend,
+                  child: Text('Buddy sends it', semanticsLabel: 'Buddy sends it: $theDraft'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(onPressed: _openInOutlook, child: openInOutlook),
+              ] else
+                FilledButton(onPressed: _openInOutlook, child: openInOutlook),
+              const SizedBox(height: 4),
+              // Wraps onto new lines rather than running off the edge when text is large.
+              Wrap(
+                spacing: 16,
                 children: [
-                  Text(title, style: theme.textTheme.titleMedium),
-                  for (final line in details) Padding(padding: const EdgeInsets.only(top: 4), child: Text(line)),
-                  const Divider(height: 20),
-                  Text(draft.body),
+                  AppLink('Edit', icon: Icons.edit_outlined, semanticsLabel: 'Edit $theDraft', onPressed: _edit),
+                  AppLink('Copy', icon: Icons.copy_outlined, semanticsLabel: 'Copy $theDraft', onPressed: _copy),
                 ],
               ),
-            ),
-            const SizedBox(height: 4),
-            // Wraps onto new lines rather than running off the edge when text is large.
-            Wrap(
-              children: [
-                _button('Edit', semanticsLabel: 'Edit $theDraft', onPressed: _edit),
-                _button('Open in Outlook', semanticsLabel: 'Open $theDraft in Outlook', onPressed: _openInOutlook),
-                _button('Copy', semanticsLabel: 'Copy $theDraft', onPressed: _copy),
-                if (email != null) _button('Buddy sends it', semanticsLabel: 'Buddy sends it: $theDraft', onPressed: _askBuddyToSend),
-              ],
-            ),
-            if (_status case final status?)
-              Semantics(
-                container: true,
-                liveRegion: true,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(status, style: _statusIsProblem ? TextStyle(color: theme.colorScheme.error) : null),
-                ),
-              ),
-            Semantics(
-              container: true,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(_otherRoute, style: theme.textTheme.bodySmall),
-              ),
-            ),
-            if (email != null)
+              if (_status case final status?) StatusNote(status, isProblem: _statusIsProblem),
               Semantics(
                 container: true,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(_buddySends, style: theme.textTheme.bodySmall),
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(_otherRoute, style: theme.textTheme.bodySmall),
                 ),
               ),
-          ],
+              if (email != null)
+                Semantics(
+                  container: true,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(_buddySends, style: theme.textTheme.bodySmall),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

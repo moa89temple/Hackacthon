@@ -24,31 +24,78 @@ Connection calendar({bool on = false, DateTime? lastReadAt, String? problem, Str
       ),
     );
 
-Future<void> openYouTab(WidgetTester tester, FakeBackend backend) async {
-  await openUnlockedApp(tester, backend);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-  await settleApp(tester);
-}
-
-Future<void> openCard(WidgetTester tester) async {
-  await tester.ensureVisible(find.text('Connect'));
-  await tester.pump();
-  await tester.tap(find.text('Connect'));
+/// Brings something further down a long screen into view. Until then it isn't there to be found.
+Future<void> scrollTo(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(target, 200, scrollable: find.byType(Scrollable).first);
   await tester.pumpAndSettle();
 }
 
+Future<void> tapThrough(WidgetTester tester, String words) async {
+  await scrollTo(tester, find.text(words));
+  await tester.tap(find.text(words));
+  await tester.pumpAndSettle();
+}
+
+/// One of the You tab's rows, whichever tab the Student is on.
+Future<void> goToYouRow(WidgetTester tester, String row) async {
+  await goToTab(tester, 'You');
+  await settleApp(tester);
+  await tapThrough(tester, row);
+}
+
+/// The list of Connections, one row in from the You tab.
+Future<void> openConnections(WidgetTester tester, FakeBackend backend) async {
+  await openUnlockedApp(tester, backend);
+  await goToYouRow(tester, 'Connections');
+}
+
+/// A Connection's row opens its Read Permission card if it's off, and its own screen if it's on.
+Future<void> openConnection(WidgetTester tester, FakeBackend backend, String name) async {
+  await openConnections(tester, backend);
+  await tapThrough(tester, name);
+}
+
+Future<void> openCalendar(WidgetTester tester, FakeBackend backend) => openConnection(tester, backend, 'Google Calendar');
+
+Future<void> goBack(WidgetTester tester) async {
+  await tester.pageBack();
+  await tester.pumpAndSettle();
+}
+
+/// Lets a screen arrive or leave over the conversation, where the dots never stop while a reply is due, so nothing
+/// can wait for everything to settle.
+Future<void> letScreenChange(WidgetTester tester) async {
+  await settleApp(tester);
+  await tester.pump(const Duration(seconds: 1));
+  await tester.pump();
+}
+
 Finder get giveButton => find.widgetWithText(FilledButton, 'Give Read Permission');
+Finder get addressField => find.widgetWithText(TextField, 'Secret address in iCal format');
+Finder inDialog(String words) => find.descendant(of: find.byType(AlertDialog), matching: find.text(words));
+
+Future<void> paste(WidgetTester tester, String address) async {
+  await scrollTo(tester, addressField);
+  await tester.enterText(addressField, address);
+  await tester.pump();
+}
 
 Future<void> pasteAndGive(WidgetTester tester, String address) async {
-  await tester.enterText(find.widgetWithText(TextField, 'Secret address in iCal format'), address);
-  await tester.pump();
-  await tester.ensureVisible(giveButton);
-  await tester.pump();
+  await paste(tester, address);
+  await scrollTo(tester, giveButton);
   await tester.tap(giveButton);
   await tester.pumpAndSettle();
 }
 
-/// The size of an ordinary phone. The card is taller than the default test window.
+/// Everything on the longest screen fits at once, so a test can look at all of it, and only what's on the screen can be found.
+void useTallPhone(WidgetTester tester) {
+  tester.view
+    ..physicalSize = const Size(412, 2000)
+    ..devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
+/// The size of an ordinary phone.
 void useOrdinaryPhone(WidgetTester tester) {
   tester.view
     ..physicalSize = const Size(412, 915)
@@ -59,29 +106,40 @@ void useOrdinaryPhone(WidgetTester tester) {
 void main() {
   group('the list of Connections', () {
     testWidgets('shows a Connection that is off, and offers to connect it', (tester) async {
-      await openYouTab(tester, FakeBackend()..connections = [calendar()]);
+      useTallPhone(tester);
+      await openConnections(tester, FakeBackend()..connections = [calendar()]);
 
       expect(find.text('Connections'), findsOneWidget);
       expect(find.text('Google Calendar'), findsOneWidget);
       expect(find.text('Off'), findsOneWidget);
-      expect(find.text('Connect'), findsOneWidget);
+      expect(find.text('Read now'), findsNothing);
+
+      await tapThrough(tester, 'Google Calendar');
+
+      expect(find.text('Let Buddy read Google Calendar?'), findsOneWidget);
+      expect(giveButton, findsOneWidget);
       expect(find.text('Read now'), findsNothing);
     });
 
     testWidgets('shows a Connection that is on, when it was last read, and offers read now', (tester) async {
-      await openYouTab(
+      useTallPhone(tester);
+      await openConnections(
         tester,
         FakeBackend()..connections = [calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 7))],
       );
 
       expect(find.text('On. Last read Monday, November 2, 2026 at 7:00 AM.'), findsOneWidget);
+
+      await tapThrough(tester, 'Google Calendar');
+
+      expect(find.text('On. Last read Monday, November 2, 2026 at 7:00 AM.'), findsOneWidget);
       expect(find.text('Read now'), findsOneWidget);
       expect(find.text('Revoke'), findsOneWidget);
-      expect(find.text('Connect'), findsNothing);
+      expect(giveButton, findsNothing);
     });
 
     testWidgets('says so when it has never been read', (tester) async {
-      await openYouTab(tester, FakeBackend()..connections = [calendar(on: true)]);
+      await openConnections(tester, FakeBackend()..connections = [calendar(on: true)]);
 
       expect(find.text("On. Buddy hasn't read it yet."), findsOneWidget);
     });
@@ -99,16 +157,22 @@ void main() {
           );
 
       testWidgets('says so, and offers nothing to connect', (tester) async {
-        await openYouTab(tester, FakeBackend()..connections = [parked(on: false)]);
+        useTallPhone(tester);
+        await openConnections(tester, FakeBackend()..connections = [parked(on: false)]);
 
         expect(find.text(why), findsOneWidget);
         expect(find.text('Off'), findsNothing);
-        expect(find.text('Connect'), findsNothing);
+
+        await tapThrough(tester, 'Handshake');
+
+        expect(find.text(why), findsOneWidget);
+        expect(giveButton, findsNothing);
         expect(find.text('Revoke'), findsNothing);
       });
 
       testWidgets('offers only Revoke if it was connected, which is how the login gets deleted', (tester) async {
-        await openYouTab(tester, FakeBackend()..connections = [parked(on: true)]);
+        useTallPhone(tester);
+        await openConnection(tester, FakeBackend()..connections = [parked(on: true)], 'Handshake');
 
         expect(find.text(why), findsOneWidget);
         expect(find.text('Revoke'), findsOneWidget);
@@ -118,7 +182,7 @@ void main() {
     });
 
     testWidgets('shows what went wrong with the last read', (tester) async {
-      await openYouTab(
+      await openConnections(
         tester,
         FakeBackend()
           ..connections = [
@@ -127,19 +191,22 @@ void main() {
       );
 
       expect(find.text("That address doesn't work any more."), findsOneWidget);
+
+      await tapThrough(tester, 'Google Calendar');
+
+      expect(find.text("That address doesn't work any more."), findsOneWidget);
     });
 
     testWidgets('offers a retry when it cannot be loaded', (tester) async {
       final backend = FakeBackend()..connectionsError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      await openConnections(tester, backend);
 
       expect(find.textContaining('couldn\'t load your Connections'), findsOneWidget);
 
       backend
         ..connectionsError = null
         ..connections = [calendar()];
-      await tester.ensureVisible(find.text('Try again').last);
-      await tester.tap(find.text('Try again').last);
+      await tester.tap(find.text('Try again'));
       await settleApp(tester);
 
       expect(find.text('Google Calendar'), findsOneWidget);
@@ -147,22 +214,41 @@ void main() {
 
     testWidgets('picks up the latest read when the Student comes back to the tab', (tester) async {
       final backend = FakeBackend()..connections = [calendar(on: true)];
-      await openYouTab(tester, backend);
+      await openConnections(tester, backend);
 
       backend.connections = [calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 13))];
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Buddy')));
+      await goBack(tester);
+      await goToTab(tester, 'Buddy');
       await settleApp(tester);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
-      await settleApp(tester);
+      await goToYouRow(tester, 'Connections');
 
       expect(find.textContaining('at 1:00 PM'), findsOneWidget);
+    });
+
+    testWidgets('the row on the You tab says how they stand', (tester) async {
+      Connection other({required bool needsLogin}) => canvasConnection(id: 'other', name: 'Other', on: true, needsLogin: needsLogin);
+      final backend = FakeBackend()..connections = [calendar(), canvasConnection()];
+      await openUnlockedApp(tester, backend);
+
+      Future<void> expectRowToSay(List<Connection> connections, String words) async {
+        backend.connections = connections;
+        await goToTab(tester, 'You');
+        await settleApp(tester);
+        expect(find.text(words), findsOneWidget);
+      }
+
+      await expectRowToSay([calendar(), canvasConnection()], 'None on yet');
+      await expectRowToSay([calendar(on: true), canvasConnection()], '1 of 2 on');
+      await expectRowToSay([calendar(on: true), other(needsLogin: true)], 'Other needs login');
+      await expectRowToSay([canvasConnection(on: true, needsLogin: true), other(needsLogin: true)], '2 need login');
     });
   });
 
   group('read now', () {
     testWidgets('reads, then shows the new time and what the read saved', (tester) async {
+      useOrdinaryPhone(tester);
       final backend = FakeBackend()..connections = [calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 7))];
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
       backend
         ..connectionAfterRead = calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 9, 30))
@@ -182,6 +268,12 @@ void main() {
 
       expect(backend.reads, ['google-calendar']);
       expect(find.textContaining('at 9:30 AM'), findsOneWidget);
+
+      // Back without going through the tab bar, which would load the Profile by itself.
+      await goBack(tester);
+      await goBack(tester);
+      await tapThrough(tester, 'Profile');
+
       expect(find.text('Shift at CVS'), findsOneWidget);
     });
 
@@ -190,7 +282,7 @@ void main() {
         ..connections = [calendar(on: true)]
         ..connectionAfterRead = calendar(on: true)
         ..holdRead = true;
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
       await tester.ensureVisible(find.text('Read now'));
       await tester.pump();
@@ -210,7 +302,7 @@ void main() {
       final backend = FakeBackend()
         ..connections = [calendar(on: true)]
         ..connectionChangeError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
       await tester.ensureVisible(find.text('Read now'));
       await tester.pump();
@@ -223,61 +315,72 @@ void main() {
 
   group('the Read Permission card', () {
     testWidgets('says exactly what Buddy will read, and how to find the address', (tester) async {
-      useOrdinaryPhone(tester);
-      await openYouTab(tester, FakeBackend()..connections = [calendar()]);
-
-      await openCard(tester);
+      useTallPhone(tester);
+      await openCalendar(tester, FakeBackend()..connections = [calendar()]);
 
       expect(find.text('Let Buddy read Google Calendar?'), findsOneWidget);
       expect(find.textContaining('The name, time and place of each event'), findsOneWidget);
       expect(find.textContaining("can't change anything"), findsOneWidget);
+      expect(addressField, findsOneWidget);
+      // The steps are there for whoever wants them, and they aren't in the way of anyone else.
+      expect(find.textContaining('Open Google Calendar on a computer.'), findsNothing);
+
+      await tapThrough(tester, 'How to find this address');
+
       expect(find.textContaining('Open Google Calendar on a computer.'), findsOneWidget);
-      expect(find.widgetWithText(TextField, 'Secret address in iCal format'), findsOneWidget);
+    });
+
+    testWidgets('keeps the secret address hidden until the Student asks to see it', (tester) async {
+      useTallPhone(tester);
+      await openCalendar(tester, FakeBackend()..connections = [calendar()]);
+      await paste(tester, secretAddress);
+
+      TextField field() => tester.widget<TextField>(addressField);
+      expect(field().obscureText, isTrue);
+
+      await tapThrough(tester, 'Show');
+      expect(field().obscureText, isFalse);
+
+      await tapThrough(tester, 'Hide');
+      expect(field().obscureText, isTrue);
     });
 
     testWidgets('shows no warning when the service has no rule against automated tools', (tester) async {
-      useOrdinaryPhone(tester);
-      await openYouTab(tester, FakeBackend()..connections = [calendar()]);
-
-      await openCard(tester);
+      useTallPhone(tester);
+      await openCalendar(tester, FakeBackend()..connections = [calendar()]);
 
       expect(find.textContaining('Warning:'), findsNothing);
     });
 
     testWidgets('shows the warning when a service\'s rules forbid automated tools', (tester) async {
-      useOrdinaryPhone(tester);
-      await openYouTab(
+      useTallPhone(tester);
+      await openCalendar(
         tester,
         FakeBackend()..connections = [calendar(warning: "This service's own rules forbid automated tools.")],
       );
-
-      await openCard(tester);
 
       expect(find.text("Warning: This service's own rules forbid automated tools."), findsOneWidget);
     });
 
     testWidgets('gives nothing until the Student has pasted the address and tapped', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final backend = FakeBackend()..connections = [calendar()];
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
-      await openCard(tester);
       expect(tester.widget<FilledButton>(giveButton).onPressed, isNull);
 
-      await tester.enterText(find.widgetWithText(TextField, 'Secret address in iCal format'), secretAddress);
-      await tester.pump();
+      await paste(tester, secretAddress);
       expect(tester.widget<FilledButton>(giveButton).onPressed, isNotNull);
       expect(backend.gave, isEmpty);
     });
 
     testWidgets('a tap sends the address, turns the Connection on and goes back', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final backend = FakeBackend()
         ..connections = [calendar()]
         ..connectionAfterGive = calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 9));
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
-      await openCard(tester);
       await pasteAndGive(tester, '  $secretAddress  ');
 
       expect(backend.gave, [('google-calendar', secretAddress)]);
@@ -286,13 +389,12 @@ void main() {
     });
 
     testWidgets('shows why an address was refused, and keeps the card open', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final backend = FakeBackend()
         ..connections = [calendar()]
         ..giveError = const ReadPermissionRefused("That isn't your calendar's secret iCal address.");
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
-      await openCard(tester);
       await pasteAndGive(tester, 'https://example.test');
 
       expect(find.text("That isn't your calendar's secret iCal address."), findsOneWidget);
@@ -301,13 +403,12 @@ void main() {
     });
 
     testWidgets('says so when the backend cannot be reached', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final backend = FakeBackend()
         ..connections = [calendar()]
         ..giveError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
-      await openCard(tester);
       await pasteAndGive(tester, secretAddress);
 
       expect(find.textContaining("couldn't reach the backend"), findsOneWidget);
@@ -315,12 +416,7 @@ void main() {
   });
 
   group('revoking', () {
-    Future<void> tapRevoke(WidgetTester tester) async {
-      await tester.ensureVisible(find.text('Revoke'));
-      await tester.pump();
-      await tester.tap(find.text('Revoke'));
-      await tester.pumpAndSettle();
-    }
+    Future<void> tapRevoke(WidgetTester tester) => tapThrough(tester, 'Revoke');
 
     testWidgets('asks first, says what will be deleted, then turns it off and refreshes the Profile', (tester) async {
       useOrdinaryPhone(tester);
@@ -337,27 +433,34 @@ void main() {
             wasEdited: false,
           ),
         ];
-      await openYouTab(tester, backend);
+      await openUnlockedApp(tester, backend);
+      await goToYouRow(tester, 'Profile');
       expect(find.text('Shift at CVS'), findsOneWidget);
 
+      await goBack(tester);
+      await tapThrough(tester, 'Connections');
+      await tapThrough(tester, 'Google Calendar');
       await tapRevoke(tester);
       expect(find.textContaining('deletes the address and every fact from it'), findsOneWidget);
       expect(find.textContaining('already showed the AI stays'), findsOneWidget);
       expect(backend.revoked, isEmpty);
 
       backend.facts = [];
-      await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Revoke')));
+      await tester.tap(inDialog('Revoke'));
       await tester.pumpAndSettle();
 
       expect(backend.revoked, ['google-calendar']);
       expect(find.text('Off'), findsOneWidget);
+
+      await goBack(tester);
+      await tapThrough(tester, 'Profile');
       expect(find.text('Shift at CVS'), findsNothing);
     });
 
     testWidgets('does nothing on Cancel', (tester) async {
       useOrdinaryPhone(tester);
       final backend = FakeBackend()..connections = [calendar(on: true)];
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
       await tapRevoke(tester);
       await tester.tap(find.text('Cancel'));
@@ -372,13 +475,14 @@ void main() {
       final backend = FakeBackend()
         ..connections = [calendar(on: true)]
         ..connectionChangeError = const BackendException('offline');
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
       await tapRevoke(tester);
-      await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Revoke')));
+      await tester.tap(inDialog('Revoke'));
       await tester.pumpAndSettle();
 
       expect(find.text('Read now'), findsOneWidget);
+      expect(find.text("On. Buddy hasn't read it yet."), findsOneWidget);
       expect(find.textContaining("couldn't reach the backend"), findsOneWidget);
     });
   });
@@ -394,17 +498,24 @@ void main() {
           wasEdited: false,
         );
 
+    Future<void> openProfile(WidgetTester tester, FakeBackend backend) async {
+      await openUnlockedApp(tester, backend);
+      await goToYouRow(tester, 'Profile');
+    }
+
     testWidgets('show their times and where they came from', (tester) async {
-      await openYouTab(tester, FakeBackend()..facts = [shift()]);
+      await openProfile(tester, FakeBackend()..facts = [shift()]);
 
       expect(find.text('Tue, Nov 3, 2:00 PM–5:00 PM'), findsOneWidget);
       expect(find.text('From Google Calendar, read on Monday, November 2, 2026.'), findsOneWidget);
     });
 
     testWidgets('say that a deletion lasts, because Buddy reads the calendar again', (tester) async {
-      await openYouTab(tester, FakeBackend()..facts = [shift()]);
+      await openProfile(tester, FakeBackend()..facts = [shift()]);
 
-      await tester.tap(find.bySemanticsLabel('Delete: Shift at CVS'));
+      await tester.tap(find.byTooltip('Change or delete: Shift at CVS'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('stays deleted when Buddy reads Google Calendar again'), findsOneWidget);
@@ -417,6 +528,17 @@ void main() {
       await sendMessage(tester, 'When should I go to tutoring?');
       backend.reply.add(const ReplyReadPermissionCard('google-calendar'));
       await settleApp(tester);
+    }
+
+    Future<void> reviewAndDecide(WidgetTester tester) async {
+      await tester.tap(find.text('Review and decide'));
+      await letScreenChange(tester);
+    }
+
+    Future<void> pasteAndGiveOverConversation(WidgetTester tester, String address) async {
+      await paste(tester, address);
+      await tester.tap(giveButton);
+      await letScreenChange(tester);
     }
 
     testWidgets('appears as soon as Buddy suggests the Connection', (tester) async {
@@ -434,35 +556,54 @@ void main() {
           ..connections = [calendar()],
       );
 
+      // Under the words that introduce it, in the turn it belongs to.
       final card = tester.getTopLeft(find.text('Let Buddy read Google Calendar?'));
       expect(card.dy, greaterThan(tester.getTopLeft(find.text('When?')).dy));
-      expect(card.dy, lessThan(tester.getTopLeft(find.text('It would help.')).dy));
+      expect(card.dy, greaterThan(tester.getTopLeft(find.text('It would help.')).dy));
+    });
+
+    testWidgets('decides nothing by itself, and opens the whole card to decide on', (tester) async {
+      useTallPhone(tester);
+      final backend = FakeBackend()..connections = [calendar()];
+      await openChatWithCard(tester, backend);
+
+      expect(giveButton, findsNothing);
+      expect(addressField, findsNothing);
+
+      await reviewAndDecide(tester);
+
+      expect(find.textContaining('The name, time and place of each event'), findsOneWidget);
+      expect(giveButton, findsOneWidget);
+      expect(backend.gave, isEmpty);
     });
 
     testWidgets('gives the Read Permission with a tap, then shows that it is on', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final backend = FakeBackend()
         ..connections = [calendar()]
         ..connectionAfterGive = calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 9));
       await openChatWithCard(tester, backend);
 
-      await pasteAndGive(tester, secretAddress);
+      await reviewAndDecide(tester);
+      await pasteAndGiveOverConversation(tester, secretAddress);
 
       expect(backend.gave, [('google-calendar', secretAddress)]);
-      expect(find.text('Google Calendar is connected. You can revoke this on the You tab.'), findsOneWidget);
+      expect(find.text('Google Calendar is connected. You can revoke this in You > Connections.'), findsOneWidget);
       expect(find.text('Let Buddy read Google Calendar?'), findsNothing);
     });
 
     testWidgets('catches up if the Read Permission went through but the answer never arrived', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final backend = FakeBackend()
         ..connections = [calendar()]
         ..giveError = const BackendException('dropped');
       await openChatWithCard(tester, backend);
+      await reviewAndDecide(tester);
 
       backend.connections = [calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 9))];
-      await pasteAndGive(tester, secretAddress);
-      await settleApp(tester);
+      await pasteAndGiveOverConversation(tester, secretAddress);
+      await tester.pageBack();
+      await letScreenChange(tester);
 
       expect(find.textContaining('Google Calendar is connected.'), findsOneWidget);
     });
@@ -541,19 +682,16 @@ void main() {
         );
 
     testWidgets('shows on the list with its web address and how Buddy reads it', (tester) async {
-      await openYouTab(tester, FakeBackend()..connections = [notion()]);
+      await openConnections(tester, FakeBackend()..connections = [notion()]);
 
       expect(find.text('Notion'), findsOneWidget);
-      expect(find.text('notion.com. Through the connector notion.com publishes itself, at mcp.notion.com.'), findsOneWidget);
-      expect(find.text('Off'), findsOneWidget);
+      expect(find.text('notion.com. Through the connector notion.com publishes itself, at mcp.notion.com. Off'), findsOneWidget);
     });
 
     testWidgets('its card shows its name, its web address and the route before anything is given', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final backend = FakeBackend()..connections = [notion()];
-      await openYouTab(tester, backend);
-
-      await openCard(tester);
+      await openConnection(tester, backend, 'Notion');
 
       expect(find.text('Let Buddy read Notion?'), findsOneWidget);
       expect(find.text('Name: Notion'), findsOneWidget);
@@ -569,27 +707,22 @@ void main() {
       final backend = FakeBackend()
         ..connections = [notion()]
         ..connectionAfterGive = notion(on: true, needsLogin: true);
-      await openYouTab(tester, backend);
-      await openCard(tester);
+      await openConnection(tester, backend, 'Notion');
 
-      await tester.ensureVisible(giveButton);
-      await tester.pump();
+      await scrollTo(tester, giveButton);
       await tester.tap(giveButton);
       await tester.pumpAndSettle();
 
       expect(backend.gave, [('service-notion.com', null)]);
-      expect(find.text('Log in to Notion'), findsWidgets);
+      expect(find.text('Notion is connected'), findsOneWidget);
+      expect(find.text('Log in to Notion'), findsOneWidget);
+      expect(find.text('Not now'), findsOneWidget);
     });
 
     testWidgets('a name from the model is shown as plain words, whatever it looks like', (tester) async {
       useOrdinaryPhone(tester);
       const name = '**Tap** [here](https://evil.example)';
-      await openYouTab(tester, FakeBackend()..connections = [notion(name: name)]);
-
-      await tester.ensureVisible(find.text('Connect'));
-      await tester.pump();
-      await tester.tap(find.text('Connect'));
-      await tester.pumpAndSettle();
+      await openConnection(tester, FakeBackend()..connections = [notion(name: name)], name);
 
       expect(find.text('Name: $name'), findsOneWidget);
     });
@@ -605,6 +738,10 @@ void main() {
       await settleApp(tester);
 
       expect(find.text('Let Buddy read Notion?'), findsOneWidget);
+
+      await tester.tap(find.text('Review and decide'));
+      await letScreenChange(tester);
+
       expect(find.text('Web address: notion.com'), findsOneWidget);
     });
 
@@ -613,37 +750,41 @@ void main() {
         ..connections = [notion(on: true)]
         ..connectionAfterRevoke = notion()
         ..revokeRemovesIt = true;
-      await openYouTab(tester, backend);
+      await openConnection(tester, backend, 'Notion');
 
-      await tester.ensureVisible(find.text('Revoke'));
-      await tester.pump();
-      await tester.tap(find.text('Revoke'));
-      await tester.pumpAndSettle();
+      await tapThrough(tester, 'Revoke');
       expect(find.textContaining('anything it holds to log in'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'Revoke').last);
+      await tester.tap(inDialog('Revoke'));
       await tester.pumpAndSettle();
 
       expect(backend.revoked, ['service-notion.com']);
       expect(find.text('Notion'), findsNothing);
-      // Off the top of the screen, if the Student had to scroll down to the button.
-      expect(find.textContaining('took it off your list', skipOffstage: false), findsOneWidget);
+      expect(find.textContaining('took it off your list'), findsOneWidget);
     });
 
     testWidgets('stays on the list saying so while its login can\'t be deleted yet', (tester) async {
       final backend = FakeBackend()
         ..connections = [notion(on: true)]
         ..connectionAfterRevoke = notion(loginNotDeletedYet: true);
-      await openYouTab(tester, backend);
+      await openConnection(tester, backend, 'Notion');
 
-      await tester.ensureVisible(find.text('Revoke'));
-      await tester.pump();
-      await tester.tap(find.text('Revoke'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextButton, 'Revoke').last);
+      await tapThrough(tester, 'Revoke');
+      await tester.tap(inDialog('Revoke'));
       await settleApp(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining("couldn't delete your login yet"), findsWidgets);
+
+      await goBack(tester);
 
       expect(find.text('Notion'), findsOneWidget);
       expect(find.textContaining("couldn't delete your login yet"), findsWidgets);
+
+      // It's off, but there's still something to say about it, so its row leads to its own screen and not to the question.
+      await tapThrough(tester, 'Notion');
+
+      expect(find.textContaining("Buddy couldn't delete your login yet, because Buddy's Browser couldn't be reached."), findsOneWidget);
+      expect(giveButton, findsNothing);
     });
 
     testWidgets('can be taken off the list without connecting it', (tester) async {
@@ -651,24 +792,21 @@ void main() {
         ..connections = [notion()]
         ..connectionAfterRevoke = notion()
         ..revokeRemovesIt = true;
-      await openYouTab(tester, backend);
+      await openConnection(tester, backend, 'Notion');
 
-      await tester.ensureVisible(find.text('Remove'));
-      await tester.pump();
-      await tester.tap(find.text('Remove'));
-      await tester.pumpAndSettle();
+      await tapThrough(tester, 'Remove');
 
       expect(backend.revoked, ['service-notion.com']);
       expect(find.text('Notion'), findsNothing);
-      expect(find.text('Buddy took Notion off your list.', skipOffstage: false), findsOneWidget);
+      expect(find.text('Buddy took Notion off your list.'), findsOneWidget);
     });
 
     testWidgets('one of Buddy\'s own Connections has no Remove and no section about the service', (tester) async {
-      useOrdinaryPhone(tester);
-      await openYouTab(tester, FakeBackend()..connections = [calendar()]);
+      useTallPhone(tester);
+      await openCalendar(tester, FakeBackend()..connections = [calendar()]);
 
+      expect(giveButton, findsOneWidget);
       expect(find.text('Remove'), findsNothing);
-      await openCard(tester);
       expect(find.text('The service'), findsNothing);
     });
 
@@ -679,11 +817,8 @@ void main() {
       backend.takeoverToStart = Takeover(site: 'service-notion.com', siteName: 'Notion', liveViewUrl: canvasTakeover.liveViewUrl);
       backend.finished = const FinishedTakeover(siteName: 'Notion', signedIn: true);
 
-      await openYouTab(tester, backend);
-      await tester.ensureVisible(find.text('Log in to Notion').first);
-      await tester.pump();
-      await tester.tap(find.text('Log in to Notion').first);
-      await tester.pumpAndSettle();
+      await openConnection(tester, backend, 'Notion');
+      await tapThrough(tester, 'Log in to Notion');
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       expect(find.text("You're logged in to Notion."), findsOneWidget);
@@ -692,11 +827,14 @@ void main() {
 
     group('accessibility', () {
       testWidgets('a screen reader hears each part of its row, and which service each button is for', (tester) async {
+        useTallPhone(tester);
         final handle = tester.ensureSemantics();
-        await openYouTab(tester, FakeBackend()..connections = [notion()]);
+        await openConnections(tester, FakeBackend()..connections = [notion()]);
 
-        expect(find.bySemanticsLabel('Notion\nnotion.com. Through the connector notion.com publishes itself, at mcp.notion.com.\nOff'), findsOneWidget);
-        expect(find.bySemanticsLabel('Connect Notion'), findsOneWidget);
+        expect(find.bySemanticsLabel('Notion. notion.com. Through the connector notion.com publishes itself, at mcp.notion.com. Off'), findsOneWidget);
+
+        await tapThrough(tester, 'Notion');
+
         expect(find.bySemanticsLabel('Remove Notion from your list'), findsOneWidget);
         handle.dispose();
       });
@@ -704,8 +842,7 @@ void main() {
       testWidgets('its card marks the new heading as one', (tester) async {
         useOrdinaryPhone(tester);
         final handle = tester.ensureSemantics();
-        await openYouTab(tester, FakeBackend()..connections = [notion()]);
-        await openCard(tester);
+        await openConnection(tester, FakeBackend()..connections = [notion()], 'Notion');
 
         expect(tester.getSemantics(find.bySemanticsLabel('The service')).flagsCollection.isHeader, isTrue);
         handle.dispose();
@@ -715,15 +852,13 @@ void main() {
         useOrdinaryPhone(tester);
         tester.platformDispatcher.textScaleFactorTestValue = 2;
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-        await openYouTab(tester, FakeBackend()..connections = [notion(name: 'A service with a rather long name')]);
+        await openConnections(tester, FakeBackend()..connections = [notion(name: 'A service with a rather long name')]);
 
         expect(tester.takeException(), isNull);
-        await tester.ensureVisible(find.text('Connect'));
-        await tester.pump();
-        await tester.tap(find.text('Connect'));
-        await tester.pumpAndSettle();
+        await tapThrough(tester, 'A service with a rather long name');
 
         expect(tester.takeException(), isNull);
+        await scrollTo(tester, find.text('Web address: notion.com'));
         expect(find.text('Web address: notion.com'), findsOneWidget);
       });
     });
@@ -731,31 +866,45 @@ void main() {
 
   group('accessibility', () {
     testWidgets('a screen reader hears which Connection each button is for', (tester) async {
+      useOrdinaryPhone(tester);
       final handle = tester.ensureSemantics();
-      await openYouTab(tester, FakeBackend()..connections = [calendar(on: true)]);
+      await openCalendar(tester, FakeBackend()..connections = [calendar(on: true)]);
 
       expect(find.bySemanticsLabel('Read Google Calendar now'), findsOneWidget);
       expect(find.bySemanticsLabel('Revoke the Read Permission for Google Calendar'), findsOneWidget);
       handle.dispose();
     });
 
-    testWidgets('a screen reader hears which Connection Connect is for', (tester) async {
+    testWidgets('a screen reader hears which Connection a row leads to', (tester) async {
       final handle = tester.ensureSemantics();
-      await openYouTab(tester, FakeBackend()..connections = [calendar()]);
+      await openConnections(tester, FakeBackend()..connections = [calendar()]);
 
-      expect(find.bySemanticsLabel('Connect Google Calendar'), findsOneWidget);
+      final row = find.bySemanticsLabel('Google Calendar. Off');
+      expect(row, findsOneWidget);
+      expect(tester.getSemantics(row).flagsCollection.isButton, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('a screen reader hears which Connection the card in the conversation is about', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openUnlockedApp(
+        tester,
+        FakeBackend(history: [const ReadPermissionCardItem('google-calendar')])..connections = [calendar()],
+      );
+
+      expect(find.bySemanticsLabel('Review and decide: let Buddy read Google Calendar'), findsOneWidget);
       handle.dispose();
     });
 
     testWidgets('a screen reader hears each Connection with its own status and any problem', (tester) async {
       final handle = tester.ensureSemantics();
-      await openYouTab(
+      await openConnections(
         tester,
         FakeBackend()..connections = [calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 7), problem: 'It failed.')],
       );
 
       expect(
-        find.bySemanticsLabel('Google Calendar\nOn. Last read Monday, November 2, 2026 at 7:00 AM.\nIt failed.'),
+        find.bySemanticsLabel(RegExp(r'^Google Calendar\W+On\. Last read Monday, November 2, 2026 at 7:00 AM\.\s+It failed\.$')),
         findsOneWidget,
       );
       handle.dispose();
@@ -763,7 +912,7 @@ void main() {
 
     testWidgets('a screen reader hears each calendar fact as one item, with its times', (tester) async {
       final handle = tester.ensureSemantics();
-      await openYouTab(
+      await openUnlockedApp(
         tester,
         FakeBackend()
           ..facts = [
@@ -778,6 +927,7 @@ void main() {
             ),
           ],
       );
+      await goToYouRow(tester, 'Profile');
 
       expect(
         find.bySemanticsLabel(
@@ -793,7 +943,7 @@ void main() {
       final backend = FakeBackend()
         ..connections = [calendar(on: true)]
         ..connectionAfterRead = calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 9));
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
       await tester.ensureVisible(find.text('Read now'));
       await tester.pump();
@@ -811,9 +961,8 @@ void main() {
       final backend = FakeBackend()
         ..connections = [calendar()]
         ..giveError = const ReadPermissionRefused('That address is wrong.');
-      await openYouTab(tester, backend);
+      await openCalendar(tester, backend);
 
-      await openCard(tester);
       await pasteAndGive(tester, 'nope');
 
       expect(tester.getSemantics(find.bySemanticsLabel('That address is wrong.')).flagsCollection.isLiveRegion, isTrue);
@@ -821,32 +970,38 @@ void main() {
     });
 
     testWidgets('the card and the list mark their headings', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final handle = tester.ensureSemantics();
-      await openYouTab(tester, FakeBackend()..connections = [calendar()]);
-      expect(tester.getSemantics(find.bySemanticsLabel('Google Calendar\nOff')).flagsCollection.isHeader, isTrue);
+      await openConnections(tester, FakeBackend()..connections = [calendar()]);
+      expect(tester.getSemantics(find.bySemanticsLabel(RegExp('^Connections'))).flagsCollection.isHeader, isTrue);
 
-      await openCard(tester);
+      await tapThrough(tester, 'Google Calendar');
 
+      // A heading that starts a block is read out together with the block's first words, so it's found by how it starts.
       for (final heading in [
         'Let Buddy read Google Calendar?',
         'What Buddy will read',
+        'Ongoing access',
         'Good to know',
-        'How to find the address',
+        'Secret calendar address',
+        'You stay in control',
       ]) {
-        expect(tester.getSemantics(find.bySemanticsLabel(heading)).flagsCollection.isHeader, isTrue, reason: heading);
+        final node = find.bySemanticsLabel(RegExp('^${RegExp.escape(heading)}'));
+        expect(tester.getSemantics(node).flagsCollection.isHeader, isTrue, reason: heading);
       }
+      // How to find the address opens and closes now, so it's a button and not a heading.
+      expect(tester.getSemantics(find.bySemanticsLabel('How to find this address')).flagsCollection.isButton, isTrue);
       handle.dispose();
     });
 
     testWidgets('the list, card and dialog meet the tap target, label and contrast guidelines', (tester) async {
-      useOrdinaryPhone(tester);
+      useTallPhone(tester);
       final handle = tester.ensureSemantics();
       final backend = FakeBackend()
         ..connections = [
           calendar(warning: "This service's own rules forbid automated tools."),
         ];
-      await openYouTab(tester, backend);
+      await openConnections(tester, backend);
 
       Future<void> expectGuidelines() async {
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
@@ -855,28 +1010,29 @@ void main() {
       }
 
       await expectGuidelines();
-      await openCard(tester);
+      await tapThrough(tester, 'Google Calendar');
       await expectGuidelines();
       handle.dispose();
     });
 
-    testWidgets('the Connected row and revoke dialog meet the guidelines too', (tester) async {
-      useOrdinaryPhone(tester);
+    testWidgets('the Connected row, its screen and the revoke dialog meet the guidelines too', (tester) async {
+      useTallPhone(tester);
       final handle = tester.ensureSemantics();
-      await openYouTab(tester, FakeBackend()..connections = [calendar(on: true, problem: 'It failed.')]);
+      await openConnections(tester, FakeBackend()..connections = [calendar(on: true, problem: 'It failed.')]);
 
-      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-      await expectLater(tester, meetsGuideline(textContrastGuideline));
+      Future<void> expectGuidelines() async {
+        await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+        await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+        await expectLater(tester, meetsGuideline(textContrastGuideline));
+      }
 
-      await tester.ensureVisible(find.text('Revoke'));
-      await tester.pump();
-      await tester.tap(find.text('Revoke'));
-      await tester.pumpAndSettle();
+      await expectGuidelines();
 
-      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-      await expectLater(tester, meetsGuideline(textContrastGuideline));
+      await tapThrough(tester, 'Google Calendar');
+      await expectGuidelines();
+
+      await tapThrough(tester, 'Revoke');
+      await expectGuidelines();
       handle.dispose();
     });
 
@@ -894,28 +1050,26 @@ void main() {
       final backend = FakeBackend()
         ..connections = [calendar(warning: "This service's own rules forbid automated tools.")]
         ..connectionAfterGive = calendar(on: true, lastReadAt: DateTime(2026, 11, 2, 9));
-      await openYouTab(tester, backend);
+      await openConnections(tester, backend);
       expect(tester.takeException(), isNull, reason: 'overflow on the list');
 
-      await openCard(tester);
+      await tapThrough(tester, 'Google Calendar');
       expect(tester.takeException(), isNull, reason: 'overflow on the card');
-      await tester.enterText(find.widgetWithText(TextField, 'Secret address in iCal format'), secretAddress);
-      await tester.pump();
-      await tester.ensureVisible(giveButton);
-      await tester.pumpAndSettle();
+      await paste(tester, secretAddress);
+      await scrollTo(tester, giveButton);
       expect(giveButton.hitTestable(), findsOneWidget);
       await tester.tap(giveButton);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: 'overflow once connected');
 
-      await tester.ensureVisible(find.text('Revoke'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Revoke'));
-      await tester.pumpAndSettle();
+      await tapThrough(tester, 'Google Calendar');
+      expect(tester.takeException(), isNull, reason: "overflow on the Connection's own screen");
+
+      await tapThrough(tester, 'Revoke');
       expect(tester.takeException(), isNull, reason: 'overflow in the dialog');
-      await tester.ensureVisible(find.descendant(of: find.byType(AlertDialog), matching: find.text('Revoke')));
+      await tester.ensureVisible(inDialog('Revoke'));
       await tester.pumpAndSettle();
-      expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('Revoke')).hitTestable(), findsOneWidget);
+      expect(inDialog('Revoke').hitTestable(), findsOneWidget);
     });
 
     testWidgets('the card fits in the conversation at twice the text size on a small phone', (tester) async {
@@ -926,6 +1080,8 @@ void main() {
       );
 
       expect(tester.takeException(), isNull);
+      await scrollTo(tester, find.text('Review and decide'));
+      expect(find.text('Review and decide').hitTestable(), findsOneWidget);
     });
   });
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/tasks/task_backend.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -45,7 +46,7 @@ Task failed({int id = 3}) => Task(id: id, title: title, state: 'failed', stateTe
 
 Future<void> openToday(WidgetTester tester, FakeBackend backend) async {
   await openUnlockedApp(tester, backend);
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Today')));
+  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
   await settleApp(tester);
 }
 
@@ -258,10 +259,22 @@ void main() {
       await openToday(tester, backend);
 
       expect(find.text('Tasks'), findsOneWidget);
-      expect(find.text(found), findsOneWidget);
+      expect(find.text(title), findsNWidgets(2));
+      expect(find.text('Done.'), findsOneWidget);
       expect(find.text('Buddy is working on this.'), findsOneWidget);
       expect(find.text('An old one'), findsNothing);
-      expect(tester.getTopLeft(find.text('Buddy is working on this.')).dy, lessThan(tester.getTopLeft(find.text(found)).dy));
+      expect(tester.getTopLeft(find.text('Buddy is working on this.')).dy, lessThan(tester.getTopLeft(find.text('Done.')).dy));
+    });
+
+    testWidgets('keeps what a Task found to the screen its row opens', (tester) async {
+      await openToday(tester, FakeBackend()..tasks = [done()]);
+      expect(find.text(found), findsNothing);
+
+      await tester.tap(find.text(title));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your Task'), findsOneWidget);
+      expect(find.text(found), findsOneWidget);
     });
 
     testWidgets('shows no heading with no Tasks', (tester) async {
@@ -270,14 +283,37 @@ void main() {
       expect(find.text('Tasks'), findsNothing);
     });
 
-    testWidgets('can cancel from there too', (tester) async {
+    testWidgets('can cancel from there too, on the screen its row opens', (tester) async {
       final backend = FakeBackend()..tasks = [working()];
       await openToday(tester, backend);
+
+      await tester.tap(find.text(title));
+      // Its progress bar keeps moving, so the screen never settles.
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Your Task'), findsOneWidget);
 
       await tester.tap(find.widgetWithText(OutlinedButton, 'Cancel'));
       await settleApp(tester);
 
       expect(backend.cancelled, [3]);
+    });
+
+    testWidgets('puts a Task waiting on the Student above the rest, and leads to the conversation from it', (tester) async {
+      final backend = FakeBackend()..tasks = [done(id: 1), waitingForCard(id: 2)];
+      await openToday(tester, backend);
+
+      expect(find.text('Buddy needs you before it can go on.'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('See what it needs')).dy, lessThan(tester.getTopLeft(find.text('Tasks')).dy));
+
+      await tester.tap(find.text('See what it needs'));
+      await tester.pumpAndSettle();
+      expect(find.text('Your Task'), findsOneWidget);
+      expect(find.textContaining('Approve or Decline the Action card'), findsOneWidget);
+
+      await tester.tap(find.text('Go to your conversation'));
+      await tester.pumpAndSettle();
+      expect(find.text('Your Temple guide'), findsOneWidget);
     });
   });
 
@@ -286,7 +322,7 @@ void main() {
       final phone = FakePhoneNotifications();
       final backend = FakeBackend()..tasks = [done()];
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('You')));
+      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('You')));
       await settleApp(tester);
 
       phone.tapTaskNotification(3);
@@ -380,11 +416,25 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('read a row on Today as one item, with where the Task stands', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openToday(tester, FakeBackend()..tasks = [working()]);
+
+      final row = find.bySemanticsLabel('Task: $title. Buddy is working on this.');
+      expect(row, findsOneWidget);
+      expect(tester.getSemantics(row).flagsCollection.isButton, isTrue);
+      handle.dispose();
+    });
+
     testWidgets('fit on a small phone with large text', (tester) async {
       useSmallPhoneWithLargeText(tester);
       final backend = FakeBackend(history: [TaskCardItem(askingToSpend())])..tasks = [askingToSpend()];
       await openUnlockedApp(tester, backend);
 
+      expect(tester.takeException(), isNull);
+      // Until the Student has written something, what they could start with is at the bottom and the card is above it.
+      await tester.dragUntilVisible(find.text('Keep going'), find.byType(ListView), const Offset(0, 200));
+      await tester.pump();
       expect(tester.takeException(), isNull);
       expect(find.widgetWithText(FilledButton, 'Keep going'), findsOneWidget);
     });
@@ -394,8 +444,12 @@ void main() {
       final phone = FakePhoneNotifications();
       final backend = FakeBackend()..tasks = [done(sources: const [TaskSource(title: 'A page with quite a long title on it', url: 'https://example.edu/')]), waitingForCard(id: 4)];
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Today')));
+      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
       await settleApp(tester);
+      expect(tester.takeException(), isNull);
+      // The one waiting on the Student comes first, and with text this large the other is further down.
+      await tester.scrollUntilVisible(find.text('Done.'), 200);
+      await tester.pump();
       expect(tester.takeException(), isNull);
 
       phone.tapTaskNotification(4);

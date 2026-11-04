@@ -265,6 +265,7 @@ export const navigate360At = (origin: string): ConnectionType => ({
   name: "Navigate360",
   logsIn: true,
   card: {
+    why: "So Buddy can tell you who your advisor is and when your appointments are.",
     reads: [
       "Your assigned advisors: each one's name, title, Temple email and work phone. Each one becomes a Contact, so that Buddy can write you a Draft to them.",
       "Your upcoming appointments: the time, what it's for, the place and who it's with.",

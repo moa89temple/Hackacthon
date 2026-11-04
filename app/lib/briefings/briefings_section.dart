@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../design/parts.dart';
 import 'briefing_backend.dart';
 import 'briefing_time_dialog.dart';
 import 'briefings_controller.dart';
 import 'phone_notifications_controller.dart';
 
-/// The You tab's control over when Briefings go, and the plain truth about whether they reach the phone.
-class BriefingsSection extends StatelessWidget {
-  const BriefingsSection({super.key, required this.briefings, required this.phone});
+/// The Student's control over when Briefings go, and the plain truth about whether they reach the phone.
+class NudgesScreen extends StatelessWidget {
+  const NudgesScreen({super.key, required this.briefings, required this.phone});
 
   final BriefingsController briefings;
   final PhoneNotificationsController phone;
@@ -51,70 +52,66 @@ class BriefingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ListenableBuilder(
       listenable: Listenable.merge([briefings, phone]),
       builder: (context, _) {
         final settings = briefings.settings;
         final times = settings?.times;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        return SubScreen(
+          title: 'Nudges',
+          subtitle: "What Buddy sends without being asked.",
           children: [
-            Semantics(header: true, child: Text('Briefings', style: theme.textTheme.titleMedium)),
-            const SizedBox(height: 8),
-            if (briefings.couldNotLoadSettings) ...[
-              Semantics(liveRegion: true, child: const Text("The app can't reach Buddy right now. Check that the backend is running.")),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(onPressed: briefings.load, child: const Text('Try again', semanticsLabel: 'Try loading your Briefing times again')),
-              ),
-            ] else if (settings == null || times == null)
-              const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading your Briefing times'))
+            if (briefings.couldNotLoadSettings)
+              EmptyState(
+                icon: Icons.notifications_none,
+                isProblem: true,
+                words: "The app can't reach Buddy right now. Check that the backend is running.",
+                action: AppLink('Try again', semanticsLabel: 'Try loading your Briefing times again', onPressed: briefings.load),
+              )
+            else if (settings == null || times == null)
+              const LoadingBlock(label: 'Loading your Briefing times')
             else ...[
-              const Text("A short Briefing each weekday and a week ahead each Sunday, with what's relevant to you right now. Times are Philadelphia time, wherever your phone is."),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: briefings.isChanging
-                    ? null
-                    : () => _change(
-                          context,
-                          current: times.weekdays,
-                          title: 'Weekday Briefing time',
-                          timesWith: (chosen) => BriefingTimes(weekdays: chosen, sunday: times.sunday),
-                        ),
-                child: Text(
-                  'Weekdays at ${_inWords(context, times.weekdays)}',
-                  semanticsLabel: 'Weekday Briefings go at ${_inWords(context, times.weekdays)}. Change the time',
-                ),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: briefings.isChanging
-                    ? null
-                    : () => _change(
-                          context,
-                          current: times.sunday,
-                          title: 'Sunday week-ahead Briefing time',
-                          timesWith: (chosen) => BriefingTimes(weekdays: times.weekdays, sunday: chosen),
-                        ),
-                child: Text(
-                  'Sundays at ${_inWords(context, times.sunday)}',
-                  semanticsLabel: 'Sunday week-ahead Briefings go at ${_inWords(context, times.sunday)}. Change the time',
-                ),
-              ),
-              const SizedBox(height: 8),
-              Semantics(container: true, liveRegion: true, child: Text('Your next Briefing is ${settings.nextWhen}.')),
-              if (briefings.problem case final problem?)
-                Semantics(
-                  container: true,
-                  liveRegion: true,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+              ScreenSection(
+                title: 'Briefings',
+                children: [
+                  const Text("A short Briefing each weekday and a week ahead each Sunday, with what's relevant to you right now. Times are Philadelphia time, wherever your phone is."),
+                  const SizedBox(height: 12),
+                  RowGroup(
+                    children: [
+                      NavRow(
+                        title: 'Weekdays at ${_inWords(context, times.weekdays)}',
+                        semanticsLabel: 'Weekday Briefings go at ${_inWords(context, times.weekdays)}. Change the time',
+                        onTap: () {
+                          if (briefings.isChanging) return;
+                          _change(
+                            context,
+                            current: times.weekdays,
+                            title: 'Weekday Briefing time',
+                            timesWith: (chosen) => BriefingTimes(weekdays: chosen, sunday: times.sunday),
+                          );
+                        },
+                      ),
+                      NavRow(
+                        title: 'Sundays at ${_inWords(context, times.sunday)}',
+                        semanticsLabel: 'Sunday week-ahead Briefings go at ${_inWords(context, times.sunday)}. Change the time',
+                        onTap: () {
+                          if (briefings.isChanging) return;
+                          _change(
+                            context,
+                            current: times.sunday,
+                            title: 'Sunday week-ahead Briefing time',
+                            timesWith: (chosen) => BriefingTimes(weekdays: times.weekdays, sunday: chosen),
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                ),
-              const SizedBox(height: 12),
-              ..._phonePart(settings),
+                  const SizedBox(height: 8),
+                  Semantics(container: true, liveRegion: true, child: Text('Your next Briefing is ${settings.nextWhen}.')),
+                  if (briefings.problem case final problem?) ProblemNote(problem),
+                ],
+              ),
+              ScreenSection(title: 'Phone notifications', children: _phonePart(settings)),
             ],
           ],
         );

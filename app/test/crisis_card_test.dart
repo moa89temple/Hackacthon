@@ -163,7 +163,7 @@ void main() {
       await openUnlockedApp(tester, backend);
       await sendMessage(tester, 'Everything feels pointless');
 
-      await tester.tap(find.text('Today'));
+      await goToTab(tester, 'Today');
       await tester.pump();
       backend.reply.add(const ReplyCrisisCard());
       await tester.pump();

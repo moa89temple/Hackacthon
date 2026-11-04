@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
 import 'live_view.dart';
 
 /// The whole screen is the live view of Buddy's Browser, apart from a bar with Done.
@@ -46,50 +48,53 @@ class _TakeoverScreenState extends State<TakeoverScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const BackButton(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: FilledButton(
-                    onPressed: _finishing ? null : _done,
-                    child: const Text('Done'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const BackLink(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(minimumSize: const Size(96, BuddySizes.tapTarget)),
+                      onPressed: _finishing ? null : _done,
+                      child: const Text('Done'),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             // Large text scrolls here rather than squeezing the live view off the screen.
             ConstrainedBox(
               constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.25),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Semantics(
                       container: true,
                       liveRegion: true,
-                      child: const Text("You're in control. Buddy can't see this screen."),
-                    ),
-                    if (_couldNotFinish)
-                      Semantics(
-                        container: true,
-                        liveRegion: true,
-                        child: Text(
-                          "The app couldn't reach Buddy. Check that the backend is running, then tap Done again.",
-                          style: TextStyle(color: colors.error),
-                        ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const ExcludeSemantics(child: Icon(Icons.shield_outlined, size: 20, color: BuddyColors.ink)),
+                          const SizedBox(width: 8),
+                          const Expanded(child: Text("You're in control. Buddy can't see this screen.")),
+                        ],
                       ),
+                    ),
+                    if (_couldNotFinish) const ProblemNote("The app couldn't reach Buddy. Check that the backend is running, then tap Done again."),
                   ],
                 ),
               ),
             ),
+            const Divider(),
             Expanded(
               child: Semantics(
                 container: true,

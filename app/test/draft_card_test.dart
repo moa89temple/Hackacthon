@@ -86,6 +86,9 @@ List<String> watchClipboard(WidgetTester tester) {
 Finder get _messageField => find.widgetWithText(TextField, 'Message');
 Finder get _subjectField => find.widgetWithText(TextField, 'Subject');
 
+/// A text button holding these words. A plain `byType` wouldn't match, because one with an icon is its own type.
+Finder _textButton(String words) => find.ancestor(of: find.text(words), matching: find.byWidgetPredicate((widget) => widget is TextButton));
+
 void main() {
   group('what the card shows', () {
     testWidgets('who it is to, why them, and all the words, ending with the AI line', (tester) async {
@@ -101,9 +104,9 @@ void main() {
     testWidgets('has the three buttons', (tester) async {
       await showDraft(tester, aDraft(contact: advising()));
 
-      expect(find.widgetWithText(TextButton, 'Edit'), findsOneWidget);
-      expect(find.widgetWithText(TextButton, 'Open in Outlook'), findsOneWidget);
-      expect(find.widgetWithText(TextButton, 'Copy'), findsOneWidget);
+      expect(_textButton('Edit'), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Open in Outlook'), findsOneWidget);
+      expect(_textButton('Copy'), findsOneWidget);
     });
 
     testWidgets('offers the other route, of Buddy explaining the issue itself', (tester) async {

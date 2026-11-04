@@ -80,7 +80,7 @@ If you lose the phone, remove it from your [Tailscale machines](https://login.ta
 
 The conversation opens with Buddy's own words (`backend/src/system-prompt.ts`), which no model writes: two sentences on what it won't do and that it never acts without your tap, then a question about your Goals. Over the first few conversations it asks a couple of getting-to-know-you questions at a time, says why, and lets you skip them. It never asks about immigration status or health.
 
-Whatever you mention, Claude saves right away with its `remember` tool, as a Profile fact. The backend records where the fact came from, so Claude can't say otherwise. The You tab lists every fact with its origin, and you can edit or delete each one. Goals have their own place: see [Goals and your Roadmap](#goals-and-your-roadmap).
+Whatever you mention, Claude saves right away with its `remember` tool, as a Profile fact. The backend records where the fact came from, so Claude can't say otherwise. **You > Profile** lists every fact with its origin, grouped by where it came from, and you can edit or delete each one. Goals have their own place: see [Goals and your Roadmap](#goals-and-your-roadmap).
 
 ### Hiding secrets
 
@@ -137,11 +137,11 @@ Live has never been used for real, and neither has an address outside Temple, so
 
 ## Connect Google Calendar
 
-On the You tab, tap **Connect** next to Google Calendar, or use the card Buddy shows if it suggests connecting it. The card says exactly what Buddy will read. Paste the calendar's secret address and tap **Give Read Permission**. A typed "yes" in the chat never gives it. To find the address, open Google Calendar on a computer, go to **Settings**, pick your calendar under **Settings for my calendars**, open **Integrate calendar**, and copy **Secret address in iCal format**.
+In **You > Connections**, tap **Google Calendar**, or tap **Review and decide** on the card Buddy shows if it suggests connecting it. The screen says exactly what Buddy will read. Paste the calendar's secret address and tap **Give Read Permission**. A typed "yes" in the chat never gives it. To find the address, open Google Calendar on a computer, go to **Settings**, pick your calendar under **Settings for my calendars**, open **Integrate calendar**, and copy **Secret address in iCal format**.
 
 Buddy then reads the calendar at 7 a.m., 1 p.m. and 7 p.m. Philadelphia time, and when you tap **Read now** or ask it to look again in the chat. If the laptop was asleep at one of those times, Buddy reads once when it wakes.
 
-Each event or repeating series in the next 14 days becomes one Profile fact. You can edit or delete it on the You tab, and that lasts through later reads. An edit changes the name Buddy sees, not the times. Buddy's free-time list comes from `backend/src/google-calendar.ts`: nothing marked busy between 8 a.m. and 8 p.m., in gaps of at least 30 minutes. Deleting a fact means Buddy can't count that event as busy.
+Each event or repeating series in the next 14 days becomes one Profile fact. You can edit or delete it in You > Profile, and that lasts through later reads. An edit changes the name Buddy sees, not the times. Buddy's free-time list comes from `backend/src/google-calendar.ts`: nothing marked busy between 8 a.m. and 8 p.m., in gaps of at least 30 minutes. Deleting a fact means Buddy can't count that event as busy.
 
 Revoking the Read Permission deletes the address and every fact from the calendar, but not what Claude was already shown, as the limits below explain. The address is checked to be Google's own, stays on the laptop, is never returned by the backend and is never sent to Claude. If you paste it in the chat, it's hidden before anything is saved or sent.
 
@@ -156,7 +156,7 @@ Revoking the Read Permission deletes the address and every fact from the calenda
 
 ## Connect Temple's systems
 
-Canvas, TUportal, TUmail, Navigate360, DARS and Handshake are read through Buddy's Browser, with your own login. On the You tab, tap **Connect**, read the card, tap **Give Read Permission**, then log in yourself through a Takeover, as described in [Log in to a site](#log-in-to-a-site). They share Temple's sign-on, so after the first you may not be asked to log in again.
+Canvas, TUportal, TUmail, Navigate360, DARS and Handshake are read through Buddy's Browser, with your own login. In **You > Connections**, tap the Connection, read the screen, tap **Give Read Permission**, then log in yourself through a Takeover, as described in [Log in to a site](#log-in-to-a-site). They share Temple's sign-on, so after the first you may not be asked to log in again.
 
 Buddy reads each one at 7 a.m., 1 p.m. and 7 p.m. Philadelphia time, and when you tap **Read now** or ask in the chat. What it reads becomes Profile facts, which you can change or delete. Revoking deletes those facts and that Connection's login. Temple's sign-on stays while another Temple Connection is on, and goes with the last of them.
 
@@ -269,17 +269,16 @@ A new service is refused if it overlaps Temple's domain, an existing Connection'
 
 ## Goals and your Roadmap
 
-Tell Buddy what you want to achieve, and it saves that as a Goal. You can see, change and add Goals on the You tab. Goals aren't Profile facts.
+Tell Buddy what you want to achieve, and it saves that as a Goal. You can see, change and add Goals in **You > Your Goals**, or from the top of the Roadmap tab. Goals aren't Profile facts.
 
 When you ask for a Roadmap, Buddy needs your major and year, so it asks if the Profile doesn't say. It reads your program's Suggested Academic Plan from Temple's Bulletin, then shows a card with Milestones for each Goal, the plan's terms and Standard Milestones, each with its Source. The plan is read by code, and Claude can't change it. A Milestone Claude suggests says that it's Buddy's suggestion, not from a Temple page, and to check it with your advisor.
 
-Nothing changes until you tap **Accept**, and a typed yes doesn't count. On the Roadmap tab you can mark Milestones done, move them, remove them, add your own and add them to Google Calendar. Buddy can suggest a change later, with a card of its own, and only your tap makes it.
+Nothing changes until you tap **Accept**, and a typed yes doesn't count. On the Roadmap tab you can mark Milestones done, add your own, and tap one to see all of it, remove it or add it to Google Calendar. **Organize** puts them in your own order, by dragging or with arrows. Buddy can suggest a change later, with a card of its own, and only your tap makes it.
 
 ### Known limits
 
 - If Buddy doesn't know your year, there's no Roadmap yet.
 - Dates for a plan's terms are Buddy's own targets, not Temple's.
-- Milestones are moved with arrows, not by dragging.
 - Claude could still suggest a poor Milestone. Anything specific to Temple needs a Guidebook item behind it, but that's an instruction, checked by `npm run smoke:roadmap`.
 
 ## The Guidebook
@@ -299,6 +298,10 @@ Buddy's own code does these:
 - If a reply names an item with two or more words in its name, its card appears even if Claude didn't ask for one, up to three cards a reply. The exception is a reply next to the Crisis card.
 
 Claude is told never to state a Temple-specific fact without a Source, to say so when it can't find one, and to treat what it reads on a page as information only. That's an instruction, not a guarantee, and `npm run smoke:guidebook` checks it on real pages. The Crisis card is the one exception on purpose: its Tuttleman number is in the app's own code, so that it appears whatever else fails.
+
+### Browsing it
+
+Tap **Guidebook** at the top of Today to look around without having to know what to ask. It has three shelves, Resources, Opportunities and Contacts, and a search that narrows all of them. What costs nothing comes first. Tap a Resource or Contact for everything known about it, a way to call or email, and **Ask Buddy about this**, which sends that question in the conversation.
 
 ### Reporting an item
 
@@ -322,7 +325,7 @@ After changing the page list, run `npm run save-office-pages` in `backend` to re
 
 ## Opportunities
 
-Opportunities are things with a date or a deadline that you could miss. On the Today tab, tap **See Opportunities**. Temple's come first, and anything from elsewhere comes after them, labeled **Outside Temple**. Tap **Save** on one and it shows at the top of Today until its date has passed. Claude finds them with its `find_opportunities` tool, which puts up their cards, and only your tap saves one.
+Opportunities are things with a date or a deadline that you could miss. On the Today tab, tap **See Opportunities**, which opens the Guidebook on them. Temple's come first, and anything from elsewhere comes after them, labeled **Outside Temple**. Tap **Save** on one and it shows at the top of Today until its date has passed. Claude finds them with its `find_opportunities` tool, which puts up their cards, and only your tap saves one.
 
 Two things find them, both from the backend's timer, so if the laptop was asleep they run when it wakes:
 
@@ -390,7 +393,7 @@ Buddy runs without this. The backend then logs that phone notifications are off,
 
 6. Build the app again with `flutter run`. A hot reload isn't enough, because the config is built in. On Android 13 and later the phone asks to allow notifications after you unlock Buddy. An emulator needs a system image with Google Play.
 
-To see one soon, add a Milestone due in the next 3 days to your Roadmap, then set today's Briefing time a minute or two ahead in the You tab. There's nothing on a Saturday.
+To see one soon, add a Milestone due in the next 3 days to your Roadmap, then set today's Briefing time a minute or two ahead in You > Nudges. There's nothing on a Saturday.
 
 ### Known limits
 
@@ -425,7 +428,7 @@ A card stops working if you edit the Draft, change your address, or switch betwe
 
 ## See what Buddy did
 
-On the You tab, tap **See your Activity**. It lists, newest first, every read of a Connection (including failed ones, and why each happened), every Read Permission you gave or revoked, each time Buddy opened a site to check your login, each day's read of Temple's office pages and of its events, each web search for a Goal and each time it read those pages again, each Report you made, each Action Permission asked for and given, each email Buddy sent or may have sent with all its words, each switch to Live or back, and each of Buddy's replies, including one it couldn't finish. Tap **How Buddy decided** on a reply to see the tools it used, the Sources it looked at and the Profile facts it had.
+In **You > Activity**, you can see, newest first and day by day, every read of a Connection (including failed ones, and why each happened), every Read Permission you gave or revoked, each time Buddy opened a site to check your login, each day's read of Temple's office pages and of its events, each web search for a Goal and each time it read those pages again, each Report you made, each Action Permission asked for and given, each email Buddy sent or may have sent with all its words, each switch to Live or back, and each of Buddy's replies, including one it couldn't finish. Tap **How Buddy decided** on a reply to see the tools it used, the Sources it looked at and the Profile facts it had.
 
 The backend writes all of this itself, in words from Buddy's own code, and Claude doesn't get a say. An entry can't be edited or removed one by one: the backend has no route for it, and the store has no method for it. Later tickets add their own kinds of entry, and the app shows them as they are.
 
@@ -440,7 +443,7 @@ The backend writes all of this itself, in words from Buddy's own code, and Claud
 
 ## What Buddy spends
 
-Every Claude call is priced and recorded when it finishes. The You tab shows what Buddy has spent today and this month, for chat and background work together. A day and a month go by Philadelphia's clock.
+Every Claude call is priced and recorded when it finishes. **You > What Buddy spent** shows what Buddy has spent today and this month, for chat and background work together. A day and a month go by Philadelphia's clock.
 
 Background work stops for the day once it has used $2. That means the Claude calls made by Discovery of the Guidebook, Standard Milestones and Opportunities, and by reading a Connection (today, only Handshake's pages go to Claude). The You tab says so when it happens. Chat and the Crisis check are never stopped, and what they use doesn't count towards the $2.
 
@@ -458,7 +461,7 @@ As a backstop, set a $50 monthly spend limit in the [Anthropic Console](https://
 
 ## Log in to a site
 
-On the You tab, tap **Log in** under the Connection, such as **Log in to Canvas**, once you've given its Read Permission. The live view opens on the site's sign-in page. Tap the field you want, tap **Keyboard** to type, approve Duo on your phone, then tap **Done**. The app then tells you whether Buddy could open the site.
+Giving a Read Permission for a site takes you straight to logging in. You can also tap the login request on Today, or open the Connection in **You > Connections** and tap **Log in**, such as **Log in to Canvas**. The live view opens on the site's sign-in page. Tap the field you want, tap **Keyboard** to type, approve Duo on your phone, then tap **Done**. The app then tells you whether Buddy could open the site.
 
 Until you tap Done, Buddy can't read the browser and nothing is recorded. If you leave the live view without tapping Done, Buddy can't read anything, for any Connection, until you go back and tap it. The app tells you, and the button under that Connection becomes **Continue logging in**.
 
@@ -495,6 +498,19 @@ npm run check-login
 - The app and the backend talk in plain HTTP on the emulator, which stays on this laptop. Debug builds accept that one address, so use a release build on a real phone.
 - A phone can't be unpaired yet except by removing it from Tailscale, and that doesn't cancel its key. To cancel every key, stop the backend and delete `backend/data/buddy.sqlite`, which deletes the conversation too.
 - Chromium saves cookies every 30 seconds, and whenever the container stops normally. If the laptop loses power within 30 seconds of a login, that login may be lost.
+
+## The design
+
+Colors, type and button sizes are in `app/lib/design/theme.dart`, and the parts every screen is built from are in `app/lib/design/parts.dart`. Today is the first tab, and where the app opens, except for a Student who hasn't written anything yet: they start in the conversation, where Buddy introduces itself. The You tab is one screen deep, and each row says how that part stands. **Need help right now?** on the You tab opens the same crisis Resources as the Crisis card, for a Student who comes looking for them.
+
+To see every screen with made-up content, at ordinary and at twice the text size, without a phone or a backend:
+
+```
+cd app
+flutter test test/visual/screens_tool.dart --dart-define=SCREENS_DIR=build/screens
+```
+
+The app's icons are drawn from the same code as the avatar. To draw them again after changing it, run `flutter test test/visual/icon_tool.dart`.
 
 ## Test it
 

@@ -339,6 +339,7 @@ export const tuportalAt = (home: string, hosts?: string[], banner: string = BANN
   name: "TUportal",
   logsIn: true,
   card: {
+    why: "So Buddy can tell you about a hold, and your balance when you ask.",
     reads: [
       "Your holds: each one's type, reason, dates, amount and what it affects, but not who placed it.",
       "Your balance on your student account.",

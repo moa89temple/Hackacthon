@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../chat/crisis_card.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
 import '../widgets/work_in_progress.dart';
 import 'add_milestone_screen.dart';
+import 'goals_section.dart';
+import 'milestone_screen.dart';
+import 'organize_screen.dart';
 import 'roadmap_backend.dart';
 import 'roadmap_controller.dart';
-import 'roadmap_parts.dart';
-
-const _calendarHost = 'calendar.google.com';
 
 /// The Student's own ordered list of Milestones. They can mark, add, remove and reorder any of them.
 class RoadmapTab extends StatefulWidget {
@@ -24,39 +26,43 @@ class RoadmapTab extends StatefulWidget {
 }
 
 class _RoadmapTabState extends State<RoadmapTab> {
-  String? _phoneProblem;
-
-  Future<void> _open(Uri address) async {
-    bool opened;
-    try {
-      opened = await widget.openPhone(address);
-    } on Exception {
-      opened = false;
-    }
-    if (mounted) setState(() => _phoneProblem = opened ? null : couldNotOpen);
+  void _openAddScreen(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute<void>(settings: workInProgress, builder: (context) => AddMilestoneScreen(roadmap: widget.roadmap)));
   }
 
-  Widget _message(BuildContext context, String words, {Widget? action, bool isProblem = false}) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ExcludeSemantics(child: Icon(Icons.map, size: 48, color: Theme.of(context).colorScheme.primary)),
-            const SizedBox(height: 16),
-            Semantics(container: true, liveRegion: isProblem, child: Text(words, textAlign: TextAlign.center)),
-            const SizedBox(height: 12),
-            ?action,
-          ],
-        ),
+  void _openGoals(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (context) => GoalsScreen(roadmap: widget.roadmap, askBuddy: widget.askBuddy)));
+  }
+
+  void _openOrganize(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (context) => OrganizeScreen(roadmap: widget.roadmap)));
+  }
+
+  void _openMilestone(BuildContext context, RoadmapMilestone milestone) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => MilestoneScreen(milestoneId: milestone.id, roadmap: widget.roadmap, openPhone: widget.openPhone),
       ),
     );
   }
 
-  void _openAddScreen(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute<void>(settings: workInProgress, builder: (context) => AddMilestoneScreen(roadmap: widget.roadmap)));
-  }
+  Widget _centered(Widget child) => LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          padding: const EdgeInsets.all(BuddySizes.pageEdge),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - BuddySizes.pageEdge * 2),
+            child: Center(child: child),
+          ),
+        ),
+      );
+
+  Widget _milestoneRow(BuildContext context, RoadmapMilestone milestone) => _MilestoneRow(
+        // Keeps each row's state with its own Milestone as they move.
+        key: ValueKey(milestone.id),
+        milestone: milestone,
+        roadmap: widget.roadmap,
+        onTap: () => _openMilestone(context, milestone),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -66,199 +72,185 @@ class _RoadmapTabState extends State<RoadmapTab> {
         final roadmap = widget.roadmap;
         final milestones = roadmap.milestones;
         if (roadmap.couldNotLoad) {
-          return _message(
-            context,
-            "Buddy couldn't load your Roadmap. Check that the backend is running.",
-            isProblem: true,
-            action: TextButton(onPressed: roadmap.load, child: const Text('Try again')),
+          return _centered(
+            EmptyState(
+              icon: Icons.map_outlined,
+              isProblem: true,
+              words: "Buddy couldn't load your Roadmap. Check that the backend is running.",
+              action: AppLink('Try again', onPressed: roadmap.load),
+            ),
           );
         }
         if (milestones == null) return const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading your Roadmap'));
         if (milestones.isEmpty) {
           final hasGoal = (roadmap.goals ?? const <Goal>[]).isNotEmpty;
-          return _message(
-            context,
-            hasGoal
-                ? "You don't have a Roadmap yet. Buddy can propose one from your Goals, and nothing changes until you accept it."
-                : "You don't have a Roadmap yet. It starts with a Goal, and Buddy can help you choose one.",
-            action: OutlinedButton(
-              onPressed: () => widget.askBuddy(hasGoal ? 'Please make me a Roadmap.' : 'Help me choose a Goal.'),
-              child: Text(hasGoal ? 'Ask Buddy for your Roadmap' : 'Choose a Goal with Buddy'),
+          return _centered(
+            EmptyState(
+              icon: Icons.map_outlined,
+              words: hasGoal
+                  ? "You don't have a Roadmap yet. Buddy can propose one from your Goals, and nothing changes until you accept it."
+                  : "You don't have a Roadmap yet. It starts with a Goal, and Buddy can help you choose one.",
+              action: FilledButton(
+                onPressed: () => widget.askBuddy(hasGoal ? 'Please make me a Roadmap.' : 'Help me choose a Goal.'),
+                child: Text(hasGoal ? 'Ask Buddy for your Roadmap' : 'Choose a Goal with Buddy'),
+              ),
             ),
           );
         }
-        final problem = roadmap.problem ?? _phoneProblem;
+        final toDo = milestones.where((milestone) => !milestone.done).toList();
+        final done = milestones.where((milestone) => milestone.done).toList();
+        final list = ListView(
+          padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 16, BuddySizes.pageEdge, 24),
+          children: [
+            const PageTitle('Your Roadmap', subtitle: 'Yours to change.'),
+            const SizedBox(height: 4),
+            // A link across the page, because Goals are what the Roadmap is for.
+            Semantics(
+              button: true,
+              container: true,
+              label: 'Your Goals',
+              onTap: () => _openGoals(context),
+              excludeSemantics: true,
+              child: InkWell(
+                onTap: () => _openGoals(context),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text('Your Goals', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: BuddyColors.link))),
+                      const Icon(Icons.chevron_right, color: BuddyColors.inkSoft),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const Divider(),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => _openAddScreen(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Add a Milestone'),
+            ),
+            const SizedBox(height: 20),
+            SectionTitle('Your Milestones', trailing: AppLink('Organize', semanticsLabel: 'Organize your Milestones', onPressed: () => _openOrganize(context))),
+            if (toDo.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text('Everything on your Roadmap is done. Add another, or ask Buddy what could come next.'),
+              )
+            else
+              RowGroup(children: [for (final milestone in toDo) _milestoneRow(context, milestone)]),
+            if (done.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Expander(
+                icon: Icons.check_circle_outline,
+                title: 'Completed',
+                trailing: '${done.length}',
+                children: [
+                  for (final (index, milestone) in done.indexed) ...[
+                    if (index > 0) const Divider(indent: 16, endIndent: 16),
+                    _milestoneRow(context, milestone),
+                  ],
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text('You choose the order and the pace.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: BuddyColors.inkSoft)),
+          ],
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Above the list, so that it's seen and read out from however far down the Student has scrolled.
             // With large text it can't take the whole screen, so it scrolls in its own third.
-            if (problem != null)
+            if (roadmap.problem case final problem?)
               Flexible(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: BuddySizes.pageEdge),
                   child: ProblemNote(problem),
                 ),
               ),
-            Expanded(
-              flex: 2,
-              child: ListView.builder(
-                padding: const EdgeInsets.all(12),
-                // The heading goes first, then each Milestone, so that a long list doesn't build all at once.
-                itemCount: milestones.length + 1,
-                itemBuilder: (context, index) {
-                  if (index == 0) return _header(context);
-                  final milestone = milestones[index - 1];
-                  return _MilestoneRow(
-                    // Keeps each row's state with its own Milestone as they move.
-                    key: ValueKey(milestone.id),
-                    milestone: milestone,
-                    place: index,
-                    total: milestones.length,
-                    roadmap: roadmap,
-                    open: _open,
-                  );
-                },
-              ),
-            ),
+            Expanded(flex: 2, child: list),
           ],
         );
       },
     );
   }
-
-  Widget _header(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Semantics(header: true, child: Text('Your Roadmap', style: Theme.of(context).textTheme.titleLarge)),
-        const SizedBox(height: 4),
-        const Text('Yours to change. Mark what you\'ve done, and add, remove or move anything.'),
-        const SizedBox(height: 8),
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: OutlinedButton(onPressed: () => _openAddScreen(context), child: const Text('Add a Milestone')),
-        ),
-      ],
-    );
-  }
 }
 
+/// A Milestone in the list: enough to know what it is and when, with done one tap away and the rest a tap further.
 class _MilestoneRow extends StatelessWidget {
-  const _MilestoneRow({super.key, required this.milestone, required this.place, required this.total, required this.roadmap, required this.open});
+  const _MilestoneRow({super.key, required this.milestone, required this.roadmap, required this.onTap});
 
   final RoadmapMilestone milestone;
-  final int place;
-  final int total;
   final RoadmapController roadmap;
-  final void Function(Uri address) open;
-
-  Uri? get _calendarAddress {
-    final address = Uri.tryParse(milestone.calendarUrl);
-    return address?.scheme == 'https' && address?.host == _calendarHost ? address : null;
-  }
-
-  Future<void> _remove(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        scrollable: true,
-        title: const Text('Remove this Milestone?'),
-        content: Text(milestone.name),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Remove')),
-        ],
-      ),
-    );
-    if (confirmed == true) await roadmap.remove(milestone);
-  }
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final calendar = _calendarAddress;
-    final busy = roadmap.isChanging;
+    final text = Theme.of(context).textTheme;
     final name = milestone.name;
-    final gone = milestone.goneFromSource ? "Buddy no longer finds this date, because it's gone from its Source. This is what it last said." : null;
+    final busy = roadmap.isChanging;
     final words = [
       milestone.badge,
       milestone.when,
       if (milestone.done) 'Done',
-      ?gone,
-      ?milestone.detail?.replaceAll('\n', ' '),
       if (milestone.sources.isEmpty) ?milestone.sourceNote,
     ];
-    return Card(
-      // It holds controls as well as words, so it's a set of separate nodes rather than one.
-      semanticContainer: false,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // One item, because on Android its lines otherwise run together with the buttons'.
-            Semantics(
-              container: true,
-              label: 'Milestone $place of $total: $name. ${words.map((line) => line.endsWith('.') ? line : '$line.').join(' ')}',
-              excludeSemantics: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: theme.textTheme.titleMedium?.copyWith(decoration: milestone.done ? TextDecoration.lineThrough : null),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(milestone.badge, style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
-                  Text(milestone.when),
-                  if (milestone.done) const Text('Done'),
-                  if (gone != null) Text(gone, style: theme.textTheme.bodySmall),
-                  if (milestone.detail case final detail?)
-                    Padding(padding: const EdgeInsets.only(top: 4), child: Text(detail, style: theme.textTheme.bodySmall)),
-                  if (milestone.sources.isEmpty)
-                    if (milestone.sourceNote case final note?)
-                      Padding(padding: const EdgeInsets.only(top: 4), child: Text(note, style: theme.textTheme.bodySmall)),
-                ],
-              ),
-            ),
-            for (final source in milestone.sources) SourceButton(source: source, open: open),
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Checkbox(
-                  value: milestone.done,
-                  semanticLabel: 'Done: $name',
-                  onChanged: busy ? null : (done) => roadmap.setDone(milestone, done: done ?? false),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.arrow_upward),
-                  tooltip: 'Move up: $name',
-                  onPressed: busy || place == 1 ? null : () => roadmap.move(milestone, by: -1),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.arrow_downward),
-                  tooltip: 'Move down: $name',
-                  onPressed: busy || place == total ? null : () => roadmap.move(milestone, by: 1),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: 'Remove: $name',
-                  onPressed: busy ? null : () => _remove(context),
-                ),
-              ],
-            ),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton(
-                onPressed: calendar == null ? null : () => open(calendar),
-                child: Text('Add to Google Calendar', semanticsLabel: 'Add to Google Calendar: $name'),
-              ),
-            ),
-          ],
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, top: 4),
+          child: Checkbox(
+            value: milestone.done,
+            semanticLabel: 'Done: $name',
+            onChanged: busy ? null : (done) => roadmap.setDone(milestone, done: done ?? false),
+          ),
         ),
-      ),
+        Expanded(
+          child: Semantics(
+            button: true,
+            container: true,
+            label: 'Milestone: $name. ${words.map((line) => line.endsWith('.') ? line : '$line.').join(' ')}',
+            onTap: onTap,
+            excludeSemantics: true,
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 14, 12, 14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name, style: text.titleMedium?.copyWith(decoration: milestone.done ? TextDecoration.lineThrough : null)),
+                          const SizedBox(height: 4),
+                          Pill(milestone.goal?.text ?? 'Standard Milestone', tone: milestone.goal == null ? PillTone.quiet : PillTone.cherry),
+                          const SizedBox(height: 4),
+                          Text(milestone.when),
+                          if (milestone.detail case final detail?)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis),
+                            ),
+                          if (milestone.sources.isEmpty)
+                            if (milestone.sourceNote case final note?)
+                              Padding(padding: const EdgeInsets.only(top: 2), child: Text(note, style: text.bodySmall)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right, color: BuddyColors.inkSoft),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

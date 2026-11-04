@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../backend/buddy_backend.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
+import '../widgets/buddy_avatar.dart';
 import 'pairing_details.dart';
 import 'qr_scanner.dart';
 
@@ -96,73 +99,69 @@ class _PairingScreenState extends State<PairingScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Pair your phone')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.notice case final notice?)
-              Semantics(
-                container: true,
-                liveRegion: true,
-                child: Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(notice)),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 32, BuddySizes.pageEdge, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Align(alignment: AlignmentDirectional.centerStart, child: BuddyAvatar(radius: 28)),
+              const SizedBox(height: 16),
+              Semantics(header: true, container: true, child: Text('Pair your phone', style: theme.textTheme.headlineMedium)),
+              const SizedBox(height: 8),
+              if (widget.notice case final notice?)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: NoticeCard(words: notice, announce: true),
+                ),
+              const Text(
+                'Only your own phone can talk to your Buddy. To pair this one, run npm run pair '
+                'in the backend folder on your laptop, then scan the QR code it shows.',
               ),
-            const Text(
-              'Only your own phone can talk to your Buddy. To pair this one, run npm run pair '
-              'in the backend folder on your laptop, then scan the QR code it shows.',
-            ),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _pairing ? null : _scan, child: const Text('Scan the QR code')),
-            const SizedBox(height: 32),
-            Semantics(
-              header: true,
-              child: Text('Or type it', style: theme.textTheme.titleMedium),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _address,
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: InputDecoration(
-                labelText: 'Laptop address',
-                helperText: emulatorAllowed
-                  ? 'Shown under the QR code. On the emulator, leave it as it is.'
-                  : 'Shown under the QR code.',
-                helperMaxLines: 4,
-                border: const OutlineInputBorder(),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: _pairing ? null : _scan,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Scan the QR code'),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _code,
-              textCapitalization: TextCapitalization.characters,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: const InputDecoration(labelText: 'Code', border: OutlineInputBorder()),
-              onSubmitted: (_) {
-                if (!_pairing) _pairWithTypedCode();
-              },
-            ),
-            const SizedBox(height: 12),
-            FilledButton(onPressed: _pairing ? null : _pairWithTypedCode, child: const Text('Pair')),
-            if (_pairing)
-              Semantics(
-                container: true,
-                liveRegion: true,
-                child: const Padding(padding: EdgeInsets.only(top: 12), child: Text('Pairing…')),
-              ),
-            if (_problem case final problem?)
-              Semantics(
-                container: true,
-                liveRegion: true,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+              const SizedBox(height: 32),
+              Semantics(header: true, container: true, child: Text('Or type it', style: theme.textTheme.titleLarge)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _address,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: 'Laptop address',
+                  helperText: emulatorAllowed
+                    ? 'Shown under the QR code. On the emulator, leave it as it is.'
+                    : 'Shown under the QR code.',
+                  helperMaxLines: 4,
                 ),
               ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _code,
+                textCapitalization: TextCapitalization.characters,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(labelText: 'Code'),
+                onSubmitted: (_) {
+                  if (!_pairing) _pairWithTypedCode();
+                },
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(onPressed: _pairing ? null : _pairWithTypedCode, child: const Text('Pair')),
+              if (_pairing)
+                Semantics(
+                  container: true,
+                  liveRegion: true,
+                  child: const Padding(padding: EdgeInsets.only(top: 12), child: Text('Pairing…')),
+                ),
+              if (_problem case final problem?) ProblemNote(problem),
+            ],
+          ),
         ),
       ),
     );

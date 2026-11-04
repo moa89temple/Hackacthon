@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../chat/chat_controller.dart';
 import '../chat/crisis_card.dart';
+import '../design/parts.dart';
+import '../design/theme.dart';
 import 'roadmap_backend.dart';
 import 'roadmap_controller.dart';
 import 'roadmap_parts.dart';
+
+/// A card with more than this shows the first few, so that accepting it doesn't take a long scroll to reach.
+const _shownBeforeAsking = 6;
 
 /// Buddy's proposal for a Roadmap, or for a change to one. Nothing happens until the Student taps Accept, one
 /// tap that isn't a Permission. Its height is whatever its Milestones need, and the conversation's list scrolls
@@ -33,6 +38,7 @@ class RoadmapCardView extends StatefulWidget {
 
 class _RoadmapCardViewState extends State<RoadmapCardView> {
   String? _problem;
+  bool _showsAll = false;
 
   /// A card decided by a tap just now says so aloud. One that comes back with the conversation doesn't.
   bool _tappedHere = false;
@@ -79,12 +85,13 @@ class _RoadmapCardViewState extends State<RoadmapCardView> {
       label: '${milestone.name}. ${lines.map((line) => line.endsWith('.') ? line : '$line.').join(' ')}',
       excludeSemantics: true,
       child: Padding(
-        padding: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.only(top: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(milestone.name, style: theme.textTheme.titleSmall),
-            Text(milestone.badge, style: theme.textTheme.bodySmall),
+            Text(milestone.name, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 2),
+            Text(milestone.badge, style: theme.textTheme.titleSmall?.copyWith(color: milestone.goal == null ? BuddyColors.inkSoft : BuddyColors.cherry)),
             Text(milestone.when),
             if (sourceLine != null) Text(sourceLine, style: theme.textTheme.bodySmall),
           ],
@@ -98,65 +105,77 @@ class _RoadmapCardViewState extends State<RoadmapCardView> {
     final card = widget.card;
     final theme = Theme.of(context);
     final outcome = _outcome;
+    final milestones = _showsAll ? card.milestones : card.milestones.take(_shownBeforeAsking).toList();
+    final hidden = card.milestones.length - milestones.length;
     // One Source can back many Milestones, such as the Bulletin's plan, so each is listed once.
     final sources = {for (final milestone in card.milestones) for (final source in milestone.sources) source.url: source}.values;
-    return Card(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
       // It holds controls as well as words, so it's a set of separate nodes rather than one.
-      semanticContainer: false,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Semantics(
-              container: true,
-              liveRegion: widget.announce,
-              label: 'Roadmap card: $_title. ${card.why}${card.note == null ? '' : ' ${card.note}'}',
-              excludeSemantics: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_title, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(card.why),
-                  if (card.note case final note?)
-                    Padding(padding: const EdgeInsets.only(top: 4), child: Text(note, style: theme.textTheme.bodySmall)),
-                ],
-              ),
-            ),
-            for (final milestone in card.milestones) _milestone(context, milestone),
-            for (final removed in card.removes)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Semantics(container: true, child: Text('Takes off: ${removed.name}')),
-              ),
-            const SizedBox(height: 8),
-            for (final source in sources) SourceButton(source: source, open: _open),
-            if (outcome != null)
+      child: Card(
+        semanticContainer: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Semantics(
                 container: true,
-                liveRegion: _tappedHere,
-                child: Padding(padding: const EdgeInsets.only(top: 8), child: Text(outcome, style: theme.textTheme.titleSmall)),
-              )
-            else
-              ListenableBuilder(
-                listenable: widget.roadmap,
-                builder: (context, _) {
-                  final waiting = widget.roadmap.isBeingDecided(card);
-                  return Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      FilledButton(onPressed: waiting ? null : () => _tap(widget.roadmap.accept), child: const Text('Accept')),
-                      TextButton(onPressed: waiting ? null : () => _tap(widget.roadmap.notNow), child: const Text('Not now')),
-                    ],
-                  );
-                },
+                liveRegion: widget.announce,
+                label: 'Roadmap card: $_title. ${card.why}${card.note == null ? '' : ' ${card.note}'}',
+                excludeSemantics: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_title, style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 4),
+                    Text(card.why),
+                    if (card.note case final note?)
+                      Padding(padding: const EdgeInsets.only(top: 4), child: Text(note, style: theme.textTheme.bodySmall)),
+                  ],
+                ),
               ),
-            if (_problem case final problem?) ProblemNote(problem),
-          ],
+              for (final milestone in milestones) _milestone(context, milestone),
+              if (hidden > 0)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: AppLink(
+                    'Show all ${card.milestones.length} Milestones',
+                    onPressed: () => setState(() => _showsAll = true),
+                  ),
+                ),
+              for (final removed in card.removes)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Semantics(container: true, child: Text('Takes off: ${removed.name}')),
+                ),
+              const SizedBox(height: 8),
+              for (final source in sources) SourceLink(source: source, open: _open),
+              const SizedBox(height: 4),
+              if (outcome != null)
+                Semantics(
+                  container: true,
+                  liveRegion: _tappedHere,
+                  child: Padding(padding: const EdgeInsets.only(top: 8), child: Text(outcome, style: theme.textTheme.titleSmall)),
+                )
+              else
+                ListenableBuilder(
+                  listenable: widget.roadmap,
+                  builder: (context, _) {
+                    final waiting = widget.roadmap.isBeingDecided(card);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FilledButton(onPressed: waiting ? null : () => _tap(widget.roadmap.accept), child: const Text('Accept')),
+                        const SizedBox(height: 8),
+                        OutlinedButton(onPressed: waiting ? null : () => _tap(widget.roadmap.notNow), child: const Text('Not now')),
+                      ],
+                    );
+                  },
+                ),
+              if (_problem case final problem?) ProblemNote(problem),
+            ],
+          ),
         ),
       ),
     );

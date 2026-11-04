@@ -10,6 +10,7 @@ import 'package:buddy/device/device_store.dart';
 import 'package:buddy/device/pairing_details.dart';
 import 'package:buddy/device/qr_scanner.dart';
 import 'package:buddy/takeover/live_view.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -153,13 +154,48 @@ Future<void> settleApp(WidgetTester tester) async {
   }
 }
 
-/// The app on a phone that's already paired, opened with the fingerprint.
+/// Goes to a tab by its label in the bar along the bottom, which the same word elsewhere on the screen can't be mistaken for.
+Future<void> goToTab(WidgetTester tester, String label) async {
+  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text(label)));
+  await tester.pump();
+}
+
+/// Opens one of the You tab's rows, from wherever the Student is.
+Future<void> openYouRow(WidgetTester tester, String row) async {
+  await goToTab(tester, 'You');
+  await settleApp(tester);
+  await tester.dragUntilVisible(find.text(row), find.byType(ListView).last, const Offset(0, -200));
+  await tester.pump();
+  await tester.ensureVisible(find.text(row));
+  await tester.pump();
+  await tester.tap(find.text(row));
+  await settleRoute(tester);
+}
+
+/// Lets a new screen arrive. It can't wait for everything to stop, because the writing dots don't while a reply is due.
+Future<void> settleRoute(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
+
+/// Taps a row that opens another screen, and lets that screen arrive.
+Future<void> openRow(WidgetTester tester, String row) async {
+  await tester.ensureVisible(find.text(row).first);
+  await tester.pump();
+  await tester.tap(find.text(row).first);
+  await tester.pumpAndSettle();
+}
+
+/// The app on a phone that's already paired, opened with the fingerprint. It's on the conversation unless [onToday],
+/// because most of what's tested happens there. Left to itself the app starts on Today, or on the conversation for a
+/// Student who hasn't written anything yet.
 Future<void> openUnlockedApp(
   WidgetTester tester,
   FakeBackend backend, {
   PhoneOpener openPhone = pretendToOpenPhone,
   DraftOpener openDraft = pretendToOpenDraft,
   PhoneNotifications? phoneNotifications,
+  bool leftToItself = false,
 }) async {
   await tester.pumpWidget(
     testApp(
@@ -172,6 +208,10 @@ Future<void> openUnlockedApp(
     ),
   );
   await settleApp(tester);
+  if (!leftToItself && find.text('Your Temple guide').evaluate().isEmpty) {
+    await goToTab(tester, 'Buddy');
+    await settleApp(tester);
+  }
 }
 
 /// Flutter draws no frames once the app is hidden, so a frame only comes after inactive.

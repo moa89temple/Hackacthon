@@ -45,6 +45,97 @@ void main() {
     expect(messages.map((message) => message.isFromBuddy), [false, true]);
   });
 
+  test('reads when each message was sent, and leaves the opening without a time', () async {
+    final backend = HttpBuddyBackend(
+      baseUrl,
+      deviceKey: 'the-key',
+      onKeyRefused: () {},
+      client: MockClient((request) async => http.Response(
+            jsonEncode({
+              'opening': 'I am Buddy.',
+              'messages': [
+                {'id': 1, 'role': 'student', 'text': 'Hello', 'sentAt': '2026-11-02T14:00:00.000Z'},
+              ],
+            }),
+            200,
+          )),
+    );
+
+    final messages = (await backend.loadHistory()).cast<ChatMessage>();
+
+    expect(messages.first.sentAt, isNull);
+    expect(messages.last.sentAt, DateTime.utc(2026, 11, 2, 14));
+  });
+
+  group('the Guidebook', () {
+    test('loads every item, and tells a Contact from a Resource', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/guidebook/items');
+          expect(request.headers['authorization'], 'Bearer the-key');
+          return http.Response(
+            jsonEncode({
+              'items': [
+                {'id': 1, 'kind': 'resource', 'name': 'Writing Center', 'summary': 'Help with writing.', 'cost': 'Free', 'phone': null, 'phoneToDial': null, 'email': null, 'place': null, 'hours': null, 'sources': []},
+                {'id': 2, 'kind': 'contact', 'name': 'Student Financial Services', 'summary': 'Help with bills.', 'cost': null, 'phone': null, 'phoneToDial': null, 'email': 'sfs@temple.edu', 'place': null, 'hours': null, 'sources': []},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final items = await backend.loadGuidebook();
+
+      expect(items.map((item) => item.name), ['Writing Center', 'Student Financial Services']);
+      expect(items.map((item) => item.isContact), [false, true]);
+    });
+
+    test('throws when the backend refuses', () async {
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () {},
+        client: MockClient((request) async => http.Response('', 500)),
+      );
+
+      expect(backend.loadGuidebook(), throwsA(isA<BackendException>()));
+    });
+
+    test('notices a refused key', () async {
+      var refused = false;
+      final backend = HttpBuddyBackend(
+        baseUrl,
+        deviceKey: 'the-key',
+        onKeyRefused: () => refused = true,
+        client: MockClient((request) async => http.Response('', 401)),
+      );
+
+      await expectLater(backend.loadGuidebook(), throwsA(isA<BackendException>()));
+      expect(refused, isTrue);
+    });
+  });
+
+  test('a card can do without a reason', () {
+    final without = ReadPermissionCardContent.fromJson({'reads': <String>[], 'notes': <String>[], 'warning': null, 'address': null});
+    final withOne = ReadPermissionCardContent.fromJson({'why': 'So Buddy can help.', 'reads': <String>[], 'notes': <String>[], 'warning': null, 'address': null});
+
+    expect(without.why, isNull);
+    expect(withOne.why, 'So Buddy can help.');
+  });
+
+  test('an Activity entry says what kind it is, and an old one without a kind still reads', () {
+    final withKind = ActivityEntry.fromJson({'kind': 'email_sent', 'title': 'Buddy sent an email', 'at': '2026-11-02T14:00:00.000Z'});
+    final without = ActivityEntry.fromJson({'title': 'Something', 'at': '2026-11-02T14:00:00.000Z'});
+
+    expect(withKind.kind, 'email_sent');
+    expect(without.kind, '');
+  });
+
   group('Connections', () {
     const keyHeader = 'Bearer the-key';
     final connectionJson = {

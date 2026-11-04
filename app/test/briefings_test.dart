@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/briefings/briefing_backend.dart';
 import 'package:buddy/device/app_lock.dart';
+import 'package:buddy/milestones/milestone_card.dart';
+import 'package:buddy/opportunities/opportunity_card.dart';
 import 'package:buddy/roadmap/add_milestone_screen.dart';
 import 'package:buddy/roadmap/roadmap_backend.dart';
+import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -62,9 +65,19 @@ Briefing aBriefing({
 
 const hold = BriefingNews(id: 1, connection: 'TUportal', text: 'New hold on TUportal: a made-up hold');
 
-Finder navigation(String label) => find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
+Finder navigation(String label) => find.descendant(of: find.byType(BuddyNavBar), matching: find.text(label));
 
-int selectedTab(WidgetTester tester) => tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
+const todayTab = 0;
+const buddyTab = 1;
+
+int selectedTab(WidgetTester tester) => tester.widget<BuddyNavBar>(find.byType(BuddyNavBar)).selected;
+
+/// No date, no Opportunity and no news from a Connection, which says where it's from in words beginning like this.
+void expectNothingMadeUp() {
+  expect(find.byType(MilestoneCard, skipOffstage: false), findsNothing);
+  expect(find.byType(OpportunityCard, skipOffstage: false), findsNothing);
+  expect(find.textContaining(RegExp('^From ')), findsNothing);
+}
 
 Future<void> openTab(WidgetTester tester, String label) async {
   await tester.tap(navigation(label));
@@ -153,7 +166,7 @@ void main() {
       await openTab(tester, 'Today');
 
       expect(find.text('Your first Briefing comes Wednesday, November 4 at 8:00 AM.'), findsOneWidget);
-      expect(find.byType(Card), findsNothing);
+      expectNothingMadeUp();
     });
 
     testWidgets('says plainly that nothing needed the Student, and makes nothing up', (tester) async {
@@ -161,7 +174,7 @@ void main() {
       await openTab(tester, 'Today');
 
       expect(find.text("Nothing needed you on Tuesday, November 3 at 8:00 AM, so Buddy sent no notification."), findsOneWidget);
-      expect(find.byType(Card), findsNothing);
+      expectNothingMadeUp();
     });
 
     testWidgets('says so when what was in it has since gone', (tester) async {
@@ -261,7 +274,7 @@ void main() {
       phone.tapNotification();
       await tester.pumpAndSettle();
 
-      expect(selectedTab(tester), 1);
+      expect(selectedTab(tester), todayTab);
       expect(find.text('New'), findsOneWidget);
     });
 
@@ -277,20 +290,20 @@ void main() {
       );
       await settleApp(tester);
       expect(find.text('Your Briefing'), findsNothing);
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(BuddyNavBar), findsNothing);
 
       await tester.tap(find.text('Unlock'));
       await tester.pumpAndSettle();
 
-      expect(selectedTab(tester), 1);
+      expect(selectedTab(tester), todayTab);
       expect(find.text('Your Briefing'), findsOneWidget);
     });
 
     testWidgets("stays on the Buddy tab when the app wasn't opened by a notification", (tester) async {
-      await openUnlockedApp(tester, FakeBackend()..latestBriefing = aBriefing());
+      await openUnlockedApp(tester, FakeBackend()..latestBriefing = aBriefing(), leftToItself: true);
       await tester.pumpAndSettle();
 
-      expect(selectedTab(tester), 0);
+      expect(selectedTab(tester), buddyTab);
     });
 
     testWidgets('waits behind the lock, and shows Today after it', (tester) async {
@@ -316,7 +329,7 @@ void main() {
       await tester.tap(find.text('Unlock'));
       await tester.pumpAndSettle();
 
-      expect(selectedTab(tester), 1);
+      expect(selectedTab(tester), todayTab);
       expect(find.text('Your Briefing').hitTestable(), findsOneWidget);
     });
 
@@ -326,7 +339,7 @@ void main() {
       await openTab(tester, 'Today');
       await tester.tap(find.text('See Opportunities'));
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationBar).hitTestable(), findsNothing);
+      expect(find.byType(BuddyNavBar).hitTestable(), findsNothing);
 
       phone.tapNotification();
       await tester.pumpAndSettle();
@@ -338,7 +351,7 @@ void main() {
       final phone = FakePhoneNotifications();
       final backend = FakeBackend()..latestBriefing = aBriefing();
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.text('Weekdays at 8:00 AM'), 200);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Weekdays at 8:00 AM'));
@@ -372,7 +385,7 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
 
-      expect(selectedTab(tester), 1);
+      expect(selectedTab(tester), todayTab);
       expect(find.text('Your Briefing').hitTestable(), findsOneWidget);
     });
 
@@ -386,7 +399,7 @@ void main() {
         phoneNotifications: phone,
       );
       await openTab(tester, 'Today');
-      await tester.scrollUntilVisible(find.text('Date 15'), 300);
+      await tester.scrollUntilVisible(find.text('Date 14'), 300);
       expect(find.text('Your Briefing').hitTestable(), findsNothing);
 
       phone.tapNotification();
@@ -407,12 +420,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Your Briefing is ready.'), findsOneWidget);
-      expect(selectedTab(tester), 0);
+      expect(selectedTab(tester), buddyTab);
 
       await tester.tap(find.text('See it'));
       await tester.pumpAndSettle();
 
-      expect(selectedTab(tester), 1);
+      expect(selectedTab(tester), todayTab);
       expect(find.text('Your Briefing'), findsOneWidget);
     });
 
@@ -481,7 +494,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(backend.pushTokensSaved, isEmpty);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.textContaining("You haven't allowed notifications"), 200);
       expect(find.textContaining("You haven't allowed notifications"), findsOneWidget);
     });
@@ -514,13 +527,13 @@ void main() {
       expect(backend.pushTokensSaved, ['made-up-push-token']);
     });
 
-    testWidgets('says so on the You tab when the Student has since turned them off in the phone settings', (tester) async {
+    testWidgets('says so on the Nudges screen when the Student has since turned them off in the phone settings', (tester) async {
       final phone = FakePhoneNotifications();
       await openUnlockedApp(tester, FakeBackend(), phoneNotifications: phone);
       await tester.pumpAndSettle();
 
       phone.allowed = false;
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.textContaining("You haven't allowed notifications"), 200);
 
       expect(find.textContaining("You haven't allowed notifications"), findsOneWidget);
@@ -530,18 +543,18 @@ void main() {
       final phone = FakePhoneNotifications(allowed: false);
       final backend = FakeBackend();
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.textContaining("You haven't allowed notifications"), 200);
 
       expect(backend.pushTokensSaved, isEmpty);
       expect(find.textContaining("You haven't allowed notifications"), findsOneWidget);
     });
 
-    testWidgets('asks again from the You tab, and registers once allowed', (tester) async {
+    testWidgets('asks again from the Nudges screen, and registers once allowed', (tester) async {
       final phone = FakePhoneNotifications(allowed: false);
       final backend = FakeBackend();
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.text('Allow notifications'), 200);
 
       phone.allowed = true;
@@ -557,7 +570,7 @@ void main() {
 
     testWidgets('says they are on when the backend has the token', (tester) async {
       await openUnlockedApp(tester, FakeBackend(), phoneNotifications: FakePhoneNotifications());
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.textContaining('Phone notifications are on'), 200);
 
       expect(find.textContaining('Phone notifications are on'), findsOneWidget);
@@ -582,7 +595,7 @@ void main() {
       final phone = FakePhoneNotifications(setUpWorks: false);
       final backend = FakeBackend();
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.textContaining(notSetUp), 200);
 
       expect(find.textContaining(notSetUp), findsOneWidget);
@@ -594,11 +607,13 @@ void main() {
       final phone = FakePhoneNotifications();
       final backend = FakeBackend()..pushTokenError = Exception('off');
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.textContaining("couldn't tell the backend"), 200);
       expect(find.textContaining("couldn't tell the backend"), findsOneWidget);
 
       backend.pushTokenError = null;
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       await openTab(tester, 'Today');
       await openTab(tester, 'You');
       await tester.pumpAndSettle();
@@ -609,7 +624,7 @@ void main() {
     testWidgets("says when Firebase wouldn't give a token, as on an emulator without Google Play", (tester) async {
       final phone = FakePhoneNotifications(currentToken: null);
       await openUnlockedApp(tester, FakeBackend(), phoneNotifications: phone);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.textContaining("Firebase didn't give this phone"), 200);
 
       expect(find.textContaining("Firebase didn't give this phone"), findsOneWidget);
@@ -624,17 +639,20 @@ void main() {
           offBecause: "Phone notifications are off, because the backend wasn't given a file.",
         );
       await openUnlockedApp(tester, backend);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.textContaining("the backend wasn't given a file"), 200);
 
       expect(find.textContaining("the backend wasn't given a file"), findsOneWidget);
     });
   });
 
-  group('Briefing times in the You tab', () {
+  group('Briefing times on the Nudges screen', () {
     Future<void> openTimes(WidgetTester tester, FakeBackend backend) async {
       await openUnlockedApp(tester, backend);
       await openTab(tester, 'You');
+      // With large text the row starts below the screen, so the list has to move and draw before the tap.
+      await tester.scrollUntilVisible(find.text('Nudges'), 200);
+      await openRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.text('Weekdays at 8:00 AM'), 200);
       await tester.pumpAndSettle();
     }
@@ -687,7 +705,7 @@ void main() {
             offBecause: null,
           );
         await openUnlockedApp(tester, backend);
-        await openTab(tester, 'You');
+        await openYouRow(tester, 'Nudges');
         await tester.scrollUntilVisible(find.text('Weekdays at $words'), 200);
         await tester.pumpAndSettle();
 
@@ -741,7 +759,7 @@ void main() {
     testWidgets("says when it can't load them, and tries again", (tester) async {
       final backend = FakeBackend()..briefingSettingsError = Exception('off');
       await openUnlockedApp(tester, backend);
-      await openTab(tester, 'You');
+      await openYouRow(tester, 'Nudges');
       await tester.scrollUntilVisible(find.text('Try again'), 200);
 
       backend.briefingSettingsError = null;
