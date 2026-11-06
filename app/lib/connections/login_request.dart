@@ -18,7 +18,7 @@ class LogInButton extends StatelessWidget {
   /// Called once the Student is back from the live view and Buddy has had its look.
   final VoidCallback? onFinished;
 
-  /// It sits on a warning's tint, where an outline in cherry reads better than a block of it.
+  /// It sits on a warning's tint, where a white pill with cherry words reads better than a block of cherry.
   final bool onWarning;
 
   Future<void> _logIn() async {
@@ -34,11 +34,7 @@ class LogInButton extends StatelessWidget {
     final onPressed = connections.openingLogin ? null : _logIn;
     if (onWarning) {
       return OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: BuddyColors.cherry,
-          backgroundColor: BuddyColors.surface,
-          side: const BorderSide(color: BuddyColors.cherry),
-        ),
+        style: OutlinedButton.styleFrom(foregroundColor: BuddyColors.cherry, backgroundColor: BuddyColors.surface),
         onPressed: onPressed,
         child: Text(label),
       );

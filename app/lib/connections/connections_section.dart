@@ -20,6 +20,16 @@ IconData connectionIcon(Connection connection) => switch (connection.id) {
       _ => Icons.link,
     };
 
+/// How the Connections stand together, in a few words, for a row that leads to them. Null until they've loaded.
+String? connectionsInWords(List<Connection>? list) {
+  if (list == null) return null;
+  final waiting = list.where((connection) => connection.needsLogin).toList();
+  if (waiting.length == 1) return '${waiting.first.name} needs login';
+  if (waiting.length > 1) return '${waiting.length} need login';
+  final on = list.where((connection) => connection.on).length;
+  return on == 0 ? 'None on yet' : '$on of ${list.length} on';
+}
+
 /// How a Connection stands, in the same words wherever it's shown.
 String connectionStatus(BuildContext context, Connection connection) {
   if (connection.notReadableYet case final why?) return why;
@@ -59,7 +69,7 @@ class ConnectionsScreen extends StatelessWidget {
               const LoadingBlock(label: 'Loading your Connections')
             else
               RowGroup(
-                dividerIndent: 58,
+                dividerIndent: RowGroup.indentPastIcon,
                 children: [for (final connection in list) _ConnectionRow(connection: connection, connections: connections)],
               ),
             if (connections.note case final note?) StatusNote(note, isProblem: connections.noteIsProblem),
@@ -102,6 +112,7 @@ class _ConnectionRow extends StatelessWidget {
     return NavRow(
       icon: needsYou || hasProblem ? Icons.warning_amber_rounded : connectionIcon(connection),
       iconColor: needsYou || hasProblem ? BuddyColors.warningInk : null,
+      iconTint: needsYou || hasProblem ? BuddyColors.warningTint : (connection.on ? null : BuddyColors.quiet),
       title: connection.name,
       subtitle: words,
       below: problem == null ? null : Text(problem, style: const TextStyle(color: BuddyColors.problem)),
@@ -217,7 +228,7 @@ class ConnectionScreen extends StatelessWidget {
             // Revoking is also how the Student deletes a login they gave before Buddy stopped reading this.
             if (connection.on)
               OutlinedButton(
-                style: OutlinedButton.styleFrom(foregroundColor: BuddyColors.problem, side: const BorderSide(color: BuddyColors.problem)),
+                style: OutlinedButton.styleFrom(foregroundColor: BuddyColors.problem),
                 onPressed: () => _revoke(context, connection),
                 child: Text('Revoke', semanticsLabel: 'Revoke the Read Permission for ${connection.name}'),
               ),

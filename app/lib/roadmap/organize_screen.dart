@@ -41,12 +41,7 @@ class OrganizeScreen extends StatelessWidget {
         final text = Theme.of(context).textTheme;
         final busy = roadmap.isChanging;
         return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            leadingWidth: 160,
-            leading: const Align(alignment: AlignmentDirectional.centerStart, child: BackLink()),
-            toolbarHeight: 52,
-          ),
+          appBar: backBar(),
           body: SafeArea(
             top: false,
             child: Column(
@@ -79,13 +74,10 @@ class OrganizeScreen extends StatelessWidget {
                       final name = milestone.name;
                       return Padding(
                         key: ValueKey(milestone.id),
-                        padding: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.only(bottom: 10),
                         child: Material(
-                          color: BuddyColors.surface,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            side: const BorderSide(color: BuddyColors.hairline),
-                          ),
+                          color: BuddyColors.frame,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(BuddySizes.cardRadius)),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
                             child: Column(

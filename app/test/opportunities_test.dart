@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/chat/crisis_card.dart';
-import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -41,7 +40,7 @@ Opportunity nursingCamp({int id = 8, bool saved = false}) => Opportunity(
 
 Future<void> openToday(WidgetTester tester, FakeBackend backend, {PhoneOpener openPhone = pretendToOpenPhone}) async {
   await openUnlockedApp(tester, backend, openPhone: openPhone);
-  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
+  await tester.tap(tabButton('Today'));
   await tester.pumpAndSettle();
 }
 

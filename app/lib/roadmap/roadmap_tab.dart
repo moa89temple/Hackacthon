@@ -103,36 +103,21 @@ class _RoadmapTabState extends State<RoadmapTab> {
           padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 16, BuddySizes.pageEdge, 24),
           children: [
             const PageTitle('Your Roadmap', subtitle: 'Yours to change.'),
-            const SizedBox(height: 4),
-            // A link across the page, because Goals are what the Roadmap is for.
-            Semantics(
-              button: true,
-              container: true,
-              label: 'Your Goals',
-              onTap: () => _openGoals(context),
-              excludeSemantics: true,
-              child: InkWell(
-                onTap: () => _openGoals(context),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text('Your Goals', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: BuddyColors.link))),
-                      const Icon(Icons.chevron_right, color: BuddyColors.inkSoft),
-                    ],
-                  ),
-                ),
-              ),
+            const SizedBox(height: 18),
+            // First, because Goals are what the Roadmap is for.
+            RowGroup(
+              children: [
+                NavRow(icon: Icons.track_changes, title: 'Your Goals', onTap: () => _openGoals(context)),
+              ],
             ),
-            const Divider(),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () => _openAddScreen(context),
               icon: const Icon(Icons.add),
               label: const Text('Add a Milestone'),
             ),
-            const SizedBox(height: 20),
-            SectionTitle('Your Milestones', trailing: AppLink('Organize', semanticsLabel: 'Organize your Milestones', onPressed: () => _openOrganize(context))),
+            const SizedBox(height: 24),
+            SectionTitle('Your Milestones', trailing: AppLink('Organize', icon: Icons.swap_vert, semanticsLabel: 'Organize your Milestones', onPressed: () => _openOrganize(context))),
             if (toDo.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),

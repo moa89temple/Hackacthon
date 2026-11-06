@@ -154,9 +154,13 @@ Future<void> settleApp(WidgetTester tester) async {
   }
 }
 
-/// Goes to a tab by its label in the bar along the bottom, which the same word elsewhere on the screen can't be mistaken for.
+/// A tab in the bar along the bottom, by its name. The bar shows only icons, so this goes by each one's tooltip, which
+/// the same word elsewhere on the screen can't be mistaken for.
+Finder tabButton(String label) => find.descendant(of: find.byType(BuddyNavBar), matching: find.byTooltip(label));
+
+/// Goes to a tab by its name in the bar along the bottom.
 Future<void> goToTab(WidgetTester tester, String label) async {
-  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text(label)));
+  await tester.tap(tabButton(label));
   await tester.pump();
 }
 

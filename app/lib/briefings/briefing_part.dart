@@ -55,6 +55,7 @@ List<Widget> briefingPart(
   return [
     SectionTitle(latest.title, trailing: Text('From ${latest.when}', style: theme.textTheme.bodySmall)),
     RowGroup(
+      dividerIndent: RowGroup.indentPastIcon,
       children: [
         for (final item in latest.milestones)
           MilestoneCard(
@@ -107,8 +108,8 @@ class _NewsRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.notifications_none, size: 26, color: BuddyColors.ink),
-            const SizedBox(width: 16),
+            const IconTile(Icons.notifications_none),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

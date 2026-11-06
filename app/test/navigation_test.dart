@@ -83,14 +83,30 @@ void main() {
       }
     });
 
-    testWidgets('the tabs run Today, Buddy, Roadmap, You, each with its label', (tester) async {
+    testWidgets('the tabs run Today, Buddy, Roadmap, You, each named in its tooltip', (tester) async {
       await openUnlockedApp(tester, FakeBackend());
 
-      final labels = tester
-          .widgetList<Text>(find.descendant(of: find.byType(BuddyNavBar), matching: find.byType(Text)))
-          .map((text) => text.data)
+      final names = tester
+          .widgetList<Tooltip>(find.descendant(of: find.byType(BuddyNavBar), matching: find.byType(Tooltip)))
+          .map((tooltip) => tooltip.message)
           .toList();
-      expect(labels, ['Today', 'Buddy', 'Roadmap', 'You']);
+      expect(names, ['Today', 'Buddy', 'Roadmap', 'You']);
+    });
+
+    testWidgets('the bar shows icons only, so large text has nothing in it to squeeze', (tester) async {
+      await openUnlockedApp(tester, FakeBackend());
+
+      expect(find.descendant(of: find.byType(BuddyNavBar), matching: find.byType(Text)), findsNothing);
+      expect(find.descendant(of: find.byType(BuddyNavBar), matching: find.byType(Icon)), findsNWidgets(4));
+    });
+
+    testWidgets('a long press on a tab shows its name', (tester) async {
+      await openUnlockedApp(tester, FakeBackend());
+
+      await tester.longPress(tabButton('Roadmap'));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Roadmap'), findsOneWidget);
     });
 
     testWidgets('a screen reader hears which tab is which and which one is selected', (tester) async {
@@ -546,6 +562,8 @@ void main() {
       expect(backend.latestBriefingLoads, greaterThan(loadsBefore));
       expect(backend.taskLoads, greaterThan(tasksBefore));
       expect(backend.opportunityLoads, greaterThan(opportunitiesBefore));
+      // The dates are last on Today, below the welcome at the top.
+      await tester.scrollUntilVisible(find.text('Last day to withdraw'), 200, scrollable: find.byType(Scrollable).first);
       expect(find.text('Last day to withdraw'), findsOneWidget);
     });
   });
@@ -768,7 +786,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Today'), findsNWidgets(2), reason: 'once as the divider and once in the tab bar');
+      expect(find.text('Today'), findsOneWidget, reason: 'as the divider, since the tab bar shows only icons');
       expect(find.textContaining('Mar 4'), findsOneWidget);
     });
 
@@ -777,16 +795,46 @@ void main() {
         tester,
         FakeBackend(history: [for (var i = 0; i < 40; i++) buddy('Message number $i, long enough to take up some room on the screen.')]),
       );
-      expect(find.byTooltip('Go to the newest message'), findsNothing);
+      expect(find.text('Latest messages'), findsNothing);
 
       await tester.drag(find.byType(ListView).first, const Offset(0, 900));
       await tester.pump();
-      expect(find.byTooltip('Go to the newest message'), findsOneWidget);
+      expect(find.text('Latest messages'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Go to the newest message'));
+      await tester.tap(find.text('Latest messages'));
       await tester.pumpAndSettle();
       expect(find.text('Message number 39, long enough to take up some room on the screen.'), findsOneWidget);
-      expect(find.byTooltip('Go to the newest message'), findsNothing);
+      expect(find.text('Latest messages'), findsNothing);
+    });
+
+    testWidgets('says what the way back down does', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openUnlockedApp(
+        tester,
+        FakeBackend(history: [for (var i = 0; i < 40; i++) buddy('Message number $i, long enough to take up some room on the screen.')]),
+      );
+
+      await tester.drag(find.byType(ListView).first, const Offset(0, 900));
+      await tester.pump();
+
+      expect(tester.getSemantics(find.bySemanticsLabel('Go to the latest messages')), isSemantics(isButton: true, hasTapAction: true));
+      handle.dispose();
+    });
+
+    testWidgets('goes straight down, without gliding, for a Student who has asked for less movement', (tester) async {
+      tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      await openUnlockedApp(
+        tester,
+        FakeBackend(history: [for (var i = 0; i < 40; i++) buddy('Message number $i, long enough to take up some room on the screen.')]),
+      );
+      await tester.drag(find.byType(ListView).first, const Offset(0, 900));
+      await tester.pump();
+
+      await tester.tap(find.text('Latest messages'));
+      await tester.pump();
+
+      expect(tester.state<ScrollableState>(find.byType(Scrollable).first).position.pixels, 0);
     });
 
     testWidgets('long pressing a message copies it', (tester) async {

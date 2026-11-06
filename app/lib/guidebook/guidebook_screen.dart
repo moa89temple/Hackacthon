@@ -22,6 +22,24 @@ enum GuidebookShelf {
   final String words;
 }
 
+/// Opens the Guidebook on one of its shelves, with what's on them read again.
+void openGuidebook(
+  BuildContext context, {
+  required GuidebookController guidebook,
+  required OpportunitiesController opportunities,
+  required PhoneOpener openPhone,
+  required void Function(String words) askBuddy,
+  GuidebookShelf shelf = GuidebookShelf.resources,
+}) {
+  guidebook.load();
+  opportunities.load();
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (context) => GuidebookScreen(guidebook: guidebook, opportunities: opportunities, openPhone: openPhone, askBuddy: askBuddy, shelf: shelf),
+    ),
+  );
+}
+
 /// Everything Buddy has discovered, for a Student who wants to look around rather than work out what to ask.
 class GuidebookScreen extends StatefulWidget {
   const GuidebookScreen({
@@ -95,6 +113,7 @@ class _GuidebookScreenState extends State<GuidebookScreen> {
     if (found.isEmpty) return [_message(_searchWords.isEmpty ? nothingYet : _nothingMatches)];
     return [
       RowGroup(
+        dividerIndent: RowGroup.indentPastIcon,
         children: [
           for (final item in found)
             _ItemRow(
@@ -120,6 +139,7 @@ class _GuidebookScreenState extends State<GuidebookScreen> {
   String get _nothingMatches => "Nothing here matches that. Try other words, or ask Buddy.";
 
   Widget _opportunityGroup(List<Opportunity> opportunities) => RowGroup(
+        dividerIndent: RowGroup.indentPastIcon,
         children: [
           for (final opportunity in opportunities)
             OpportunityCard(
@@ -285,8 +305,8 @@ class _ItemRowState extends State<_ItemRow> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(item.isContact ? Icons.person_outline : Icons.local_library_outlined, size: 24, color: BuddyColors.ink),
-                  const SizedBox(width: 16),
+                  IconTile(item.isContact ? Icons.person_outline : Icons.local_library_outlined),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -309,7 +329,7 @@ class _ItemRowState extends State<_ItemRow> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(56, 0, 16, 6),
+          padding: const EdgeInsets.fromLTRB(RowGroup.indentPastIcon, 0, 16, 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -335,6 +355,7 @@ class GuidebookItemScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SubScreen(
+      topIcon: item.isContact ? Icons.person_outline : Icons.local_library_outlined,
       title: item.name,
       subtitle: item.isContact ? 'Contact' : 'Resource',
       children: [

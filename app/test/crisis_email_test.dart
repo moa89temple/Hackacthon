@@ -106,6 +106,10 @@ Finder inDialog(String text) => find.descendant(of: find.byType(AlertDialog), ma
 
 Future<void> expectEveryResourceReachable(WidgetTester tester) async {
   for (final label in resources) {
+    // A tall card below can put the Crisis card far up the conversation, so this goes up to it the way a Student would.
+    if (find.text(label, skipOffstage: false).evaluate().isEmpty) {
+      await tester.scrollUntilVisible(find.text(label), 300, scrollable: find.byType(Scrollable).first);
+    }
     final button = find.text(label, skipOffstage: false);
     expect(button, findsWidgets, reason: label);
     await tester.ensureVisible(button.first);

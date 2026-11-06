@@ -109,11 +109,13 @@ void main() {
       await backend.reply.close();
       await tester.pump();
 
+      // The card's top stays in view, so the reply under it can be just out of sight.
+      final reply = find.text('I am here.', skipOffstage: false);
       expect(find.text('Call 988'), findsOneWidget);
-      expect(find.text('I am here.'), findsOneWidget);
+      expect(reply, findsOneWidget);
       expect(
         tester.getTopLeft(find.text('Call 988')).dy,
-        lessThan(tester.getTopLeft(find.text('I am here.')).dy),
+        lessThan(tester.getTopLeft(reply).dy),
       );
 
       backend.nextReply();

@@ -187,7 +187,7 @@ ActionCard _actionCard({bool live = false, String status = 'waiting', String sta
     );
 
 Future<void> _goTo(WidgetTester tester, String tab) async {
-  await tester.tap(find.descendant(of: find.byKey(const ValueKey('nav')), matching: find.text(tab)));
+  await tester.tap(find.descendant(of: find.byKey(const ValueKey('nav')), matching: find.byTooltip(tab)));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
 }
@@ -389,6 +389,35 @@ void _scenes(String suffix, Size size, double scale) {
     await _openRow(tester, 'Give Read Permission');
     await shot(tester, '35-login-step');
   });
+  scene('36-menu', (tester, backend) async {
+    await _goTo(tester, 'Buddy');
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await shot(tester, '36-menu');
+  });
+  scene('37-latest-messages', (tester, backend) async {
+    await _goTo(tester, 'Buddy');
+    await tester.drag(find.byType(ListView).first, const Offset(0, 900));
+    await tester.pump(const Duration(milliseconds: 300));
+    await shot(tester, '37-latest-messages');
+  }, backend: () => _richBackend()..history = [for (var i = 0; i < 30; i++) i.isEven ? ChatMessage(isFromBuddy: false, text: 'Question number $i', sentAt: DateTime.now()) : ChatMessage(isFromBuddy: true, text: 'Answer number $i, which takes a line or two to say.', sentAt: DateTime.now())]);
+  scene('38-task-needs-you', (tester, backend) async {
+    await _goTo(tester, 'Buddy');
+    await shot(tester, '38-task-needs-you');
+    await _goTo(tester, 'Today');
+    await shot(tester, '39-today-task-needs-you');
+  }, backend: () => _richBackend()
+    ..connections = [_connection('google-calendar', 'Google Calendar', on: true, read: DateTime(2026, 11, 4, 7), logsIn: false)]
+    ..tasks = const [
+      Task(id: 2, title: 'Compare summer research programs', state: 'needs_student', stateText: 'This Task needs you.', needs: ['Which of these three programs should Buddy look at first?'], canCancel: true, spentNanodollars: 340000000),
+      Task(id: 1, title: 'Find internship Resources', state: 'done', stateText: 'Done.', result: 'Buddy found 4 internship Resources that fit your Goal.', spentNanodollars: 120000000),
+    ]
+    ..history = [
+      ChatMessage(isFromBuddy: false, text: 'Can you compare some summer research programs for me?', sentAt: DateTime.now()),
+      ChatMessage(isFromBuddy: true, text: "I've started a Task for that. It needs one answer from you.", sentAt: DateTime.now()),
+      TaskCardItem(const Task(id: 2, title: 'Compare summer research programs', state: 'needs_student', stateText: 'This Task needs you.', needs: ['Which of these three programs should Buddy look at first?'], canCancel: true, spentNanodollars: 340000000)),
+    ]);
   scene('30-empty-today', (tester, backend) async {
     await _goTo(tester, 'Today');
     await shot(tester, '30-empty-today');

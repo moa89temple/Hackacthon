@@ -16,13 +16,13 @@ String _askingWords(Task task, String Function(int nanodollars) money) =>
     "This Task has cost ${money(task.spentNanodollars)} so far, and its next step could take it past ${money(task.allowanceNanodollars)}. "
     "It won't go on without your tap. If you tap Keep going, it may spend up to 1 dollar more, then it asks again.";
 
-/// The icon for where a Task stands. The words beside it are always the backend's.
-(IconData, Color) _lookOf(Task task) => switch (task.state) {
-      'done' => (Icons.check_circle_outline, BuddyColors.good),
-      'failed' => (Icons.error_outline, BuddyColors.problem),
-      'cancelled' => (Icons.block, BuddyColors.inkSoft),
-      'needs_student' => (Icons.pending_actions, BuddyColors.warningInk),
-      _ => (Icons.schedule, BuddyColors.ink),
+/// The icon for where a Task stands, its color and the tint of its square. The words beside it are always the backend's.
+(IconData, Color, Color) _lookOf(Task task) => switch (task.state) {
+      'done' => (Icons.check_circle_outline, BuddyColors.good, BuddyColors.goodTint),
+      'failed' => (Icons.error_outline, BuddyColors.problem, BuddyColors.problemTint),
+      'cancelled' => (Icons.block, BuddyColors.inkSoft, BuddyColors.quiet),
+      'needs_student' => (Icons.pending_actions, BuddyColors.warningInk, BuddyColors.warningTint),
+      _ => (Icons.schedule, BuddyColors.ink, BuddyColors.cherryTint),
     };
 
 /// A Task in a list: what it is and where it stands. Everything else is a tap away, on its own screen.
@@ -34,10 +34,11 @@ class TaskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, color) = _lookOf(task);
+    final (icon, color, tint) = _lookOf(task);
     return NavRow(
       icon: icon,
       iconColor: color,
+      iconTint: tint,
       title: task.title,
       subtitle: task.stateText,
       semanticsLabel: 'Task: ${task.title}. ${task.stateText}',
@@ -104,7 +105,7 @@ class _TaskCardState extends State<TaskCard> {
     final shownSteps = task.steps.length > _stepsShown ? task.steps.sublist(task.steps.length - _stepsShown) : task.steps;
     if (_lastState != null && _lastState != task.state) _stateChanged = true;
     _lastState = task.state;
-    final (icon, color) = _lookOf(task);
+    final (icon, color, tint) = _lookOf(task);
     // Holds nothing that changes while Buddy works, because each change to this is read out. The steps have their own stop.
     final aloud = [
       'Task: ${task.title}.',
@@ -117,101 +118,90 @@ class _TaskCardState extends State<TaskCard> {
     ].join('\n');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      // It holds several controls, so it's a set of separate nodes rather than one.
-      child: Card(
-        semanticContainer: false,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // One item, because on Android its lines otherwise run together with the buttons'.
-              Semantics(
-                container: true,
-                liveRegion: widget.announce || _stateChanged,
-                label: aloud,
-                excludeSemantics: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(task.title, style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 6),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(icon, size: 22, color: color),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text(task.stateText, style: theme.textTheme.titleSmall)),
-                      ],
-                    ),
-                    for (final need in task.needs)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(need),
-                      ),
-                    if (task.askingToSpend)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(_askingWords(task, moneyOnScreen)),
-                      ),
-                    if (task.problem case final problem?)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(problem),
-                      ),
-                    if (task.result case final result?)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(result),
-                      ),
+      child: CardFrame(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // One item, because on Android its lines otherwise run together with the buttons'.
+            Semantics(
+              container: true,
+              liveRegion: widget.announce || _stateChanged,
+              label: aloud,
+              excludeSemantics: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CardHeading(icon: icon, iconColor: color, iconTint: tint, title: task.title, line: task.stateText),
+                  for (final need in task.needs)
                     Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text('Cost so far: ${moneyOnScreen(task.spentNanodollars)}', style: theme.textTheme.bodySmall),
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(need),
                     ),
-                  ],
-                ),
+                  if (task.askingToSpend)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(_askingWords(task, moneyOnScreen)),
+                    ),
+                  if (task.problem case final problem?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(problem),
+                    ),
+                  // What it found, on white, apart from how the Task went.
+                  if (task.result case final result?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: InnerPanel(child: Padding(padding: const EdgeInsets.only(top: 8), child: Text(result))),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text('Cost so far: ${moneyOnScreen(task.spentNanodollars)}', style: theme.textTheme.bodySmall),
+                  ),
+                ],
               ),
-              if (task.isWorking) ...[
-                const SizedBox(height: 10),
-                const ExcludeSemantics(child: LinearProgressIndicator()),
-              ],
-              if (task.isWorking || task.state == 'needs_student')
-                for (final step in shownSteps)
-                  Semantics(
-                    container: true,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(step, style: theme.textTheme.bodySmall),
-                    ),
-                  ),
-              if (task.result != null || task.state == 'failed')
-                for (final source in task.sources.take(_mostSourcesShown))
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton(
-                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8)),
-                      onPressed: () => _open(source),
-                      // Not called a Source, because only Buddy's code decides what counts as one, and it hasn't checked these.
-                      child: Text('Buddy looked at: ${source.title}', semanticsLabel: 'Open a page Buddy looked at: ${source.title}'),
-                    ),
-                  ),
-              if (_problem case final problem?) ProblemNote(problem),
-              if (task.askingToSpend) ...[
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: busy ? null : () => _tap(() => widget.tasks.keepGoing(task)),
-                  child: const Text('Keep going', semanticsLabel: 'Keep going, and let this Task spend up to 1 dollar more'),
-                ),
-              ],
-              if (task.canCancel) ...[
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed: busy ? null : () => _tap(() => widget.tasks.cancel(task)),
-                  child: Text('Cancel', semanticsLabel: 'Cancel the Task: ${task.title}'),
-                ),
-              ],
+            ),
+            // The bar moves, so it isn't there for a Student who has asked their phone to cut down on movement.
+            // The words above already say it's under way.
+            if (task.isWorking && !MediaQuery.disableAnimationsOf(context)) ...[
+              const SizedBox(height: 12),
+              ExcludeSemantics(child: LinearProgressIndicator(minHeight: 4, borderRadius: BorderRadius.circular(4))),
             ],
-          ),
+            if (task.isWorking || task.state == 'needs_student')
+              for (final step in shownSteps)
+                Semantics(
+                  container: true,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(step, style: theme.textTheme.bodySmall),
+                  ),
+                ),
+            if (task.result != null || task.state == 'failed')
+              for (final source in task.sources.take(_mostSourcesShown))
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton(
+                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8)),
+                    onPressed: () => _open(source),
+                    // Not called a Source, because only Buddy's code decides what counts as one, and it hasn't checked these.
+                    child: Text('Buddy looked at: ${source.title}', semanticsLabel: 'Open a page Buddy looked at: ${source.title}'),
+                  ),
+                ),
+            if (_problem case final problem?) ProblemNote(problem),
+            if (task.askingToSpend) ...[
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: busy ? null : () => _tap(() => widget.tasks.keepGoing(task)),
+                child: const Text('Keep going', semanticsLabel: 'Keep going, and let this Task spend up to 1 dollar more'),
+              ),
+            ],
+            if (task.canCancel) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: busy ? null : () => _tap(() => widget.tasks.cancel(task)),
+                child: Text('Cancel', semanticsLabel: 'Cancel the Task: ${task.title}'),
+              ),
+            ],
+          ],
         ),
       ),
     );

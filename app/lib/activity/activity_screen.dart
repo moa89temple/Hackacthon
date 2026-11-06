@@ -90,7 +90,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
         const SizedBox(height: 20),
         GroupLabel(_dayInWords(context, day)),
         RowGroup(
-          dividerIndent: 54,
+          dividerIndent: RowGroup.indentPastIcon,
           children: [for (final entry in dayEntries) _EntryRow(entry: entry)],
         ),
       ],
@@ -176,8 +176,9 @@ class _EntryRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ExcludeSemantics(child: Icon(_iconFor(entry), size: 22, color: BuddyColors.inkSoft)),
-          const SizedBox(width: 16),
+          // White rather than cherry, because an entry is a record to read, not a way to somewhere.
+          IconTile(_iconFor(entry), color: BuddyColors.inkSoft, tint: BuddyColors.surface),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

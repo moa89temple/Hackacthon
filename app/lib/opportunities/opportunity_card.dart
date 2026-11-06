@@ -119,8 +119,8 @@ class _OpportunityCardState extends State<OpportunityCard> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const ExcludeSemantics(child: Icon(Icons.work_outline, size: 24, color: BuddyColors.ink)),
-          const SizedBox(width: 16),
+          const IconTile(Icons.work_outline),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -182,9 +182,8 @@ class _OpportunityCardState extends State<OpportunityCard> {
     );
     if (widget.inGroup) return content;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      // It holds several controls, so it's a set of separate nodes rather than one.
-      child: Card(semanticContainer: false, child: content),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: CardFrame(padding: EdgeInsets.zero, child: content),
     );
   }
 }

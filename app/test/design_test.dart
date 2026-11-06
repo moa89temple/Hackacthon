@@ -18,14 +18,39 @@ void main() {
       'cherry on its tint': (BuddyColors.cherry, BuddyColors.cherryTint),
       'ink on white': (BuddyColors.ink, BuddyColors.surface),
       'soft ink on white': (BuddyColors.inkSoft, BuddyColors.surface),
-      'soft ink on the quiet surface': (BuddyColors.inkSoft, BuddyColors.surfaceQuiet),
       'a link on white': (BuddyColors.link, BuddyColors.surface),
       'a problem on white': (BuddyColors.problem, BuddyColors.surface),
       'a problem on its tint': (BuddyColors.problem, BuddyColors.problemTint),
       'ink on a warning': (BuddyColors.ink, BuddyColors.warningTint),
       'warning ink on a warning': (BuddyColors.warningInk, BuddyColors.warningTint),
       'good on white': (BuddyColors.good, BuddyColors.surface),
+      'good on its tint': (BuddyColors.good, BuddyColors.goodTint),
       'soft ink on a disabled button': (BuddyColors.inkSoft, BuddyColors.hairline),
+      // Behind everything.
+      'ink on the canvas': (BuddyColors.ink, BuddyColors.canvas),
+      'soft ink on the canvas': (BuddyColors.inkSoft, BuddyColors.canvas),
+      'cherry on the canvas': (BuddyColors.cherry, BuddyColors.canvas),
+      'a link on the canvas': (BuddyColors.link, BuddyColors.canvas),
+      'a problem on the canvas': (BuddyColors.problem, BuddyColors.canvas),
+      // A card, a group of rows, or Buddy's words.
+      'ink on a frame': (BuddyColors.ink, BuddyColors.frame),
+      'soft ink on a frame': (BuddyColors.inkSoft, BuddyColors.frame),
+      'cherry on a frame': (BuddyColors.cherry, BuddyColors.frame),
+      'a link on a frame': (BuddyColors.link, BuddyColors.frame),
+      'a problem on a frame': (BuddyColors.problem, BuddyColors.frame),
+      'warning ink on a frame': (BuddyColors.warningInk, BuddyColors.frame),
+      'good on a frame': (BuddyColors.good, BuddyColors.frame),
+      // A gray pill: a quiet button, a status, a day in the conversation.
+      'ink on a quiet pill': (BuddyColors.ink, BuddyColors.quiet),
+      'soft ink on a quiet pill': (BuddyColors.inkSoft, BuddyColors.quiet),
+      'a problem on a quiet pill': (BuddyColors.problem, BuddyColors.quiet),
+      // A tooltip, such as a tab's name, and a message at the foot of the screen.
+      'white on ink': (Colors.white, BuddyColors.ink),
+      // The Student's words, the top of Today and the Crisis card.
+      "ink on the Student's bubble": (BuddyColors.ink, BuddyColors.cherryBubble),
+      'ink on the cherry tint': (BuddyColors.ink, BuddyColors.cherryTint),
+      'soft ink on the cherry tint': (BuddyColors.inkSoft, BuddyColors.cherryTint),
+      'a problem on the cherry tint': (BuddyColors.problem, BuddyColors.cherryTint),
     };
 
     for (final MapEntry(key: name, value: (foreground, background)) in pairsThatCarryText.entries) {
@@ -79,6 +104,24 @@ void main() {
         theme.textButtonTheme.style!.minimumSize!.resolve({})!.height,
       ];
       expect(heights, everyElement(greaterThanOrEqualTo(BuddySizes.tapTarget)));
+    });
+
+    test('is a pill, round at each end at its usual height', () {
+      final theme = buddyTheme();
+      final shapes = [
+        theme.filledButtonTheme.style!.shape!.resolve({}),
+        theme.outlinedButtonTheme.style!.shape!.resolve({}),
+        theme.textButtonTheme.style!.shape!.resolve({}),
+      ];
+      for (final shape in shapes) {
+        expect((shape! as RoundedRectangleBorder).borderRadius, BorderRadius.circular(BuddySizes.tapTarget / 2));
+      }
+    });
+
+    test('that is quiet stays gray on the canvas and turns white inside a frame, so it shows on both', () {
+      final theme = buddyTheme();
+      expect(theme.outlinedButtonTheme.style!.backgroundColor!.resolve({}), BuddyColors.quiet);
+      expect(quietButtonOnFrame(theme).backgroundColor!.resolve({}), BuddyColors.surface);
     });
   });
 

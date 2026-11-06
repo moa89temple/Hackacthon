@@ -26,14 +26,10 @@ class GuidebookCard extends StatelessWidget {
     final item = card.item;
     if (item == null) return _Gone(reportedJustNow: card.reportedJustNow);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      // It holds several controls, so it's a set of separate nodes rather than one.
-      child: Card(
-        semanticContainer: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: GuidebookItemBody(item: item, openPhone: openPhone, report: chat.report, announce: announce, showsName: true),
-        ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: CardFrame(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+        child: GuidebookItemBody(item: item, openPhone: openPhone, report: chat.report, announce: announce, showsName: true),
       ),
     );
   }
@@ -114,30 +110,19 @@ class _GuidebookItemBodyState extends State<GuidebookItemBody> {
     }
   }
 
+  /// On its own screen, the first way to reach them is the main thing to do there. On a card, each is a soft button.
   Widget _action(String label, {required IconData icon, required String semanticsLabel, required VoidCallback onPressed, bool isFirst = false}) {
     final words = Text(label, semanticsLabel: semanticsLabel);
-    if (widget.largeActions) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: isFirst
-            ? FilledButton.icon(icon: Icon(icon), label: words, onPressed: onPressed)
-            : OutlinedButton.icon(icon: Icon(icon), label: words, onPressed: onPressed),
-      );
-    }
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: TextButton.icon(
-        style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8)),
-        icon: Icon(icon, size: 20),
-        label: words,
-        onPressed: onPressed,
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: widget.largeActions && isFirst
+          ? FilledButton.icon(icon: Icon(icon, size: 20), label: words, onPressed: onPressed)
+          : OutlinedButton.icon(icon: Icon(icon, size: 20), label: words, onPressed: onPressed),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final item = widget.item;
     final dial = item.phoneToDial;
     final lines = [
@@ -159,12 +144,19 @@ class _GuidebookItemBodyState extends State<GuidebookItemBody> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (widget.showsName) Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(item.name, style: theme.textTheme.titleMedium)),
+              if (widget.showsName) ...[
+                CardHeading(
+                  icon: item.isContact ? Icons.person_outline : Icons.local_library_outlined,
+                  title: item.name,
+                  line: item.isContact ? 'Contact' : 'Resource',
+                ),
+                const SizedBox(height: 12),
+              ],
               for (final (index, line) in lines.indexed) Padding(padding: EdgeInsets.only(top: index == 0 ? 0 : 4), child: Text(line)),
             ],
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         if (dial != null)
           _action(
             'Call ${item.phone}',

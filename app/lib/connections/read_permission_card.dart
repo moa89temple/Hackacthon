@@ -176,20 +176,19 @@ class _ReadPermissionScreenState extends State<ReadPermissionScreen> {
             _line('This Read Permission stays on until you revoke it.'),
             const SizedBox(height: 24),
             if (content.notes.isNotEmpty) ...[
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(color: BuddyColors.hairline),
-                  borderRadius: BorderRadius.circular(BuddySizes.cardRadius),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Semantics(header: true, container: true, child: Text('Good to know', style: Theme.of(context).textTheme.titleMedium)),
-                      for (final note in content.notes) Padding(padding: const EdgeInsets.only(top: 10), child: Text(note)),
-                    ],
-                  ),
+              CardFrame(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const IconTile(Icons.info_outline),
+                        const SizedBox(width: 12),
+                        Expanded(child: Semantics(header: true, container: true, child: Text('Good to know', style: Theme.of(context).textTheme.titleMedium))),
+                      ],
+                    ),
+                    for (final note in content.notes) Padding(padding: const EdgeInsets.only(top: 12), child: Text(note)),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),
@@ -307,31 +306,26 @@ class _Question extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Card(
-        // It holds a heading and a button, so it's a set of separate nodes rather than one.
-        semanticContainer: false,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IconTile(connectionIcon(connection), size: 48),
-                  const SizedBox(width: 12),
-                  Expanded(child: Semantics(header: true, container: true, child: Text('Let Buddy read ${connection.name}?', style: text.titleLarge))),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (connection.card.why case final why?) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(why)),
-              const Text('See exactly what it would read, then decide. Nothing is read until you say yes.'),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: onReview,
-                child: Text('Review and decide', semanticsLabel: 'Review and decide: let Buddy read ${connection.name}'),
-              ),
-            ],
-          ),
+      child: CardFrame(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                IconTile(connectionIcon(connection)),
+                const SizedBox(width: 12),
+                Expanded(child: Semantics(header: true, container: true, child: Text('Let Buddy read ${connection.name}?', style: text.titleMedium))),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (connection.card.why case final why?) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(why)),
+            Text('See exactly what it would read, then decide. Nothing is read until you say yes.', style: text.bodyMedium?.copyWith(color: BuddyColors.inkSoft)),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: onReview,
+              child: Text('Review and decide', semanticsLabel: 'Review and decide: let Buddy read ${connection.name}'),
+            ),
+          ],
         ),
       ),
     );

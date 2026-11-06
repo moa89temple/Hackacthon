@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../backend/buddy_backend.dart';
 import '../connections/connections_controller.dart';
+import '../connections/connections_section.dart';
 import '../connections/read_permission_card.dart';
 import '../design/parts.dart';
 import '../design/theme.dart';
@@ -17,6 +18,7 @@ import '../opportunities/opportunities_controller.dart';
 import '../opportunities/opportunity_card.dart';
 import '../roadmap/roadmap_card.dart';
 import '../roadmap/roadmap_controller.dart';
+import '../tasks/task_backend.dart';
 import '../tasks/task_card.dart';
 import '../tasks/tasks_controller.dart';
 import 'outlook.dart';
@@ -43,8 +45,33 @@ const _itemsThatCountAsRecent = 10;
 /// How far up the Student has to be for a way back down to be worth showing.
 const _showJumpBackAfter = 400.0;
 
-class BuddyTab extends StatelessWidget {
-  const BuddyTab({super.key, required this.chat, required this.connections, required this.roadmap, required this.opportunities, required this.tasks, required this.openPhone, required this.openDraft});
+/// One of the places the conversation's menu leads to. Each one already has its own screen.
+class MenuWay {
+  const MenuWay({required this.icon, required this.title, this.subtitle, this.iconColor, this.iconTint, required this.open});
+
+  final IconData icon;
+  final String title;
+
+  /// How it stands, in the same words as its row on the You tab.
+  final String? subtitle;
+  final Color? iconColor;
+  final Color? iconTint;
+  final VoidCallback open;
+}
+
+class BuddyTab extends StatefulWidget {
+  const BuddyTab({
+    super.key,
+    required this.chat,
+    required this.connections,
+    required this.roadmap,
+    required this.opportunities,
+    required this.tasks,
+    required this.openPhone,
+    required this.openDraft,
+    required this.menu,
+    required this.openActivity,
+  });
 
   final ChatController chat;
   final ConnectionsController connections;
@@ -54,54 +81,187 @@ class BuddyTab extends StatelessWidget {
   final PhoneOpener openPhone;
   final DraftOpener openDraft;
 
+  /// What the menu offers, worked out each time it opens, so that what each says is up to date.
+  final List<MenuWay> Function() menu;
+
+  /// Where tapping Buddy's face goes: the record of everything it read and did.
+  final VoidCallback openActivity;
+
+  @override
+  State<BuddyTab> createState() => _BuddyTabState();
+}
+
+class _BuddyTabState extends State<BuddyTab> {
+  final _wayDown = _WayDown();
+
+  @override
+  void dispose() {
+    _wayDown.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final chat = widget.chat;
     return ListenableBuilder(
       listenable: chat,
       builder: (context, _) => Column(
         children: [
-          const _Header(),
-          const Divider(),
+          _Header(tasks: widget.tasks, connections: widget.connections, openPhone: widget.openPhone, menu: widget.menu, openActivity: widget.openActivity),
           Expanded(child: _body()),
-          _Composer(chat: chat),
+          _Composer(chat: chat, wayDown: _wayDown),
         ],
       ),
     );
   }
 
   Widget _body() {
+    final chat = widget.chat;
     if (chat.isLoading) {
       return const Center(child: CircularProgressIndicator(semanticsLabel: 'Loading your conversation'));
     }
     if (chat.couldNotLoad) return _CouldNotLoad(onRetry: chat.loadHistory);
-    return _MessageList(chat: chat, connections: connections, roadmap: roadmap, opportunities: opportunities, tasks: tasks, openPhone: openPhone, openDraft: openDraft);
+    return _MessageList(
+      chat: chat,
+      connections: widget.connections,
+      roadmap: widget.roadmap,
+      opportunities: widget.opportunities,
+      tasks: widget.tasks,
+      openPhone: widget.openPhone,
+      openDraft: widget.openDraft,
+      wayDown: _wayDown,
+    );
   }
 }
 
+/// Whether the Student has scrolled far up the conversation, and how to take them back down. The way down sits just
+/// above the box to write in, rather than over the conversation, so that it can never cover a card's buttons.
+class _WayDown extends ChangeNotifier {
+  bool _isFarUp = false;
+  VoidCallback? goDown;
+
+  bool get isFarUp => _isFarUp;
+
+  set isFarUp(bool isFarUp) {
+    if (isFarUp == _isFarUp) return;
+    _isFarUp = isFarUp;
+    notifyListeners();
+  }
+
+  /// For when the list itself goes. Nothing is told, because the screen is being rebuilt anyway.
+  void forget() {
+    goDown = null;
+    _isFarUp = false;
+  }
+}
+
+/// Buddy's face and name in the middle, the menu to its left, and under them what Buddy is doing or waiting on.
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.tasks, required this.connections, required this.openPhone, required this.menu, required this.openActivity});
+
+  final TasksController tasks;
+  final ConnectionsController connections;
+  final PhoneOpener openPhone;
+  final List<MenuWay> Function() menu;
+  final VoidCallback openActivity;
+
+  void _openMenu(BuildContext context) {
+    final ways = menu();
+    showBuddySheet<void>(
+      context,
+      title: 'Menu',
+      children: (sheet) => [
+        RowGroup(
+          dividerIndent: RowGroup.indentPastIcon,
+          children: [
+            for (final way in ways)
+              NavRow(
+                icon: way.icon,
+                iconColor: way.iconColor,
+                iconTint: way.iconTint,
+                title: way.title,
+                subtitle: way.subtitle,
+                onTap: () {
+                  Navigator.of(sheet).pop();
+                  way.open();
+                },
+              ),
+          ],
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    // With large text or on a short screen, the face goes beside the name, so the conversation keeps its room.
+    final compact = MediaQuery.textScalerOf(context).scale(10) > 13 || MediaQuery.sizeOf(context).height < 700;
+    final name = [
+      Text('Buddy', style: text.titleMedium),
+      Text('Your Temple guide', textAlign: TextAlign.center, style: text.bodySmall?.copyWith(fontSize: 12, height: 1.3)),
+    ];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 12, BuddySizes.pageEdge, 12),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
       // Only so large, because with large text every line it takes is one the conversation doesn't get.
       child: MediaQuery.withClampedTextScaling(
         maxScaleFactor: 1.3,
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const BuddyAvatar(radius: 24),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Semantics(header: true, container: true, child: Text('Buddy', style: text.headlineSmall)),
-                  Text('Your Temple guide', style: text.bodySmall),
-                ],
-              ),
+            Row(
+              crossAxisAlignment: compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(top: compact ? 0 : 8),
+                  child: IconButton(
+                    style: IconButton.styleFrom(backgroundColor: BuddyColors.surface, side: const BorderSide(color: BuddyColors.frame)),
+                    icon: const Icon(Icons.menu),
+                    tooltip: 'Menu',
+                    onPressed: () => _openMenu(context),
+                  ),
+                ),
+                Expanded(
+                  child: Semantics(
+                    header: true,
+                    button: true,
+                    container: true,
+                    label: 'Buddy, your Temple guide',
+                    onTapHint: 'see what Buddy read and did',
+                    onTap: openActivity,
+                    excludeSemantics: true,
+                    child: Center(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(BuddySizes.chipRadius),
+                        onTap: openActivity,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: BuddySizes.tapTarget),
+                          child: Align(
+                            widthFactor: 1,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              child: compact
+                                  ? Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const BuddyAvatar(radius: 18),
+                                        const SizedBox(width: 10),
+                                        Flexible(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: name)),
+                                      ],
+                                    )
+                                  : Column(mainAxisSize: MainAxisSize.min, children: [const BuddyAvatar(radius: 22), const SizedBox(height: 4), ...name]),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // As wide as the menu button, so that Buddy's name sits in the middle of the screen.
+                const SizedBox(width: BuddySizes.tapTarget),
+              ],
             ),
+            _StatusPill(tasks: tasks, connections: connections, openPhone: openPhone),
           ],
         ),
       ),
@@ -109,8 +269,157 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// What the status pill says. Only what's true right now, and only what's worth a look: a Task that needs the Student,
+/// a login Buddy is waiting for, or a Task under way.
+class _Status {
+  const _Status({required this.icon, required this.words, required this.aloud, required this.hint, required this.needsYou, required this.open});
+
+  final IconData icon;
+  final String words;
+  final String aloud;
+
+  /// What tapping it does, for a screen reader.
+  final String hint;
+  final bool needsYou;
+  final void Function(BuildContext context) open;
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.tasks, required this.connections, required this.openPhone});
+
+  final TasksController tasks;
+  final ConnectionsController connections;
+  final PhoneOpener openPhone;
+
+  void _openTask(BuildContext context, Task task) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (context) => TaskScreen(id: task.id, tasks: tasks, openPhone: openPhone)));
+  }
+
+  /// What needs the Student comes before what doesn't. The newest Task comes first, as it does on Today.
+  _Status? get _now {
+    final onToday = tasks.onToday;
+    if (onToday.where((task) => task.state == 'needs_student').firstOrNull case final task?) {
+      return _Status(
+        icon: Icons.pending_actions,
+        words: 'Task needs you · ${task.title}',
+        aloud: 'A Task needs you: ${task.title}',
+        hint: 'see what it needs',
+        needsYou: true,
+        open: (context) => _openTask(context, task),
+      );
+    }
+    final waiting = (connections.connections ?? const <Connection>[]).where((connection) => connection.needsLogin).toList();
+    if (waiting.length == 1) {
+      final connection = waiting.single;
+      return _Status(
+        icon: Icons.lock_outline,
+        words: 'Login needed · ${connection.name}',
+        aloud: 'Buddy is waiting for you to log in to ${connection.name}',
+        hint: 'go to ${connection.name}',
+        needsYou: true,
+        open: (context) => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (context) => ConnectionScreen(connectionId: connection.id, connections: connections)),
+        ),
+      );
+    }
+    if (waiting.length > 1) {
+      return _Status(
+        icon: Icons.lock_outline,
+        words: 'Logins needed · ${waiting.length} Connections',
+        aloud: 'Buddy is waiting for you to log in to ${waiting.length} Connections',
+        hint: 'go to your Connections',
+        needsYou: true,
+        open: (context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (context) => ConnectionsScreen(connections: connections))),
+      );
+    }
+    if (onToday.where((task) => task.isWorking).firstOrNull case final task?) {
+      return _Status(
+        icon: Icons.autorenew,
+        words: 'Task under way · ${task.title}',
+        aloud: 'A Task is under way: ${task.title}',
+        hint: 'see how it is going',
+        needsYou: false,
+        open: (context) => _openTask(context, task),
+      );
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([tasks, connections]),
+      builder: (context, _) {
+        final status = _now;
+        if (status == null) return const SizedBox(height: 4);
+        final text = Theme.of(context).textTheme;
+        return Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Semantics(
+            button: true,
+            container: true,
+            label: status.aloud,
+            onTapHint: status.hint,
+            onTap: () => status.open(context),
+            excludeSemantics: true,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: () => status.open(context),
+                // The pill is smaller than a finger needs, so the space just above and below it can be tapped too.
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(color: status.needsYou ? BuddyColors.warningTint : BuddyColors.quiet, borderRadius: BorderRadius.circular(BuddySizes.chipRadius)),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 40),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(status.icon, size: 16, color: status.needsYou ? BuddyColors.warningInk : BuddyColors.inkSoft),
+                            const SizedBox(width: 7),
+                            Flexible(
+                              child: Text(
+                                status.words,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: text.labelSmall?.copyWith(
+                                  fontSize: 13,
+                                  color: status.needsYou ? BuddyColors.warningInk : BuddyColors.inkSoft,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.chevron_right, size: 16, color: BuddyColors.inkSoft),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _MessageList extends StatefulWidget {
-  const _MessageList({required this.chat, required this.connections, required this.roadmap, required this.opportunities, required this.tasks, required this.openPhone, required this.openDraft});
+  const _MessageList({
+    required this.chat,
+    required this.connections,
+    required this.roadmap,
+    required this.opportunities,
+    required this.tasks,
+    required this.openPhone,
+    required this.openDraft,
+    required this.wayDown,
+  });
 
   final ChatController chat;
   final ConnectionsController connections;
@@ -119,6 +428,7 @@ class _MessageList extends StatefulWidget {
   final TasksController tasks;
   final PhoneOpener openPhone;
   final DraftOpener openDraft;
+  final _WayDown wayDown;
 
   @override
   State<_MessageList> createState() => _MessageListState();
@@ -129,23 +439,24 @@ class _MessageListState extends State<_MessageList> {
   CrisisCardItem? _cardScrolledTo;
   ChatMessage? _sentScrolledTo;
   ActionCardItem? _tappedCardScrolledTo;
-  bool _isFarUp = false;
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_noticeHowFarUp);
+    widget.wayDown.goDown = _goToLatest;
   }
 
   @override
   void dispose() {
+    // The list goes while the conversation reloads, and there's nothing far up to come back from then.
+    if (widget.wayDown.goDown == _goToLatest) widget.wayDown.forget();
     _scroll.dispose();
     super.dispose();
   }
 
   void _noticeHowFarUp() {
-    final isFarUp = _scroll.hasClients && _scroll.offset > _showJumpBackAfter;
-    if (isFarUp != _isFarUp) setState(() => _isFarUp = isFarUp);
+    widget.wayDown.isFarUp = _scroll.hasClients && _scroll.offset > _showJumpBackAfter;
   }
 
   /// A new Crisis card must not appear somewhere the Student has scrolled away from.
@@ -181,6 +492,16 @@ class _MessageListState extends State<_MessageList> {
       _scroll.jumpTo(0);
       if (triesLeft > 1) _scrollToBottomAfterFrame(triesLeft - 1);
     });
+  }
+
+  /// Glides down, unless the Student has asked their phone to cut down on movement.
+  void _goToLatest() {
+    if (!_scroll.hasClients) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _scroll.jumpTo(0);
+    } else {
+      _scroll.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+    }
   }
 
   Widget _itemView(ConversationItem item) {
@@ -319,28 +640,34 @@ class _MessageListState extends State<_MessageList> {
       if (chat.replyInProgress case final text?) _ReplyInProgress(text: text),
       ..._withDays(settled).reversed,
     ];
-    return Stack(
-      children: [
-        // Reversed, so the newest message stays at the bottom as the reply grows.
-        ListView.builder(
-          controller: _scroll,
-          reverse: true,
-          padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 12, BuddySizes.pageEdge, 12),
-          itemCount: items.length,
-          itemBuilder: (context, index) => items[index],
-        ),
-        if (_isFarUp)
-          Positioned(
-            right: 16,
-            bottom: 8,
-            child: IconButton.outlined(
-              style: IconButton.styleFrom(backgroundColor: BuddyColors.surface, side: const BorderSide(color: BuddyColors.hairline)),
-              icon: const Icon(Icons.arrow_downward),
-              tooltip: 'Go to the newest message',
-              onPressed: () => _scroll.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut),
-            ),
-          ),
-      ],
+    // Reversed, so the newest message stays at the bottom as the reply grows.
+    return ListView.builder(
+      controller: _scroll,
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      itemCount: items.length,
+      itemBuilder: (context, index) => items[index],
+    );
+  }
+}
+
+/// The way back down to the newest message, for a Student who has scrolled far up.
+class _LatestMessages extends StatelessWidget {
+  const _LatestMessages({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    // Its row has a set place above the box to write in, so its words only grow so far.
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.6,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 18)),
+        onPressed: onPressed,
+        icon: const Icon(Icons.arrow_downward, size: 18),
+        label: const Text('Latest messages', semanticsLabel: 'Go to the latest messages'),
+      ),
     );
   }
 }
@@ -361,16 +688,15 @@ class _DayDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          const Expanded(child: Divider()),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(_inWords(context), style: Theme.of(context).textTheme.bodySmall),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: BuddyColors.quiet, borderRadius: BorderRadius.circular(BuddySizes.chipRadius)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Text(_inWords(context), style: Theme.of(context).textTheme.labelSmall),
           ),
-          const Expanded(child: Divider()),
-        ],
+        ),
       ),
     );
   }
@@ -385,7 +711,7 @@ class _StarterRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8, left: 44),
+      padding: const EdgeInsets.only(top: 6, right: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -396,7 +722,7 @@ class _StarterRows extends StatelessWidget {
                 color: BuddyColors.surface,
                 clipBehavior: Clip.antiAlias,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(BuddySizes.pillRadius),
                   side: const BorderSide(color: BuddyColors.hairline),
                 ),
                 child: Semantics(
@@ -410,13 +736,13 @@ class _StarterRows extends StatelessWidget {
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(minHeight: 52),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         child: Row(
                           children: [
-                            Icon(starter.icon, size: 24, color: BuddyColors.ink),
-                            const SizedBox(width: 14),
-                            Expanded(child: Text(starter.label, style: Theme.of(context).textTheme.titleMedium)),
-                            const Icon(Icons.chevron_right, color: BuddyColors.inkSoft),
+                            Icon(starter.icon, size: 20, color: BuddyColors.cherry),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(starter.label, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontSize: 15))),
+                            const Icon(Icons.north_east, size: 18, color: BuddyColors.inkSoft),
                           ],
                         ),
                       ),
@@ -463,7 +789,7 @@ class _SavedMessage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (message.isFromBuddy) _BuddyMessage(text: message.text) else _StudentBubble(text: message.text),
+            if (message.isFromBuddy) _BuddyBubble(text: message.text) else _StudentBubble(text: message.text),
             if (note != null)
               Padding(
                 padding: const EdgeInsets.only(left: 48, bottom: 4),
@@ -490,7 +816,7 @@ class _ReplyInProgress extends StatelessWidget {
       liveRegion: true,
       label: 'Buddy is writing a reply',
       excludeSemantics: true,
-      child: text.isEmpty ? const _BuddyMessage(child: _WritingDots()) : _BuddyMessage(text: text),
+      child: text.isEmpty ? const _BuddyBubble(child: _WritingDots()) : _BuddyBubble(text: text),
     );
   }
 }
@@ -531,7 +857,7 @@ class _WritingDotsState extends State<_WritingDots> with SingleTickerProviderSta
         children: [
           for (var dot = 0; dot < 3; dot++)
             Padding(
-              padding: const EdgeInsets.only(right: 5, top: 8, bottom: 8),
+              padding: const EdgeInsets.only(right: 6, top: 7, bottom: 7),
               child: Opacity(
                 // Each dot brightens a third of the way after the one before it.
                 opacity: 0.3 + 0.7 * (1 - (((_controller.value * 3 - dot) % 3) - 1).abs()).clamp(0, 1),
@@ -547,40 +873,44 @@ class _WritingDotsState extends State<_WritingDots> with SingleTickerProviderSta
   }
 }
 
-/// Buddy's words sit on the page rather than in a bubble, so that a long answer reads like something to read.
-class _BuddyMessage extends StatelessWidget {
-  const _BuddyMessage({this.text, this.child});
+/// Buddy's words, in a soft gray bubble on the left. The face and name at the top say who's speaking.
+class _BuddyBubble extends StatelessWidget {
+  const _BuddyBubble({this.text, this.child});
 
   final String? text;
   final Widget? child;
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const BuddyAvatar(radius: 16),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Buddy', style: style.titleSmall),
-                const SizedBox(height: 2),
-                if (text case final text?) Text(text, style: style.bodyLarge),
-                ?child,
-              ],
+          Flexible(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                color: BuddyColors.frame,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(BuddySizes.bubbleRadius),
+                  topRight: Radius.circular(BuddySizes.bubbleRadius),
+                  bottomRight: Radius.circular(BuddySizes.bubbleRadius),
+                  bottomLeft: Radius.circular(BuddySizes.bubbleTail),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: text == null ? child : Text(text!, style: Theme.of(context).textTheme.bodyLarge),
+              ),
             ),
           ),
+          const SizedBox(width: 24),
         ],
       ),
     );
   }
 }
 
+/// The Student's own words, on the right, in a light cherry bubble.
 class _StudentBubble extends StatelessWidget {
   const _StudentBubble({required this.text});
 
@@ -589,17 +919,25 @@ class _StudentBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           const SizedBox(width: 48),
           Flexible(
             child: DecoratedBox(
-              decoration: BoxDecoration(color: BuddyColors.cherry, borderRadius: BorderRadius.circular(20)),
+              decoration: const BoxDecoration(
+                color: BuddyColors.cherryBubble,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(BuddySizes.bubbleRadius),
+                  topRight: Radius.circular(BuddySizes.bubbleRadius),
+                  bottomLeft: Radius.circular(BuddySizes.bubbleRadius),
+                  bottomRight: Radius.circular(BuddySizes.bubbleTail),
+                ),
+              ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Text(text, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.white)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Text(text, style: Theme.of(context).textTheme.bodyLarge),
               ),
             ),
           ),
@@ -645,9 +983,10 @@ class _CouldNotLoad extends StatelessWidget {
 }
 
 class _Composer extends StatefulWidget {
-  const _Composer({required this.chat});
+  const _Composer({required this.chat, required this.wayDown});
 
   final ChatController chat;
+  final _WayDown wayDown;
 
   @override
   State<_Composer> createState() => _ComposerState();
@@ -694,76 +1033,101 @@ class _ComposerState extends State<_Composer> {
     return SafeArea(
       top: false,
       bottom: false,
-      child: ValueListenableBuilder(
-        valueListenable: _draft,
-        builder: (context, value, _) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_showsShortcuts(context, value.text))
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  children: [
-                    for (final starter in _starters)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Semantics(
-                          label: 'Ask Buddy: ${starter.label}',
-                          button: true,
-                          onTap: () => widget.chat.send(starter.words),
-                          excludeSemantics: true,
-                          child: ActionChip(
-                            avatar: Icon(starter.icon, size: 18, color: BuddyColors.ink),
-                            label: Text(starter.label),
-                            onPressed: () => widget.chat.send(starter.words),
+      child: ListenableBuilder(
+        listenable: Listenable.merge([_draft, widget.wayDown]),
+        builder: (context, _) {
+          final typed = _draft.text;
+          final canSend = widget.chat.canSend && typed.trim().isNotEmpty;
+          final goDown = widget.wayDown.isFarUp ? widget.wayDown.goDown : null;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Where the shortcuts go, because far up the conversation they're no help, and here it covers nothing.
+              if (goDown != null)
+                Padding(padding: const EdgeInsets.only(top: 4), child: Center(child: _LatestMessages(onPressed: goDown)))
+              else if (_showsShortcuts(context, typed))
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(
+                    children: [
+                      for (final starter in _starters)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Semantics(
+                            label: 'Ask Buddy: ${starter.label}',
+                            button: true,
+                            onTap: () => widget.chat.send(starter.words),
+                            excludeSemantics: true,
+                            child: ActionChip(
+                              avatar: Icon(starter.icon, size: 18, color: BuddyColors.cherry),
+                              label: Text(starter.label),
+                              onPressed: () => widget.chat.send(starter.words),
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
+                ),
+              // One white pill, with the box to write in and the send button at its end.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: BuddyColors.surface,
+                    borderRadius: BorderRadius.circular(BuddySizes.floatingRadius),
+                    border: Border.all(
+                      color: _focus.hasFocus ? BuddyColors.cherry : BuddyColors.hairline,
+                      width: _focus.hasFocus ? 1.5 : 1,
+                    ),
+                    boxShadow: BuddyShadows.floating,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _draft,
+                            focusNode: _focus,
+                            minLines: 1,
+                            maxLines: 4,
+                            keyboardType: TextInputType.multiline,
+                            textCapitalization: TextCapitalization.sentences,
+                            cursorColor: BuddyColors.cherry,
+                            style: Theme.of(context).textTheme.bodyLarge,
+                            decoration: const InputDecoration(
+                              hintText: 'Message Buddy',
+                              filled: false,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: EdgeInsets.fromLTRB(14, 12, 8, 12),
+                            ),
+                          ),
+                        ),
+                        IconButton.filled(
+                          style: IconButton.styleFrom(
+                            backgroundColor: BuddyColors.cherry,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: BuddyColors.frame,
+                            disabledForegroundColor: BuddyColors.inkSoft,
+                            minimumSize: const Size(BuddySizes.tapTarget, BuddySizes.tapTarget),
+                          ),
+                          icon: const Icon(Icons.arrow_upward),
+                          tooltip: 'Send',
+                          onPressed: canSend ? _send : null,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _draft,
-                      focusNode: _focus,
-                      minLines: 1,
-                      maxLines: 4,
-                      keyboardType: TextInputType.multiline,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: 'Message Buddy',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: BuddyColors.outline)),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: BuddyColors.outline)),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: BuddyColors.cherry, width: 2)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    style: IconButton.styleFrom(
-                      backgroundColor: BuddyColors.cherry,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: BuddyColors.hairline,
-                      disabledForegroundColor: BuddyColors.inkSoft,
-                      minimumSize: const Size(BuddySizes.tapTarget, BuddySizes.tapTarget),
-                    ),
-                    icon: const Icon(Icons.arrow_upward),
-                    tooltip: 'Send',
-                    onPressed: widget.chat.canSend && value.text.trim().isNotEmpty ? _send : null,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+            ],
+          );
+        },
       ),
     );
   }

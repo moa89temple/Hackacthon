@@ -25,6 +25,7 @@ class PageTitle extends StatelessWidget {
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
           spacing: 8,
+          runSpacing: 4,
           children: [
             Semantics(header: true, container: true, child: Text(title, style: isTab ? text.displaySmall : text.headlineMedium)),
             ?trailing,
@@ -53,7 +54,7 @@ class SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Wrap(
         alignment: WrapAlignment.spaceBetween,
         crossAxisAlignment: WrapCrossAlignment.center,
@@ -76,7 +77,7 @@ class GroupLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      padding: const EdgeInsets.only(left: 4, bottom: 10),
       child: Semantics(
         header: true,
         label: words,
@@ -87,30 +88,55 @@ class GroupLabel extends StatelessWidget {
   }
 }
 
-/// Rows that belong together, with a hairline between each.
+/// Rows that belong together, in one soft frame with a hairline between each.
 class RowGroup extends StatelessWidget {
   const RowGroup({super.key, required this.children, this.dividerIndent = 16});
 
   final List<Widget> children;
   final double dividerIndent;
 
+  /// Where the hairline starts under a row with an icon, so that it lines up with the words.
+  static const indentPastIcon = 72.0;
+
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: BuddyColors.surface,
+      color: BuddyColors.frame,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(BuddySizes.cardRadius),
-        side: const BorderSide(color: BuddyColors.hairline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final (index, child) in children.indexed) ...[
-            if (index > 0) Divider(indent: dividerIndent, endIndent: dividerIndent),
-            child,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(BuddySizes.cardRadius)),
+      child: _OnAFrame(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (index, child) in children.indexed) ...[
+              if (index > 0) Divider(indent: dividerIndent, endIndent: 16),
+              child,
+            ],
           ],
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A rounded square holding an icon, which says at a glance what something is about. It's decorative, so a screen
+/// reader skips it: the words beside it always say the same.
+class IconTile extends StatelessWidget {
+  const IconTile(this.icon, {super.key, this.size = BuddySizes.iconSquare, this.color = BuddyColors.ink, this.tint = BuddyColors.cherryTint});
+
+  final IconData icon;
+  final double size;
+  final Color color;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(size * 0.31)),
+        child: Icon(icon, size: size * 0.48, color: color),
       ),
     );
   }
@@ -124,6 +150,7 @@ class NavRow extends StatelessWidget {
     this.subtitle,
     this.icon,
     this.iconColor,
+    this.iconTint,
     this.below,
     this.semanticsLabel,
     required this.onTap,
@@ -133,6 +160,7 @@ class NavRow extends StatelessWidget {
   final String? subtitle;
   final IconData? icon;
   final Color? iconColor;
+  final Color? iconTint;
 
   /// Goes under the title, such as a pill. It isn't read out, so [semanticsLabel] has to say the same in words.
   final Widget? below;
@@ -153,14 +181,14 @@ class NavRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 64),
+          constraints: const BoxConstraints(minHeight: 66),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
                 if (icon case final icon?) ...[
-                  ExcludeSemantics(child: Icon(icon, size: 26, color: iconColor ?? BuddyColors.ink)),
-                  const SizedBox(width: 16),
+                  IconTile(icon, color: iconColor ?? BuddyColors.ink, tint: iconTint ?? BuddyColors.cherryTint),
+                  const SizedBox(width: 14),
                 ],
                 Expanded(
                   child: Column(
@@ -169,12 +197,12 @@ class NavRow extends StatelessWidget {
                       Text(title, style: text.titleMedium),
                       if (subtitle case final subtitle?)
                         Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle, style: text.bodySmall)),
-                      if (below case final below?) Padding(padding: const EdgeInsets.only(top: 4), child: below),
+                      if (below case final below?) Padding(padding: const EdgeInsets.only(top: 6), child: below),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                const ExcludeSemantics(child: Icon(Icons.chevron_right, color: BuddyColors.inkSoft)),
+                const ExcludeSemantics(child: Icon(Icons.chevron_right, size: 22, color: BuddyColors.inkSoft)),
               ],
             ),
           ),
@@ -199,19 +227,19 @@ class Pill extends StatelessWidget {
     final (background, foreground) = switch (tone) {
       PillTone.cherry => (BuddyColors.cherryTint, BuddyColors.cherry),
       PillTone.solidCherry => (BuddyColors.cherry, Colors.white),
-      PillTone.quiet => (BuddyColors.surfaceQuiet, BuddyColors.inkSoft),
+      PillTone.quiet => (BuddyColors.quiet, BuddyColors.inkSoft),
       PillTone.warning => (BuddyColors.warningTint, BuddyColors.warningInk),
     };
     return DecoratedBox(
-      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(BuddySizes.chipRadius)),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon case final icon?) ...[
               ExcludeSemantics(child: Icon(icon, size: 15, color: foreground)),
-              const SizedBox(width: 4),
+              const SizedBox(width: 5),
             ],
             Flexible(child: Text(words, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: foreground, fontSize: 13))),
           ],
@@ -221,22 +249,106 @@ class Pill extends StatelessWidget {
   }
 }
 
-/// A rounded square holding an icon, which says at a glance what a screen is about.
-class IconTile extends StatelessWidget {
-  const IconTile(this.icon, {super.key, this.size = 64});
+/// Makes a quiet button inside a frame white, so that it still stands out on the gray or the tint.
+class _OnAFrame extends StatelessWidget {
+  const _OnAFrame({required this.child});
 
-  final IconData icon;
-  final double size;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return ExcludeSemantics(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(color: BuddyColors.cherryTint, borderRadius: BorderRadius.circular(size / 4)),
-        child: Icon(icon, size: size / 2, color: BuddyColors.ink),
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(outlinedButtonTheme: OutlinedButtonThemeData(style: quietButtonOnFrame(theme))),
+      child: child,
+    );
+  }
+}
+
+/// A card, in the conversation or on a screen: a soft gray frame, or a tinted one, with no heavy border. A quiet
+/// button inside it turns white, so that it still stands out. It isn't a node of its own for a screen reader, because a
+/// card holds controls as well as words, and each card says what it is in its own label.
+class CardFrame extends StatelessWidget {
+  const CardFrame({super.key, required this.child, this.color = BuddyColors.frame, this.border, this.padding = const EdgeInsets.all(16)});
+
+  final Widget child;
+  final Color color;
+
+  /// Only for a card that mustn't be missed, such as one with crisis Resources.
+  final BorderSide? border;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(BuddySizes.cardRadius),
+        side: border ?? BorderSide.none,
       ),
+      child: _OnAFrame(child: Padding(padding: padding, child: child)),
+    );
+  }
+}
+
+/// The top of a card: a tinted square with its icon, the card's title, and a muted line under it that says what kind
+/// of thing it is or how it stands. A screen reader hears the card's own label, so none of this is read out twice.
+class CardHeading extends StatelessWidget {
+  const CardHeading({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.line,
+    this.iconColor = BuddyColors.ink,
+    this.iconTint = BuddyColors.cherryTint,
+    this.titleStyle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? line;
+  final Color iconColor;
+  final Color iconTint;
+  final TextStyle? titleStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        IconTile(icon, color: iconColor, tint: iconTint),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            // So that a one-line title sits level with the middle of the square.
+            padding: EdgeInsets.only(top: line == null ? 9 : 1),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: titleStyle ?? text.titleMedium),
+                if (line case final line?) Padding(padding: const EdgeInsets.only(top: 1), child: Text(line, style: text.bodySmall)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A white panel inside a card, for exactly what will happen, such as the words of an email.
+class InnerPanel extends StatelessWidget {
+  const InnerPanel({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(color: BuddyColors.surface, borderRadius: BorderRadius.circular(BuddySizes.panelRadius)),
+      child: Padding(padding: const EdgeInsets.fromLTRB(14, 6, 14, 14), child: child),
     );
   }
 }
@@ -256,23 +368,19 @@ class NoticeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: BuddyColors.warningTint,
-        border: Border.all(color: BuddyColors.warningBorder),
-        borderRadius: BorderRadius.circular(BuddySizes.cardRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ExcludeSemantics(child: Icon(icon, size: 26, color: BuddyColors.warningInk)),
-                const SizedBox(width: 12),
-                Expanded(
+    return CardFrame(
+      color: BuddyColors.warningTint,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              IconTile(icon, color: BuddyColors.warningInk, tint: BuddyColors.surface),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -286,11 +394,11 @@ class NoticeCard extends StatelessWidget {
                     ],
                   ),
                 ),
-              ],
-            ),
-            if (action case final action?) Padding(padding: const EdgeInsets.only(top: 12), child: action),
-          ],
-        ),
+              ),
+            ],
+          ),
+          if (action case final action?) Padding(padding: const EdgeInsets.only(top: 14), child: action),
+        ],
       ),
     );
   }
@@ -309,13 +417,19 @@ class ProblemNote extends StatelessWidget {
       liveRegion: true,
       child: Padding(
         padding: const EdgeInsets.only(top: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const ExcludeSemantics(child: Padding(padding: EdgeInsets.only(top: 1), child: Icon(Icons.error_outline, size: 18, color: BuddyColors.problem))),
-            const SizedBox(width: 6),
-            Expanded(child: Text(words, style: const TextStyle(color: BuddyColors.problem))),
-          ],
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: BuddyColors.problemTint, borderRadius: BorderRadius.circular(BuddySizes.panelRadius)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const ExcludeSemantics(child: Padding(padding: EdgeInsets.only(top: 3), child: Icon(Icons.error_outline, size: 18, color: BuddyColors.problem))),
+                const SizedBox(width: 8),
+                Expanded(child: Text(words, style: const TextStyle(color: BuddyColors.problem))),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -354,13 +468,16 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 28),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon case final icon?) ...[IconTile(icon), const SizedBox(height: 16)],
+          if (icon case final icon?) ...[
+            IconTile(icon, size: 56, color: isProblem ? BuddyColors.problem : BuddyColors.cherry, tint: isProblem ? BuddyColors.problemTint : BuddyColors.cherryTint),
+            const SizedBox(height: 14),
+          ],
           if (title case final title?) ...[
-            Semantics(header: true, container: true, child: Text(title, textAlign: TextAlign.center, style: text.titleLarge)),
+            Semantics(header: true, container: true, child: Text(title, textAlign: TextAlign.center, style: text.titleMedium)),
             const SizedBox(height: 4),
           ],
           Semantics(
@@ -405,6 +522,7 @@ class SourceLink extends StatelessWidget {
       excludeSemantics: true,
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: BuddySizes.tapTarget),
           child: Padding(
@@ -414,14 +532,23 @@ class SourceLink extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: 12,
               children: [
-                Text(
-                  'Source: ${_shortTitle(source.title)}',
-                  style: text.bodySmall?.copyWith(
-                    color: canOpen ? BuddyColors.link : BuddyColors.inkSoft,
-                    decoration: canOpen ? TextDecoration.underline : null,
-                    decorationColor: BuddyColors.link,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.link, size: 16, color: canOpen ? BuddyColors.link : BuddyColors.inkSoft),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Source: ${_shortTitle(source.title)}',
+                        style: text.bodySmall?.copyWith(
+                          color: canOpen ? BuddyColors.link : BuddyColors.inkSoft,
+                          decoration: canOpen ? TextDecoration.underline : null,
+                          decorationColor: BuddyColors.link,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 Text('Last seen ${localizations.formatShortMonthDay(lastSeen)}', style: text.bodySmall),
               ],
@@ -487,7 +614,7 @@ class LabelledLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final isLarge = MediaQuery.textScalerOf(context).scale(10) > 13;
-    final labelText = Text(label, style: text.titleSmall);
+    final labelText = Text(label, style: text.titleSmall?.copyWith(color: BuddyColors.inkSoft));
     final valueText = Text(value);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -505,7 +632,8 @@ class LabelledLine extends StatelessWidget {
   }
 }
 
-/// The back control at the top of every screen. It says what it does in words, which an arrow alone doesn't.
+/// The back control at the top of every screen: a gray pill that says what it does in words, which an arrow alone
+/// doesn't.
 class BackLink extends StatelessWidget {
   const BackLink({super.key});
 
@@ -520,20 +648,28 @@ class BackLink extends StatelessWidget {
         label: 'Back',
         onTap: goBack,
         excludeSemantics: true,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(BuddySizes.controlRadius),
-          onTap: goBack,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: BuddySizes.tapTarget, minWidth: BuddySizes.tapTarget),
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8, right: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.chevron_left, color: BuddyColors.ink, size: 26),
-                  // The words stay this size, because they sit in a bar of a fixed height.
-                  MediaQuery.withClampedTextScaling(maxScaleFactor: 1.3, child: Text('Back', style: Theme.of(context).textTheme.bodyLarge)),
-                ],
+        child: Material(
+          color: BuddyColors.quiet,
+          shape: const StadiumBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: goBack,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: BuddySizes.tapTarget, minWidth: BuddySizes.tapTarget),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8, right: 16),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.chevron_left, color: BuddyColors.ink, size: 24),
+                    const SizedBox(width: 2),
+                    // The words stay this size, because they sit in a bar of a fixed height.
+                    MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.3,
+                      child: Text('Back', style: Theme.of(context).textTheme.titleSmall),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -543,7 +679,18 @@ class BackLink extends StatelessWidget {
   }
 }
 
-/// A screen opened from somewhere else: the way back, a large title, and everything below it scrolling together.
+/// The bar at the top of a screen opened from somewhere else, with the way back.
+PreferredSizeWidget backBar() => AppBar(
+      automaticallyImplyLeading: false,
+      leadingWidth: 160,
+      leading: const Padding(
+        padding: EdgeInsetsDirectional.only(start: BuddySizes.pageEdge - 4),
+        child: Align(alignment: AlignmentDirectional.centerStart, child: BackLink()),
+      ),
+      toolbarHeight: 60,
+    );
+
+/// A screen opened from somewhere else: the way back, a title, and everything below it scrolling together.
 class SubScreen extends StatelessWidget {
   const SubScreen({super.key, this.title, this.subtitle, this.topIcon, required this.children, this.bottom, this.controller});
 
@@ -559,12 +706,7 @@ class SubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        leadingWidth: 160,
-        leading: const Align(alignment: AlignmentDirectional.centerStart, child: BackLink()),
-        toolbarHeight: 52,
-      ),
+      appBar: backBar(),
       body: SafeArea(
         top: false,
         child: Column(
@@ -573,15 +715,15 @@ class SubScreen extends StatelessWidget {
             Expanded(
               child: ListView(
                 controller: controller,
-                padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 4, BuddySizes.pageEdge, 24),
+                padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 8, BuddySizes.pageEdge, 28),
                 children: [
                   if (topIcon case final topIcon?) ...[
-                    Align(alignment: AlignmentDirectional.centerStart, child: IconTile(topIcon)),
+                    Align(alignment: AlignmentDirectional.centerStart, child: IconTile(topIcon, size: 56, color: BuddyColors.cherry)),
                     const SizedBox(height: 16),
                   ],
                   if (title case final title?) ...[
                     PageTitle(title, subtitle: subtitle, isTab: false),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 22),
                   ],
                   ...children,
                 ],
@@ -606,12 +748,12 @@ class ScreenSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.only(bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Semantics(header: true, container: true, child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           ...children,
         ],
       ),
@@ -634,7 +776,7 @@ class LoadingBlock extends StatelessWidget {
   }
 }
 
-/// An outline that opens and closes what's in it, for what's there if it's wanted but needn't always be read.
+/// A frame that opens and closes what's in it, for what's there if it's wanted but needn't always be read.
 class Expander extends StatefulWidget {
   const Expander({super.key, required this.title, this.trailing, this.icon, required this.children, this.startsOpen = false});
 
@@ -657,49 +799,51 @@ class _ExpanderState extends State<Expander> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return Material(
-      color: BuddyColors.surface,
+      color: BuddyColors.frame,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(BuddySizes.cardRadius),
-        side: const BorderSide(color: BuddyColors.hairline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Semantics(
-            button: true,
-            expanded: _open,
-            container: true,
-            label: [widget.title, ?widget.trailing].join(', '),
-            onTap: _toggle,
-            excludeSemantics: true,
-            child: InkWell(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(BuddySizes.cardRadius)),
+      child: _OnAFrame(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              button: true,
+              expanded: _open,
+              container: true,
+              label: [widget.title, ?widget.trailing].join(', '),
               onTap: _toggle,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 56),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      if (widget.icon case final icon?) ...[Icon(icon, size: 26, color: BuddyColors.ink), const SizedBox(width: 12)],
-                      Expanded(child: Text(widget.title, style: text.titleMedium)),
-                      if (widget.trailing case final trailing?) ...[Text(trailing, style: text.bodyMedium), const SizedBox(width: 8)],
-                      AnimatedRotation(
-                        turns: _open ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 150),
-                        child: const Icon(Icons.expand_more, color: BuddyColors.ink),
-                      ),
-                    ],
+              excludeSemantics: true,
+              child: InkWell(
+                onTap: _toggle,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 58),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        if (widget.icon case final icon?) ...[IconTile(icon), const SizedBox(width: 14)],
+                        Expanded(child: Text(widget.title, style: text.titleMedium)),
+                        if (widget.trailing case final trailing?) ...[
+                          Pill(trailing, tone: PillTone.quiet),
+                          const SizedBox(width: 8),
+                        ],
+                        AnimatedRotation(
+                          turns: _open ? 0.5 : 0,
+                          duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 150),
+                          child: const Icon(Icons.expand_more, color: BuddyColors.ink),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          if (_open) ...[
-            const Divider(),
-            ...widget.children,
+            if (_open) ...[
+              const Divider(indent: 16, endIndent: 16),
+              ...widget.children,
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -734,6 +878,85 @@ class RowMenu extends StatelessWidget {
             value: item,
             child: Text(item.words, semanticsLabel: item.semanticsLabel),
           ),
+      ],
+    );
+  }
+}
+
+/// Opens a sheet that rises from the bottom: a title, a way to close it, and what's in it scrolling below. It's simply
+/// there, without rising, for a Student who has asked their phone to cut down on movement.
+Future<T?> showBuddySheet<T>(BuildContext context, {required String title, String? subtitle, required List<Widget> Function(BuildContext context) children}) {
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    sheetAnimationStyle: MediaQuery.disableAnimationsOf(context) ? AnimationStyle.noAnimation : null,
+    builder: (context) => _Sheet(title: title, subtitle: subtitle, children: children(context)),
+  );
+}
+
+class _Sheet extends StatelessWidget {
+  const _Sheet({required this.title, this.subtitle, required this.children});
+
+  final String title;
+  final String? subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Says that it can be pulled down. Closing it with the button does the same.
+        const ExcludeSemantics(
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: SizedBox(
+                width: 34,
+                height: 4,
+                child: DecoratedBox(decoration: BoxDecoration(color: BuddyColors.hairline, borderRadius: BorderRadius.all(Radius.circular(3)))),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 12, 12, 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Semantics(header: true, container: true, child: Text(title, style: text.headlineMedium)),
+                      if (subtitle case final subtitle?)
+                        Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle, style: text.bodyMedium?.copyWith(color: BuddyColors.inkSoft))),
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                style: IconButton.styleFrom(backgroundColor: BuddyColors.quiet),
+                icon: const Icon(Icons.close),
+                tooltip: 'Close',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+        ),
+        const Divider(),
+        Flexible(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(BuddySizes.pageEdge, 16, BuddySizes.pageEdge, 24),
+            children: children,
+          ),
+        ),
       ],
     );
   }

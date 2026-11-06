@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/tasks/task_backend.dart';
-import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -46,7 +45,7 @@ Task failed({int id = 3}) => Task(id: id, title: title, state: 'failed', stateTe
 
 Future<void> openToday(WidgetTester tester, FakeBackend backend) async {
   await openUnlockedApp(tester, backend);
-  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
+  await tester.tap(tabButton('Today'));
   await settleApp(tester);
 }
 
@@ -304,7 +303,8 @@ void main() {
       await openToday(tester, backend);
 
       expect(find.text('Buddy needs you before it can go on.'), findsOneWidget);
-      expect(tester.getTopLeft(find.text('See what it needs')).dy, lessThan(tester.getTopLeft(find.text('Tasks')).dy));
+      // The Tasks below it can be further down than the screen goes.
+      expect(tester.getTopLeft(find.text('See what it needs')).dy, lessThan(tester.getTopLeft(find.text('Tasks', skipOffstage: false)).dy));
 
       await tester.tap(find.text('See what it needs'));
       await tester.pumpAndSettle();
@@ -322,7 +322,7 @@ void main() {
       final phone = FakePhoneNotifications();
       final backend = FakeBackend()..tasks = [done()];
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('You')));
+      await tester.tap(tabButton('You'));
       await settleApp(tester);
 
       phone.tapTaskNotification(3);
@@ -444,7 +444,7 @@ void main() {
       final phone = FakePhoneNotifications();
       final backend = FakeBackend()..tasks = [done(sources: const [TaskSource(title: 'A page with quite a long title on it', url: 'https://example.edu/')]), waitingForCard(id: 4)];
       await openUnlockedApp(tester, backend, phoneNotifications: phone);
-      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
+      await tester.tap(tabButton('Today'));
       await settleApp(tester);
       expect(tester.takeException(), isNull);
       // The one waiting on the Student comes first, and with text this large the other is further down.

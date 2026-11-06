@@ -5,6 +5,7 @@ import '../design/theme.dart';
 class NavDestination {
   const NavDestination({required this.label, required this.icon, required this.selectedIcon});
 
+  /// Said by a screen reader and shown by the tooltip, because the bar itself shows only icons.
   final String label;
   final IconData icon;
 
@@ -12,7 +13,8 @@ class NavDestination {
   final IconData selectedIcon;
 }
 
-/// The four tabs, always labelled, with the selected one marked by its filled icon, its color and a tint behind both.
+/// The four tabs, as icons in a pill that floats above the bottom of the screen. The selected one sits on a cherry
+/// tint, in cherry, with its filled icon. Each has its name in a tooltip and for a screen reader.
 class BuddyNavBar extends StatelessWidget {
   const BuddyNavBar({super.key = const ValueKey('nav'), required this.destinations, required this.selected, required this.onSelected});
 
@@ -22,31 +24,41 @@ class BuddyNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: BuddyColors.surface,
-        border: Border(top: BorderSide(color: BuddyColors.hairline)),
-      ),
+    return ColoredBox(
+      color: BuddyColors.canvas,
       child: SafeArea(
         top: false,
-        // Tabs have a fixed place to sit, so their labels only grow so far. Everything they lead to grows in full.
-        child: MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.3,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-            child: Row(
-              children: [
-                for (final (index, destination) in destinations.indexed)
-                  Expanded(
-                    child: _NavItem(
-                      destination: destination,
-                      isSelected: index == selected,
-                      position: index + 1,
-                      total: destinations.length,
-                      onTap: () => onSelected(index),
-                    ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 4, 22, 8),
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: BuddyColors.surface,
+                  borderRadius: BorderRadius.circular(BuddySizes.floatingRadius),
+                  border: Border.all(color: BuddyColors.frame),
+                  boxShadow: BuddyShadows.floating,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Row(
+                    children: [
+                      for (final (index, destination) in destinations.indexed)
+                        Expanded(
+                          child: _NavItem(
+                            destination: destination,
+                            isSelected: index == selected,
+                            position: index + 1,
+                            total: destinations.length,
+                            onTap: () => onSelected(index),
+                          ),
+                        ),
+                    ],
                   ),
-              ],
+                ),
+              ),
             ),
           ),
         ),
@@ -66,43 +78,29 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isSelected ? BuddyColors.cherry : BuddyColors.ink;
-    return Semantics(
-      button: true,
-      selected: isSelected,
-      container: true,
-      label: '${destination.label}, tab $position of $total',
-      onTap: onTap,
-      excludeSemantics: true,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+    return Tooltip(
+      message: destination.label,
+      excludeFromSemantics: true,
+      child: Semantics(
+        button: true,
+        selected: isSelected,
+        container: true,
+        label: '${destination.label}, tab $position of $total',
+        onTap: onTap,
+        excludeSemantics: true,
         child: Material(
           color: isSelected ? BuddyColors.cherryTint : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(BuddySizes.floatingRadius - 4),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 56),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(isSelected ? destination.selectedIcon : destination.icon, color: color, size: 24),
-                    const SizedBox(height: 2),
-                    Text(
-                      destination.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: color,
-                        fontSize: 13,
-                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                      ),
-                    ),
-                  ],
+            child: SizedBox(
+              height: BuddySizes.tapTarget,
+              child: Center(
+                child: Icon(
+                  isSelected ? destination.selectedIcon : destination.icon,
+                  color: isSelected ? BuddyColors.cherry : BuddyColors.ink,
+                  size: 24,
                 ),
               ),
             ),

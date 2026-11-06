@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'package:buddy/backend/buddy_backend.dart';
 import 'package:buddy/chat/crisis_card.dart';
 import 'package:buddy/milestones/milestone_card.dart';
-import 'package:buddy/widgets/buddy_nav_bar.dart';
+import 'package:buddy/roadmap/roadmap_backend.dart';
+import 'package:buddy/tasks/task_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -36,7 +37,7 @@ StandardMilestone withdrawal({
 /// Today's list ends with the dates, below whatever else needs the Student, so this brings them onto the screen.
 Future<void> openToday(WidgetTester tester, FakeBackend backend, {PhoneOpener openPhone = pretendToOpenPhone}) async {
   await openUnlockedApp(tester, backend, openPhone: openPhone);
-  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
+  await tester.tap(tabButton('Today'));
   await tester.pumpAndSettle();
   await scrollToTheEnd(tester);
 }
@@ -71,7 +72,95 @@ List<StandardMilestone> dates(int count) => [
       for (var number = 1; number <= count; number++) withdrawal(id: number, name: 'Date number $number'),
     ];
 
+/// Today as it opens, at its top.
+Future<void> openTodayAtTop(WidgetTester tester, FakeBackend backend) async {
+  tester.view
+    ..physicalSize = const Size(412, 915)
+    ..devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  await openUnlockedApp(tester, backend);
+  await tester.tap(tabButton('Today'));
+  await tester.pumpAndSettle();
+}
+
+RoadmapMilestone roadmapMilestone(int id, {bool done = false}) => RoadmapMilestone(
+      id: id,
+      done: done,
+      goal: null,
+      name: 'Milestone number $id',
+      when: 'November 20, 2026',
+      sources: const [],
+      sourceNote: 'You added this.',
+      calendarUrl: 'https://calendar.google.com/calendar/render',
+    );
+
 void main() {
+  group('the welcome at the top of Today', () {
+    testWidgets("counts what's waiting on the Student and what they're keeping track of", (tester) async {
+      final backend = FakeBackend()
+        ..connections = [canvasConnection(on: true, needsLogin: true)]
+        ..tasks = const [
+          Task(id: 1, title: 'Compare programs', state: 'needs_student', stateText: 'Buddy needs you before it can go on.'),
+          Task(id: 2, title: 'Find Resources', state: 'working', stateText: 'Buddy is working on this.'),
+          Task(id: 3, title: 'Read the Bulletin', state: 'queued', stateText: 'Buddy will start on this soon.'),
+          Task(id: 4, title: 'An old one', state: 'done', stateText: 'Done.'),
+        ]
+        ..milestones = [roadmapMilestone(1), roadmapMilestone(2), roadmapMilestone(3, done: true)]
+        ..opportunities = [
+          const Opportunity(id: 1, name: 'Jobs fair', summary: 'Meet employers.', when: 'November 18, 2026', cost: 'Free', outsideTemple: false, saved: true, sources: []),
+          const Opportunity(id: 2, name: 'Research program', summary: 'Ten weeks.', when: 'January 15, 2027', cost: 'Free', outsideTemple: true, saved: false, sources: []),
+        ];
+      await openTodayAtTop(tester, backend);
+
+      expect(find.text('1 login waiting, 1 Task needs you, 2 Tasks under way, 2 Milestones to do and 1 saved Opportunity.'), findsOneWidget);
+    });
+
+    testWidgets('says nothing is waiting once it knows that', (tester) async {
+      await openTodayAtTop(tester, FakeBackend());
+
+      expect(find.text('Nothing is waiting on you right now.'), findsOneWidget);
+    });
+
+    testWidgets("claims nothing about what it couldn't load", (tester) async {
+      await openTodayAtTop(tester, FakeBackend()..tasksError = Exception('off'));
+
+      expect(find.textContaining('Nothing is waiting'), findsNothing);
+      expect(find.textContaining('Task'), findsNothing);
+    });
+
+    testWidgets('Plan my day asks Buddy, in the conversation, the same as if typed', (tester) async {
+      final backend = FakeBackend(history: [student('Hello'), buddy('Hi')]);
+      await openTodayAtTop(tester, backend);
+
+      await tester.tap(find.text('Plan my day'));
+      await tester.pump();
+
+      expect(backend.sent, ['Help me plan my day.']);
+      expect(find.text('Your Temple guide'), findsOneWidget);
+    });
+
+    testWidgets('a screen reader hears its label as words, and what the button does', (tester) async {
+      final handle = tester.ensureSemantics();
+      await openTodayAtTop(tester, FakeBackend());
+
+      expect(find.bySemanticsLabel('Your day at Temple'), findsOneWidget);
+      expect(tester.getSemantics(find.bySemanticsLabel('Plan my day with Buddy')), isSemantics(isButton: true, hasTapAction: true));
+      handle.dispose();
+    });
+
+    testWidgets('fits at twice the text size on a small phone', (tester) async {
+      useSmallPhoneWithLargeText(tester);
+      await openUnlockedApp(tester, FakeBackend());
+      await tester.tap(tabButton('Today'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Plan my day'));
+      await tester.pumpAndSettle();
+      expect(find.text('Plan my day').hitTestable(), findsOneWidget);
+    });
+  });
+
   group('the Today tab', () {
     testWidgets('shows each upcoming Standard Milestone with its date, its term and its Source', (tester) async {
       await openToday(tester, FakeBackend()..upcoming = [withdrawal()]);
@@ -132,9 +221,9 @@ void main() {
       expect(find.text('Old date'), findsOneWidget);
 
       backend.upcoming = [withdrawal(name: 'New date')];
-      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Buddy')));
+      await tester.tap(tabButton('Buddy'));
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
+      await tester.tap(tabButton('Today'));
       await tester.pumpAndSettle();
 
       expect(find.text('New date'), findsOneWidget);
@@ -164,9 +253,9 @@ void main() {
       await openToday(tester, backend);
 
       backend.upcomingError = Exception('off');
-      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Buddy')));
+      await tester.tap(tabButton('Buddy'));
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('Today')));
+      await tester.tap(tabButton('Today'));
       await tester.pumpAndSettle();
 
       expect(find.text('Monday, December 7, 2026'), findsOneWidget);

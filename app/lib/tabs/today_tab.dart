@@ -86,21 +86,14 @@ class _TodayTabState extends State<TodayTab> {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
-  void _openGuidebook({GuidebookShelf shelf = GuidebookShelf.resources}) {
-    widget.guidebook.load();
-    widget.opportunities.load();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => GuidebookScreen(
-          guidebook: widget.guidebook,
-          opportunities: widget.opportunities,
-          openPhone: widget.openPhone,
-          askBuddy: widget.askBuddy,
-          shelf: shelf,
-        ),
-      ),
-    );
-  }
+  void _openGuidebook({GuidebookShelf shelf = GuidebookShelf.resources}) => openGuidebook(
+        context,
+        guidebook: widget.guidebook,
+        opportunities: widget.opportunities,
+        openPhone: widget.openPhone,
+        askBuddy: widget.askBuddy,
+        shelf: shelf,
+      );
 
   void _openTask(Task task) {
     Navigator.of(context).push(
@@ -126,6 +119,28 @@ class _TodayTabState extends State<TodayTab> {
     return '${_weekdays[now.weekday - 1]}, ${_months[now.month - 1]} ${now.day} · Philadelphia time';
   }
 
+  /// What's waiting on the Student and what they're keeping track of, counted from what this tab has already loaded.
+  /// Nothing that hasn't loaded is counted, so the line never says there's nothing when it doesn't know.
+  String? get _counts {
+    final tasks = widget.tasks.hasLoaded ? widget.tasks.onToday : null;
+    final logins = widget.connections.connections?.where((connection) => connection.needsLogin).length;
+    final needYou = tasks?.where((task) => task.state == 'needs_student').length;
+    final underWay = tasks?.where((task) => task.isWorking).length;
+    final toDo = widget.roadmap.milestones?.where((milestone) => !milestone.done).length;
+    final saved = widget.opportunities.all == null ? null : widget.opportunities.saved.length;
+    String count(int number, String one, String many) => '$number ${number == 1 ? one : many}';
+    final parts = [
+      if (logins case final number? when number > 0) count(number, 'login waiting', 'logins waiting'),
+      if (needYou case final number? when number > 0) count(number, 'Task needs you', 'Tasks need you'),
+      if (underWay case final number? when number > 0) count(number, 'Task under way', 'Tasks under way'),
+      if (toDo case final number? when number > 0) count(number, 'Milestone to do', 'Milestones to do'),
+      if (saved case final number? when number > 0) count(number, 'saved Opportunity', 'saved Opportunities'),
+    ];
+    if (parts.isEmpty) return logins == 0 && needYou == 0 ? 'Nothing is waiting on you right now.' : null;
+    final allButLast = parts.sublist(0, parts.length - 1);
+    return allButLast.isEmpty ? '${parts.last}.' : '${allButLast.join(', ')} and ${parts.last}.';
+  }
+
   /// A Task waiting on the Student comes before everything else that doesn't have a clock on it.
   List<Widget> _waitingTasks() {
     return [
@@ -135,7 +150,7 @@ class _TodayTabState extends State<TodayTab> {
           title: task.title,
           words: task.stateText,
           action: OutlinedButton(
-            style: OutlinedButton.styleFrom(foregroundColor: BuddyColors.cherry, side: const BorderSide(color: BuddyColors.cherry)),
+            style: OutlinedButton.styleFrom(foregroundColor: BuddyColors.cherry),
             onPressed: () => _openTask(task),
             child: Text('See what it needs', semanticsLabel: 'See what this Task needs: ${task.title}'),
           ),
@@ -150,8 +165,11 @@ class _TodayTabState extends State<TodayTab> {
     if (tasks.isEmpty) return const [];
     return [
       const SectionTitle('Tasks'),
-      RowGroup(children: [for (final task in tasks) TaskRow(key: ValueKey('task ${task.id}'), task: task, onTap: () => _openTask(task))]),
-      const SizedBox(height: 24),
+      RowGroup(
+        dividerIndent: RowGroup.indentPastIcon,
+        children: [for (final task in tasks) TaskRow(key: ValueKey('task ${task.id}'), task: task, onTap: () => _openTask(task))],
+      ),
+      const SizedBox(height: 28),
     ];
   }
 
@@ -179,7 +197,7 @@ class _TodayTabState extends State<TodayTab> {
         alignment: AlignmentDirectional.centerStart,
         child: AppLink('See Opportunities', onPressed: () => _openGuidebook(shelf: GuidebookShelf.opportunities)),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 24),
     ];
   }
 
@@ -215,8 +233,8 @@ class _TodayTabState extends State<TodayTab> {
     if (rows.isEmpty) return const [];
     return [
       const SectionTitle('Get started'),
-      RowGroup(children: rows),
-      const SizedBox(height: 24),
+      RowGroup(dividerIndent: RowGroup.indentPastIcon, children: rows),
+      const SizedBox(height: 28),
     ];
   }
 
@@ -246,9 +264,10 @@ class _TodayTabState extends State<TodayTab> {
     final nextBatch = more < _shownAtATime ? more : _shownAtATime;
     return [
       const SectionTitle('Coming up'),
-      const Text('Dates every Temple Student faces, from the registrar and Student Financial Services.'),
+      Text('Dates every Temple Student faces, from the registrar and Student Financial Services.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: BuddyColors.inkSoft)),
       const SizedBox(height: 12),
       RowGroup(
+        dividerIndent: RowGroup.indentPastIcon,
         children: [
           for (final milestone in shown)
             // Keeps each card's state with its own date as the list changes around it.
@@ -282,9 +301,16 @@ class _TodayTabState extends State<TodayTab> {
             PageTitle(
               'Today',
               subtitle: _dateLine,
-              trailing: AppLink('Guidebook', icon: Icons.menu_book_outlined, onPressed: _openGuidebook),
+              trailing: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
+                onPressed: _openGuidebook,
+                icon: const Icon(Icons.menu_book_outlined, size: 18),
+                label: const Text('Guidebook'),
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
+            _Welcome(counts: _counts, onPlan: () => widget.askBuddy('Help me plan my day.')),
+            const SizedBox(height: 24),
             LoginRequests(connections: widget.connections),
             ..._waitingTasks(),
             ...briefingPart(
@@ -298,6 +324,60 @@ class _TodayTabState extends State<TodayTab> {
             ..._savedPart(context),
             ..._startPart(context),
             ..._comingUp(context),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The top of Today: a few friendly words of Buddy's own, what's waiting in plain counts, and the way to plan the day
+/// with Buddy. The words are written here, so they're the same every day and nothing in them is made up.
+class _Welcome extends StatelessWidget {
+  const _Welcome({required this.counts, required this.onPlan});
+
+  final String? counts;
+  final VoidCallback onPlan;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(color: BuddyColors.cherryTint, borderRadius: BorderRadius.circular(BuddySizes.cardRadius)),
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // A screen reader gets the words as written, not spelled out.
+            Semantics(
+              container: true,
+              label: 'Your day at Temple',
+              excludeSemantics: true,
+              child: Row(
+                children: [
+                  const Icon(Icons.wb_sunny_outlined, size: 16, color: BuddyColors.cherry),
+                  const SizedBox(width: 7),
+                  Flexible(child: Text('YOUR DAY AT TEMPLE', style: text.labelMedium?.copyWith(color: BuddyColors.cherry))),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // A greeting, so it only grows so far, and what's below it keeps its room.
+            MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.4,
+              child: Text("Let's take today one step at a time.", style: text.headlineLarge),
+            ),
+            if (counts case final counts?) ...[
+              const SizedBox(height: 10),
+              Semantics(container: true, child: Text(counts, style: text.bodyMedium?.copyWith(color: BuddyColors.inkSoft))),
+            ],
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: onPlan,
+              icon: const Icon(Icons.chat_bubble_outline, size: 18),
+              label: const Text('Plan my day', semanticsLabel: 'Plan my day with Buddy'),
+            ),
           ],
         ),
       ),

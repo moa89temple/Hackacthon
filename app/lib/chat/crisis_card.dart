@@ -111,6 +111,7 @@ class CrisisHelpScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SubScreen(
+      topIcon: Icons.favorite_border,
       title: _title,
       subtitle: _intro,
       children: [
@@ -199,44 +200,44 @@ class _CrisisCardState extends State<CrisisCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          border: Border.all(color: colors.primary, width: 2.5),
-          borderRadius: BorderRadius.circular(BuddySizes.cardRadius),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Semantics(
-                container: true,
-                liveRegion: widget.announce,
-                label: 'Crisis help from Buddy. $_title. $_intro',
-                excludeSemantics: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_title, style: theme.textTheme.headlineSmall?.copyWith(color: colors.primary)),
-                    const SizedBox(height: 4),
-                    const Text(_intro),
-                  ],
-                ),
+      // Cherry all through, with an edge of its own, so that it can't be mistaken for anything else in the conversation.
+      child: CardFrame(
+        color: BuddyColors.cherryTint,
+        border: const BorderSide(color: BuddyColors.cherry, width: 1.5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              container: true,
+              liveRegion: widget.announce,
+              label: 'Crisis help from Buddy. $_title. $_intro',
+              excludeSemantics: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CardHeading(
+                    icon: Icons.favorite,
+                    iconColor: Colors.white,
+                    iconTint: BuddyColors.cherry,
+                    title: _title,
+                    titleStyle: theme.textTheme.headlineSmall?.copyWith(color: BuddyColors.cherry),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(_intro),
+                ],
               ),
-              CrisisResources(openPhone: widget.openPhone),
-              // Last, and on its own, so that none of it can come before or hold up the Resources above.
-              CrisisEmailOfferView(
-                words: widget.item.emailWords,
-                chat: widget.chat,
-                announce: widget.announce,
-                onOpened: _stopKeepingInView,
-              ),
-            ],
-          ),
+            ),
+            CrisisResources(openPhone: widget.openPhone),
+            // Last, and on its own, so that none of it can come before or hold up the Resources above.
+            CrisisEmailOfferView(
+              words: widget.item.emailWords,
+              chat: widget.chat,
+              announce: widget.announce,
+              onOpened: _stopKeepingInView,
+            ),
+          ],
         ),
       ),
     );

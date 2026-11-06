@@ -75,8 +75,8 @@ class _MilestoneCardState extends State<MilestoneCard> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const ExcludeSemantics(child: Icon(Icons.calendar_today_outlined, size: 24, color: BuddyColors.ink)),
-          const SizedBox(width: 16),
+          const IconTile(Icons.calendar_today_outlined),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -96,7 +96,12 @@ class _MilestoneCardState extends State<MilestoneCard> {
                           child: Text(overline.toUpperCase(), style: theme.textTheme.labelMedium),
                         ),
                       Text(milestone.name, style: theme.textTheme.titleMedium),
-                      for (final line in lines) Padding(padding: const EdgeInsets.only(top: 2), child: Text(line)),
+                      for (final (index, line) in lines.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          // The date first, in full, then what goes with it, quieter.
+                          child: Text(line, style: index == 0 ? null : theme.textTheme.bodyMedium?.copyWith(color: BuddyColors.inkSoft)),
+                        ),
                     ],
                   ),
                 ),
@@ -112,9 +117,8 @@ class _MilestoneCardState extends State<MilestoneCard> {
     );
     if (widget.inGroup) return content;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      // It holds a control as well as words, so it's a set of separate nodes rather than one.
-      child: Card(semanticContainer: false, child: content),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: CardFrame(padding: EdgeInsets.zero, child: content),
     );
   }
 }

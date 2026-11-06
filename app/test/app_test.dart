@@ -16,7 +16,7 @@ void main() {
 
       final bar = find.byType(BuddyNavBar);
       for (final label in ['Today', 'Buddy', 'Roadmap', 'You']) {
-        expect(find.descendant(of: bar, matching: find.text(label)), findsOneWidget);
+        expect(tabButton(label), findsOneWidget);
       }
       expect(tester.widget<BuddyNavBar>(bar).destinations.map((destination) => destination.label), ['Today', 'Buddy', 'Roadmap', 'You']);
     });
@@ -246,7 +246,7 @@ void main() {
       await openUnlockedApp(tester, FakeBackend(history: [student('Hello'), buddy('Hi there.')]));
 
       for (final label in ['Buddy', 'Today', 'Roadmap', 'You']) {
-        await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text(label)));
+        await tester.tap(tabButton(label));
         await tester.pump();
         await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
         await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
@@ -269,7 +269,7 @@ void main() {
       );
 
       for (final label in ['Buddy', 'Today', 'Roadmap', 'You']) {
-        await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text(label)));
+        await tester.tap(tabButton(label));
         await tester.pump();
         expect(tester.takeException(), isNull, reason: 'overflow on the $label tab');
       }

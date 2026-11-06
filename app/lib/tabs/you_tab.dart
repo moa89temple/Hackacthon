@@ -59,25 +59,13 @@ class YouTab extends StatelessWidget {
       };
 
   Widget _connectionsRow(BuildContext context) {
-    final list = connections.connections;
-    final waiting = (list ?? const <Connection>[]).where((connection) => connection.needsLogin).toList();
-    final hasProblem = waiting.isNotEmpty;
-    final String? status;
-    if (list == null) {
-      status = null;
-    } else if (waiting.length == 1) {
-      status = '${waiting.first.name} needs login';
-    } else if (waiting.length > 1) {
-      status = '${waiting.length} need login';
-    } else {
-      final on = list.where((connection) => connection.on).length;
-      status = on == 0 ? 'None on yet' : '$on of ${list.length} on';
-    }
+    final hasProblem = (connections.connections ?? const <Connection>[]).any((connection) => connection.needsLogin);
     return NavRow(
       icon: hasProblem ? Icons.warning_amber_rounded : Icons.link,
       iconColor: hasProblem ? BuddyColors.warningInk : null,
+      iconTint: hasProblem ? BuddyColors.warningTint : null,
       title: 'Connections',
-      subtitle: status,
+      subtitle: connectionsInWords(connections.connections),
       onTap: () => _open(context, (context) => ConnectionsScreen(connections: connections)),
     );
   }
@@ -112,7 +100,7 @@ class YouTab extends StatelessWidget {
           const SizedBox(height: 20),
           const GroupLabel('About you'),
           RowGroup(
-            dividerIndent: 58,
+            dividerIndent: RowGroup.indentPastIcon,
             children: [
               NavRow(
                 icon: Icons.track_changes,
@@ -131,7 +119,7 @@ class YouTab extends StatelessWidget {
           const SizedBox(height: 24),
           const GroupLabel('What Buddy can do'),
           RowGroup(
-            dividerIndent: 58,
+            dividerIndent: RowGroup.indentPastIcon,
             children: [
               _connectionsRow(context),
               NavRow(
@@ -149,7 +137,7 @@ class YouTab extends StatelessWidget {
           const SizedBox(height: 24),
           const GroupLabel('History and controls'),
           RowGroup(
-            dividerIndent: 58,
+            dividerIndent: RowGroup.indentPastIcon,
             children: [
               NavRow(
                 icon: Icons.bar_chart,

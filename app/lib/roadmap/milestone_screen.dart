@@ -75,6 +75,7 @@ class _MilestoneScreenState extends State<MilestoneScreen> {
         final busy = roadmap.isChanging;
         final problem = roadmap.problem ?? _phoneProblem;
         return SubScreen(
+          topIcon: Icons.calendar_today_outlined,
           title: milestone.name,
           children: [
             Align(

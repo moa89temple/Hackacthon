@@ -125,68 +125,65 @@ class _DraftCardState extends State<DraftCard> {
     final openInOutlook = Text('Open in Outlook', semanticsLabel: 'Open $theDraft in Outlook');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Card(
-        // It holds several controls, so it's a set of separate nodes rather than one.
-        semanticContainer: false,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // One item, because on Android its lines otherwise run together with the buttons'.
-              Semantics(
-                container: true,
-                liveRegion: widget.announce,
-                label: '$title. ${[...details, draft.body].join('\n')}',
-                excludeSemantics: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.textTheme.titleLarge),
-                    for (final line in details) Padding(padding: const EdgeInsets.only(top: 4), child: Text(line)),
-                    const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
-                    Text(draft.body),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              // What sends it comes first, stacked so that large text never squeezes them.
-              if (email != null) ...[
-                FilledButton(
-                  onPressed: _askBuddyToSend,
-                  child: Text('Buddy sends it', semanticsLabel: 'Buddy sends it: $theDraft'),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton(onPressed: _openInOutlook, child: openInOutlook),
-              ] else
-                FilledButton(onPressed: _openInOutlook, child: openInOutlook),
-              const SizedBox(height: 4),
-              // Wraps onto new lines rather than running off the edge when text is large.
-              Wrap(
-                spacing: 16,
+      child: CardFrame(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // One item, because on Android its lines otherwise run together with the buttons'.
+            Semantics(
+              container: true,
+              liveRegion: widget.announce,
+              label: '$title. ${[...details, draft.body].join('\n')}',
+              excludeSemantics: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  AppLink('Edit', icon: Icons.edit_outlined, semanticsLabel: 'Edit $theDraft', onPressed: _edit),
-                  AppLink('Copy', icon: Icons.copy_outlined, semanticsLabel: 'Copy $theDraft', onPressed: _copy),
+                  CardHeading(icon: Icons.edit_note, title: title, line: 'Nothing goes until you say so'),
+                  const SizedBox(height: 6),
+                  for (final line in details) Padding(padding: const EdgeInsets.only(top: 6), child: Text(line)),
+                  const SizedBox(height: 14),
+                  // The words exactly as they'll go, on white, like the email itself.
+                  InnerPanel(child: Padding(padding: const EdgeInsets.only(top: 8), child: Text(draft.body))),
                 ],
               ),
-              if (_status case final status?) StatusNote(status, isProblem: _statusIsProblem),
+            ),
+            const SizedBox(height: 14),
+            // What sends it comes first, stacked so that large text never squeezes them.
+            if (email != null) ...[
+              FilledButton(
+                onPressed: _askBuddyToSend,
+                child: Text('Buddy sends it', semanticsLabel: 'Buddy sends it: $theDraft'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(onPressed: _openInOutlook, child: openInOutlook),
+            ] else
+              FilledButton(onPressed: _openInOutlook, child: openInOutlook),
+            const SizedBox(height: 4),
+            // Wraps onto new lines rather than running off the edge when text is large.
+            Wrap(
+              spacing: 8,
+              children: [
+                AppLink('Edit', icon: Icons.edit_outlined, semanticsLabel: 'Edit $theDraft', onPressed: _edit),
+                AppLink('Copy', icon: Icons.copy_outlined, semanticsLabel: 'Copy $theDraft', onPressed: _copy),
+              ],
+            ),
+            if (_status case final status?) StatusNote(status, isProblem: _statusIsProblem),
+            Semantics(
+              container: true,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_otherRoute, style: theme.textTheme.bodySmall),
+              ),
+            ),
+            if (email != null)
               Semantics(
                 container: true,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(_otherRoute, style: theme.textTheme.bodySmall),
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(_buddySends, style: theme.textTheme.bodySmall),
                 ),
               ),
-              if (email != null)
-                Semantics(
-                  container: true,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(_buddySends, style: theme.textTheme.bodySmall),
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );

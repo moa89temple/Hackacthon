@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'activity/activity_screen.dart';
 import 'backend/buddy_backend.dart';
 import 'briefings/briefings_controller.dart';
 import 'briefings/phone_notifications.dart';
@@ -12,6 +13,7 @@ import 'chat/chat_controller.dart';
 import 'chat/crisis_card.dart';
 import 'chat/outlook.dart';
 import 'connections/connections_controller.dart';
+import 'connections/connections_section.dart';
 import 'design/theme.dart';
 import 'device/app_lock.dart';
 import 'device/device_store.dart';
@@ -20,9 +22,11 @@ import 'device/pairing_details.dart';
 import 'device/pairing_screen.dart';
 import 'device/qr_scanner.dart';
 import 'guidebook/guidebook_controller.dart';
+import 'guidebook/guidebook_screen.dart';
 import 'milestones/milestones_controller.dart';
 import 'opportunities/opportunities_controller.dart';
 import 'profile/profile_controller.dart';
+import 'profile/profile_section.dart';
 import 'roadmap/roadmap_controller.dart';
 import 'roadmap/roadmap_tab.dart';
 import 'sending/sending_controller.dart';
@@ -212,7 +216,7 @@ class _BuddyAppState extends State<BuddyApp> with WidgetsBindingObserver {
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.dark,
           statusBarBrightness: Brightness.light,
-          systemNavigationBarColor: BuddyColors.surface,
+          systemNavigationBarColor: BuddyColors.canvas,
           systemNavigationBarIconBrightness: Brightness.dark,
         ),
         child: Stack(
@@ -434,6 +438,53 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
     setState(() => _selected = _buddyTab);
   }
 
+  void _open(Widget Function(BuildContext context) screen) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: screen));
+  }
+
+  void _openActivity() => _open((context) => ActivityScreen(backend: widget.backend));
+
+  /// Places the conversation's menu leads to, each already a screen of its own elsewhere in the app.
+  List<MenuWay> _menuWays() {
+    final loginWaiting = (_connections.connections ?? const <Connection>[]).any((connection) => connection.needsLogin);
+    return [
+      MenuWay(
+        icon: Icons.menu_book_outlined,
+        title: 'Guidebook',
+        subtitle: 'Resources, Opportunities and Contacts',
+        open: () => openGuidebook(context, guidebook: _guidebook, opportunities: _opportunities, openPhone: widget.openPhone, askBuddy: _askBuddy),
+      ),
+      MenuWay(icon: Icons.bar_chart, title: 'Activity', subtitle: 'What Buddy read and did', open: _openActivity),
+      MenuWay(
+        icon: loginWaiting ? Icons.warning_amber_rounded : Icons.link,
+        iconColor: loginWaiting ? BuddyColors.warningInk : null,
+        iconTint: loginWaiting ? BuddyColors.warningTint : null,
+        title: 'Connections',
+        subtitle: connectionsInWords(_connections.connections),
+        open: () {
+          _connections.load();
+          _open((context) => ConnectionsScreen(connections: _connections));
+        },
+      ),
+      MenuWay(
+        icon: Icons.person_outline,
+        title: 'Profile',
+        subtitle: 'What Buddy knows about you',
+        open: () {
+          _profile.load();
+          _open((context) => ProfileScreen(profile: _profile));
+        },
+      ),
+      MenuWay(
+        icon: Icons.favorite_border,
+        iconColor: BuddyColors.cherry,
+        title: 'Need help right now?',
+        subtitle: 'Reach a real person',
+        open: () => _open((context) => CrisisHelpScreen(openPhone: widget.openPhone)),
+      ),
+    ];
+  }
+
   /// A Crisis card can arrive while the Student is on another tab or screen, and they mustn't miss it. Nothing they were
   /// in the middle of comes before it.
   void _showNewCrisisCard() {
@@ -487,7 +538,17 @@ class _TabsState extends State<_Tabs> with WidgetsBindingObserver {
               openRoadmap: () => _selectTab(_roadmapTab),
               refresh: _refreshToday,
             ),
-            BuddyTab(chat: _chat, connections: _connections, roadmap: _roadmap, opportunities: _opportunities, tasks: _tasks, openPhone: widget.openPhone, openDraft: widget.openDraft),
+            BuddyTab(
+              chat: _chat,
+              connections: _connections,
+              roadmap: _roadmap,
+              opportunities: _opportunities,
+              tasks: _tasks,
+              openPhone: widget.openPhone,
+              openDraft: widget.openDraft,
+              menu: _menuWays,
+              openActivity: _openActivity,
+            ),
             RoadmapTab(roadmap: _roadmap, openPhone: widget.openPhone, askBuddy: _askBuddy),
             YouTab(
               backend: widget.backend,

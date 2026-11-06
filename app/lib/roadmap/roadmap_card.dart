@@ -111,71 +111,79 @@ class _RoadmapCardViewState extends State<RoadmapCardView> {
     final sources = {for (final milestone in card.milestones) for (final source in milestone.sources) source.url: source}.values;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      // It holds controls as well as words, so it's a set of separate nodes rather than one.
-      child: Card(
-        semanticContainer: false,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+      child: CardFrame(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              container: true,
+              liveRegion: widget.announce,
+              label: 'Roadmap card: $_title. ${card.why}${card.note == null ? '' : ' ${card.note}'}',
+              excludeSemantics: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CardHeading(
+                    icon: Icons.map_outlined,
+                    title: _title,
+                    line: card.milestones.length == 1 ? '1 Milestone' : '${card.milestones.length} Milestones',
+                  ),
+                  const SizedBox(height: 12),
+                  Text(card.why),
+                  if (card.note case final note?)
+                    Padding(padding: const EdgeInsets.only(top: 4), child: Text(note, style: theme.textTheme.bodySmall)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            // What it would put on the Roadmap, on white, apart from why Buddy proposes it.
+            InnerPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final milestone in milestones) _milestone(context, milestone),
+                  if (hidden > 0)
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: AppLink(
+                        'Show all ${card.milestones.length} Milestones',
+                        onPressed: () => setState(() => _showsAll = true),
+                      ),
+                    ),
+                  for (final removed in card.removes)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Semantics(container: true, child: Text('Takes off: ${removed.name}')),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final source in sources) SourceLink(source: source, open: _open),
+            const SizedBox(height: 4),
+            if (outcome != null)
               Semantics(
                 container: true,
-                liveRegion: widget.announce,
-                label: 'Roadmap card: $_title. ${card.why}${card.note == null ? '' : ' ${card.note}'}',
-                excludeSemantics: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_title, style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 4),
-                    Text(card.why),
-                    if (card.note case final note?)
-                      Padding(padding: const EdgeInsets.only(top: 4), child: Text(note, style: theme.textTheme.bodySmall)),
-                  ],
-                ),
+                liveRegion: _tappedHere,
+                child: Padding(padding: const EdgeInsets.only(top: 8), child: Text(outcome, style: theme.textTheme.titleSmall)),
+              )
+            else
+              ListenableBuilder(
+                listenable: widget.roadmap,
+                builder: (context, _) {
+                  final waiting = widget.roadmap.isBeingDecided(card);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FilledButton(onPressed: waiting ? null : () => _tap(widget.roadmap.accept), child: const Text('Accept')),
+                      const SizedBox(height: 8),
+                      OutlinedButton(onPressed: waiting ? null : () => _tap(widget.roadmap.notNow), child: const Text('Not now')),
+                    ],
+                  );
+                },
               ),
-              for (final milestone in milestones) _milestone(context, milestone),
-              if (hidden > 0)
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: AppLink(
-                    'Show all ${card.milestones.length} Milestones',
-                    onPressed: () => setState(() => _showsAll = true),
-                  ),
-                ),
-              for (final removed in card.removes)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Semantics(container: true, child: Text('Takes off: ${removed.name}')),
-                ),
-              const SizedBox(height: 8),
-              for (final source in sources) SourceLink(source: source, open: _open),
-              const SizedBox(height: 4),
-              if (outcome != null)
-                Semantics(
-                  container: true,
-                  liveRegion: _tappedHere,
-                  child: Padding(padding: const EdgeInsets.only(top: 8), child: Text(outcome, style: theme.textTheme.titleSmall)),
-                )
-              else
-                ListenableBuilder(
-                  listenable: widget.roadmap,
-                  builder: (context, _) {
-                    final waiting = widget.roadmap.isBeingDecided(card);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        FilledButton(onPressed: waiting ? null : () => _tap(widget.roadmap.accept), child: const Text('Accept')),
-                        const SizedBox(height: 8),
-                        OutlinedButton(onPressed: waiting ? null : () => _tap(widget.roadmap.notNow), child: const Text('Not now')),
-                      ],
-                    );
-                  },
-                ),
-              if (_problem case final problem?) ProblemNote(problem),
-            ],
-          ),
+            if (_problem case final problem?) ProblemNote(problem),
+          ],
         ),
       ),
     );

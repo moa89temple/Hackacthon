@@ -501,7 +501,7 @@ npm run check-login
 
 ## The design
 
-Colors, type and button sizes are in `app/lib/design/theme.dart`, and the parts every screen is built from are in `app/lib/design/parts.dart`. Today is the first tab, and where the app opens, except for a Student who hasn't written anything yet: they start in the conversation, where Buddy introduces itself. The You tab is one screen deep, and each row says how that part stands. **Need help right now?** on the You tab opens the same crisis Resources as the Crisis card, for a Student who comes looking for them.
+The look follows CopilotKit's openmuse (MIT licensed), written as Buddy's own Flutter code in Temple's colors: an airy canvas, soft gray frames, pill buttons, icons in tinted squares, and tabs in a floating pill. Colors, type, sizes and shadows are in `app/lib/design/theme.dart`, and the parts every screen is built from are in `app/lib/design/parts.dart`. Today is the first tab, and where the app opens, except for a Student who hasn't written anything yet: they start in the conversation, where Buddy introduces itself. The conversation's menu leads to the Guidebook, Activity, Connections, the Profile and crisis help, and the pill under Buddy's name shows a Task under way or needing the Student, or a login Buddy is waiting for. The You tab is one screen deep, and each row says how that part stands. **Need help right now?** on the You tab and in the menu opens the same crisis Resources as the Crisis card, for a Student who comes looking for them.
 
 To see every screen with made-up content, at ordinary and at twice the text size, without a phone or a backend:
 

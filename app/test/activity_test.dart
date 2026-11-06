@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:buddy/backend/buddy_backend.dart';
-import 'package:buddy/widgets/buddy_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -38,7 +37,7 @@ ActivityEntry reply({
 
 Future<void> openActivity(WidgetTester tester, FakeBackend backend) async {
   await openUnlockedApp(tester, backend);
-  await tester.tap(find.descendant(of: find.byType(BuddyNavBar), matching: find.text('You')));
+  await tester.tap(tabButton('You'));
   await settleApp(tester);
   // The You tab builds only what's near the screen, so on a small phone the row isn't there yet.
   await tester.dragUntilVisible(find.text('Activity'), find.byType(ListView).last, const Offset(0, -200));
@@ -155,6 +154,8 @@ void main() {
       expect(find.text('Sources Buddy looked at'), findsOneWidget);
       expect(find.text('Writing Center'), findsOneWidget);
       expect(find.text('https://www.temple.edu/writing'), findsOneWidget);
+      // The facts come last, and can be further down than the screen goes.
+      await tester.scrollUntilVisible(find.text('Shift at CVS'), 200);
       expect(find.text('Profile facts Buddy had'), findsOneWidget);
       expect(find.text('Is a junior.'), findsOneWidget);
       expect(find.text('From your chat'), findsOneWidget);
@@ -256,6 +257,7 @@ void main() {
       final handle = tester.ensureSemantics();
       await openActivity(tester, FakeBackend()..activity = [reply()]);
       await openDecision(tester);
+      await tester.scrollUntilVisible(find.text('Shift at CVS'), 200);
 
       expect(find.bySemanticsLabel('Shift at CVS\nTuesday, 2:00 PM–5:00 PM\nFrom Google Calendar'), findsOneWidget);
       handle.dispose();

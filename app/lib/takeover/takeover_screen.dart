@@ -80,13 +80,19 @@ class _TakeoverScreenState extends State<TakeoverScreen> {
                     Semantics(
                       container: true,
                       liveRegion: true,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const ExcludeSemantics(child: Icon(Icons.shield_outlined, size: 20, color: BuddyColors.ink)),
-                          const SizedBox(width: 8),
-                          const Expanded(child: Text("You're in control. Buddy can't see this screen.")),
-                        ],
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(color: BuddyColors.frame, borderRadius: BorderRadius.circular(BuddySizes.panelRadius)),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ExcludeSemantics(child: Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.shield_outlined, size: 20, color: BuddyColors.cherry))),
+                              SizedBox(width: 10),
+                              Expanded(child: Text("You're in control. Buddy can't see this screen.")),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                     if (_couldNotFinish) const ProblemNote("The app couldn't reach Buddy. Check that the backend is running, then tap Done again."),

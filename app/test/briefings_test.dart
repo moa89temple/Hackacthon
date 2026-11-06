@@ -65,7 +65,7 @@ Briefing aBriefing({
 
 const hold = BriefingNews(id: 1, connection: 'TUportal', text: 'New hold on TUportal: a made-up hold');
 
-Finder navigation(String label) => find.descendant(of: find.byType(BuddyNavBar), matching: find.text(label));
+Finder navigation(String label) => tabButton(label);
 
 const todayTab = 0;
 const buddyTab = 1;
@@ -337,6 +337,7 @@ void main() {
       final phone = FakePhoneNotifications();
       await openUnlockedApp(tester, FakeBackend()..latestBriefing = aBriefing(), phoneNotifications: phone);
       await openTab(tester, 'Today');
+      await tester.scrollUntilVisible(find.text('See Opportunities'), 200);
       await tester.tap(find.text('See Opportunities'));
       await tester.pumpAndSettle();
       expect(find.byType(BuddyNavBar).hitTestable(), findsNothing);
